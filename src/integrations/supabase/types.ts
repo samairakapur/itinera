@@ -371,6 +371,7 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          profile_complete: boolean | null
           travel_preferences: Json | null
           updated_at: string
         }
@@ -380,6 +381,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          profile_complete?: boolean | null
           travel_preferences?: Json | null
           updated_at?: string
         }
@@ -389,6 +391,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          profile_complete?: boolean | null
           travel_preferences?: Json | null
           updated_at?: string
         }
