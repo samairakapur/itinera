@@ -26,8 +26,7 @@ import { cn } from '@/lib/utils';
 const navLinks = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/destinations', label: 'Destinations', icon: MapPin },
-  { href: '/planner', label: 'Planner', icon: Calendar },
-  { href: '/saved', label: 'Saved', icon: Heart },
+  { href: '/trips', label: 'My Trips', icon: Calendar },
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
@@ -102,15 +101,9 @@ const Navbar = () => {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/saved" className="flex items-center gap-2 cursor-pointer">
-                    <Heart className="w-4 h-4" />
-                    My Saved Items
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/planner" className="flex items-center gap-2 cursor-pointer">
+                  <Link to="/trips" className="flex items-center gap-2 cursor-pointer">
                     <Calendar className="w-4 h-4" />
-                    My Itineraries
+                    My Trips
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

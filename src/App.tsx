@@ -11,8 +11,8 @@ import Auth from "@/pages/Auth";
 import ProfileSetup from "@/pages/ProfileSetup";
 import Destinations from "@/pages/Destinations";
 import CityDetail from "@/pages/CityDetail";
-import Planner from "@/pages/Planner";
-import Saved from "@/pages/Saved";
+import Trips from "@/pages/Trips";
+import NewTrip from "@/pages/NewTrip";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
 
@@ -32,8 +32,8 @@ const App = () => (
               <Route path="/" element={<RequireProfile><Home /></RequireProfile>} />
               <Route path="/destinations" element={<RequireProfile><Destinations /></RequireProfile>} />
               <Route path="/city/:cityId" element={<RequireProfile><CityDetail /></RequireProfile>} />
-              <Route path="/planner" element={<RequireProfile><Planner /></RequireProfile>} />
-              <Route path="/saved" element={<RequireProfile><Saved /></RequireProfile>} />
+              <Route path="/trips" element={<RequireProfile><Trips /></RequireProfile>} />
+              <Route path="/planner/new" element={<RequireProfile><NewTrip /></RequireProfile>} />
               <Route path="/profile" element={<RequireProfile><Profile /></RequireProfile>} />
             </Route>
             <Route path="*" element={<NotFound />} />
