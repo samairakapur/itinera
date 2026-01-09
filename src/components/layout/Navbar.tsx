@@ -18,7 +18,6 @@ import {
   MapPin, 
   Calendar, 
   Heart, 
-  Bot, 
   LogOut,
   User
 } from 'lucide-react';
@@ -29,7 +28,7 @@ const navLinks = [
   { href: '/destinations', label: 'Destinations', icon: MapPin },
   { href: '/planner', label: 'Planner', icon: Calendar },
   { href: '/saved', label: 'Saved', icon: Heart },
-  { href: '/advisor', label: 'Robo-Advisor', icon: Bot },
+  { href: '/profile', label: 'Profile', icon: User },
 ];
 
 const Navbar = () => {
