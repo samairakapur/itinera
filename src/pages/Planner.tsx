@@ -1,21 +1,25 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
+import { useProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, MapPin, Users, DollarSign, Zap, Utensils, Sparkles } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Calendar, MapPin, Users, DollarSign, Zap, Utensils, Sparkles, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
+
+const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
 const Planner = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: cities, isLoading: citiesLoading } = useCities();
+  const { data: profile } = useProfile();
   
   const [selectedCity, setSelectedCity] = useState('');
   const [numDays, setNumDays] = useState(3);
@@ -24,6 +28,48 @@ const Planner = () => {
   const [pace, setPace] = useState('medium');
   const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedItinerary, setGeneratedItinerary] = useState('');
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Pre-fill from user preferences
+  useEffect(() => {
+    if (profile?.travel_preferences) {
+      const prefs = profile.travel_preferences;
+      
+      // Set dietary restrictions from profile
+      if (prefs.dietaryRestrictions?.length) {
+        setDietaryPreferences(prefs.dietaryRestrictions);
+      }
+      
+      // Set pace from profile
+      if (prefs.pacePreference) {
+        const paceMap: Record<string, string> = {
+          'Fast-paced': 'full',
+          'Balanced': 'medium',
+          'Relaxed': 'light',
+        };
+        setPace(paceMap[prefs.pacePreference] || 'medium');
+      }
+      
+      // Set budget from profile
+      if (prefs.dailyBudget) {
+        const budgetMap: Record<string, string> = {
+          'Budget': 'budget',
+          'Mid-range': 'moderate',
+          'Premium': 'upscale',
+        };
+        setBudgetLevel(budgetMap[prefs.dailyBudget] || 'moderate');
+      }
+    }
+  }, [profile]);
+
+  // Auto-scroll as itinerary generates
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [generatedItinerary]);
 
   const dietaryOptions = [
     'Vegetarian',
@@ -55,12 +101,87 @@ const Planner = () => {
       return;
     }
 
+    const city = cities?.find(c => c.id === selectedCity);
+    if (!city) {
+      toast.error('City not found');
+      return;
+    }
+
     setIsGenerating(true);
-    
-    // For now, just show a toast - we'll implement the full AI generation later
-    toast.success('Itinerary generation coming soon! This feature will use AI to create personalized travel plans.');
-    
-    setIsGenerating(false);
+    setGeneratedItinerary('');
+
+    try {
+      const response = await fetch(ITINERARY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          cityName: city.name,
+          countryName: city.country,
+          numDays,
+          travelStyle,
+          budgetLevel,
+          pace,
+          dietaryPreferences,
+          userPreferences: profile?.travel_preferences || null,
+          cityDescription: city.description,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to generate itinerary');
+      }
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              setGeneratedItinerary(prev => prev + content);
+            }
+          } catch {
+            // Incomplete JSON, wait for more data
+            buffer = line + '\n' + buffer;
+            break;
+          }
+        }
+      }
+
+      toast.success('Itinerary generated!');
+    } catch (error) {
+      console.error('Error generating itinerary:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate itinerary');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   if (!user) {
@@ -91,157 +212,202 @@ const Planner = () => {
   return (
     <div className="min-h-screen py-8">
       <div className="container px-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-8">
             <h1 className="font-display text-3xl font-bold text-foreground mb-2">
               Plan Your Family Trip
             </h1>
             <p className="text-muted-foreground">
-              Let our AI create the perfect itinerary based on your preferences
+              Our AI creates personalized itineraries based on your preferences and real-time weather
             </p>
+            {profile?.travel_preferences && (
+              <p className="text-sm text-primary mt-2 flex items-center justify-center gap-1">
+                <Sparkles className="w-4 h-4" />
+                Using your saved travel preferences
+              </p>
+            )}
           </div>
 
-          <Card>
-            <CardContent className="p-6 space-y-6">
-              {/* City Selection */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  Destination
-                </Label>
-                <Select value={selectedCity} onValueChange={setSelectedCity}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a city" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cities?.map((city) => (
-                      <SelectItem key={city.id} value={city.id}>
-                        {city.name}, {city.country}
-                      </SelectItem>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Form */}
+            <Card>
+              <CardContent className="p-6 space-y-6">
+                {/* City Selection */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Destination
+                  </Label>
+                  <Select value={selectedCity} onValueChange={setSelectedCity}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a city" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cities?.map((city) => (
+                        <SelectItem key={city.id} value={city.id}>
+                          {city.name}, {city.country}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Number of Days */}
+                <div className="space-y-4">
+                  <Label className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Trip Duration: {numDays} {numDays === 1 ? 'day' : 'days'}
+                  </Label>
+                  <Slider
+                    value={[numDays]}
+                    onValueChange={([value]) => setNumDays(value)}
+                    min={1}
+                    max={14}
+                    step={1}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>1 day</span>
+                    <span>14 days</span>
+                  </div>
+                </div>
+
+                {/* Travel Style */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Travel Style
+                  </Label>
+                  <Select value={travelStyle} onValueChange={setTravelStyle}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="family">Family with Kids</SelectItem>
+                      <SelectItem value="adventure">Adventure Seekers</SelectItem>
+                      <SelectItem value="culture">Culture & History</SelectItem>
+                      <SelectItem value="food">Food & Culinary</SelectItem>
+                      <SelectItem value="relaxed">Relaxed & Easy-going</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Budget Level */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Budget Level
+                  </Label>
+                  <Select value={budgetLevel} onValueChange={setBudgetLevel}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="budget">Budget-Friendly ($)</SelectItem>
+                      <SelectItem value="moderate">Moderate ($$)</SelectItem>
+                      <SelectItem value="upscale">Upscale ($$$)</SelectItem>
+                      <SelectItem value="luxury">Luxury ($$$$)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Pace */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    Daily Pace
+                  </Label>
+                  <Select value={pace} onValueChange={setPace}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="light">Light (2-3 activities/day)</SelectItem>
+                      <SelectItem value="medium">Medium (4-5 activities/day)</SelectItem>
+                      <SelectItem value="full">Full (6+ activities/day)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Dietary Preferences */}
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2">
+                    <Utensils className="w-4 h-4" />
+                    Dietary Preferences (optional)
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {dietaryOptions.map((option) => (
+                      <Badge
+                        key={option}
+                        variant={dietaryPreferences.includes(option) ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => toggleDietary(option)}
+                      >
+                        {option}
+                      </Badge>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  </div>
+                </div>
 
-              {/* Number of Days */}
-              <div className="space-y-4">
-                <Label className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  Trip Duration: {numDays} {numDays === 1 ? 'day' : 'days'}
-                </Label>
-                <Slider
-                  value={[numDays]}
-                  onValueChange={([value]) => setNumDays(value)}
-                  min={1}
-                  max={14}
-                  step={1}
+                {/* Generate Button */}
+                <Button
                   className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>1 day</span>
-                  <span>14 days</span>
-                </div>
-              </div>
+                  size="lg"
+                  onClick={handleGenerate}
+                  disabled={isGenerating || !selectedCity}
+                >
+                  {isGenerating ? (
+                    <>
+                      <div className="w-4 h-4 mr-2 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate Itinerary
+                    </>
+                  )}
+                </Button>
 
-              {/* Travel Style */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Travel Style
-                </Label>
-                <Select value={travelStyle} onValueChange={setTravelStyle}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="family">Family with Kids</SelectItem>
-                    <SelectItem value="adventure">Adventure Seekers</SelectItem>
-                    <SelectItem value="culture">Culture & History</SelectItem>
-                    <SelectItem value="food">Food & Culinary</SelectItem>
-                    <SelectItem value="relaxed">Relaxed & Easy-going</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Budget Level */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
-                  Budget Level
-                </Label>
-                <Select value={budgetLevel} onValueChange={setBudgetLevel}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="budget">Budget-Friendly ($)</SelectItem>
-                    <SelectItem value="moderate">Moderate ($$)</SelectItem>
-                    <SelectItem value="upscale">Upscale ($$$)</SelectItem>
-                    <SelectItem value="luxury">Luxury ($$$$)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Pace */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Zap className="w-4 h-4" />
-                  Daily Pace
-                </Label>
-                <Select value={pace} onValueChange={setPace}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="light">Light (2-3 activities/day)</SelectItem>
-                    <SelectItem value="medium">Medium (4-5 activities/day)</SelectItem>
-                    <SelectItem value="full">Full (6+ activities/day)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Dietary Preferences */}
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2">
-                  <Utensils className="w-4 h-4" />
-                  Dietary Preferences (optional)
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {dietaryOptions.map((option) => (
-                    <Badge
-                      key={option}
-                      variant={dietaryPreferences.includes(option) ? 'default' : 'outline'}
-                      className="cursor-pointer"
-                      onClick={() => toggleDietary(option)}
-                    >
-                      {option}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {/* Generate Button */}
-              <Button
-                className="w-full"
-                size="lg"
-                onClick={handleGenerate}
-                disabled={isGenerating || !selectedCity}
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="w-4 h-4 mr-2 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Itinerary
-                  </>
+                {profile?.travel_preferences && (
+                  <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                    <Cloud className="w-3 h-3" />
+                    Includes real-time weather data
+                  </p>
                 )}
-              </Button>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Generated Itinerary */}
+            <Card className={generatedItinerary ? '' : 'hidden lg:block'}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Your Itinerary
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {generatedItinerary ? (
+                  <ScrollArea className="h-[500px] pr-4" ref={scrollRef}>
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                        {generatedItinerary}
+                      </div>
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="h-[500px] flex items-center justify-center text-center">
+                    <div className="text-muted-foreground">
+                      <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                      <p>Your personalized itinerary will appear here</p>
+                      <p className="text-sm mt-1">Select a city and click generate</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
