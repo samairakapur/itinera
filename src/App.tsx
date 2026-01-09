@@ -13,7 +13,7 @@ import Destinations from "@/pages/Destinations";
 import CityDetail from "@/pages/CityDetail";
 import Planner from "@/pages/Planner";
 import Saved from "@/pages/Saved";
-import Advisor from "@/pages/Advisor";
+import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,7 +34,7 @@ const App = () => (
               <Route path="/city/:cityId" element={<RequireProfile><CityDetail /></RequireProfile>} />
               <Route path="/planner" element={<RequireProfile><Planner /></RequireProfile>} />
               <Route path="/saved" element={<RequireProfile><Saved /></RequireProfile>} />
-              <Route path="/advisor" element={<RequireProfile><Advisor /></RequireProfile>} />
+              <Route path="/profile" element={<RequireProfile><Profile /></RequireProfile>} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
