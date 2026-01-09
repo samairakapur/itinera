@@ -9,7 +9,7 @@ import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner';
 import { TripPreferencesForm, TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
-import { ItineraryTimeline, DayData } from '@/components/trip/ItineraryTimeline';
+import { ItineraryTextBox, DayData } from '@/components/trip/ItineraryTextBox';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 
@@ -556,12 +556,8 @@ const NewTrip = () => {
                 </Button>
               )}
 
-              {/* Itinerary Timeline */}
-              <ItineraryTimeline
-                days={parsedItinerary.days}
-                onActivityRemove={handleActivityRemove}
-                onActivityToggleMustDo={handleActivityToggleMustDo}
-              />
+              {/* Itinerary Text Box */}
+              <ItineraryTextBox days={parsedItinerary.days} />
 
               {/* Travel Tips */}
               <TravelTips
