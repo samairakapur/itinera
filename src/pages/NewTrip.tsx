@@ -10,15 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Calendar, MapPin, Users, DollarSign, Zap, Utensils, Sparkles, Cloud } from 'lucide-react';
+import { Calendar, MapPin, Users, DollarSign, Zap, Utensils, Sparkles, Cloud, ArrowLeft, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
-const Planner = () => {
+const NewTrip = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { data: cities, isLoading: citiesLoading } = useCities();
+  const { data: cities } = useCities();
   const { data: profile } = useProfile();
   
   const [selectedCity, setSelectedCity] = useState('');
@@ -37,12 +37,10 @@ const Planner = () => {
     if (profile?.travel_preferences) {
       const prefs = profile.travel_preferences;
       
-      // Set dietary restrictions from profile
       if (prefs.dietaryRestrictions?.length) {
         setDietaryPreferences(prefs.dietaryRestrictions);
       }
       
-      // Set pace from profile
       if (prefs.pacePreference) {
         const paceMap: Record<string, string> = {
           'Fast-paced': 'full',
@@ -52,7 +50,6 @@ const Planner = () => {
         setPace(paceMap[prefs.pacePreference] || 'medium');
       }
       
-      // Set budget from profile
       if (prefs.dailyBudget) {
         const budgetMap: Record<string, string> = {
           'Budget': 'budget',
@@ -64,7 +61,6 @@ const Planner = () => {
     }
   }, [profile]);
 
-  // Auto-scroll as itinerary generates
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -168,7 +164,6 @@ const Planner = () => {
               setGeneratedItinerary(prev => prev + content);
             }
           } catch {
-            // Incomplete JSON, wait for more data
             buffer = line + '\n' + buffer;
             break;
           }
@@ -195,7 +190,7 @@ const Planner = () => {
               </div>
               <CardTitle>Sign in to Plan Your Trip</CardTitle>
               <CardDescription>
-                Create personalized itineraries and save them for your family adventures
+                Create personalized itineraries for your family adventures
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -214,7 +209,15 @@ const Planner = () => {
       <div className="container px-4">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="text-center mb-8">
+          <div className="mb-8">
+            <Button 
+              variant="ghost" 
+              onClick={() => navigate('/trips')}
+              className="mb-4 -ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Trips
+            </Button>
             <h1 className="font-display text-3xl font-bold text-foreground mb-2">
               Plan Your Family Trip
             </h1>
@@ -222,7 +225,7 @@ const Planner = () => {
               Our AI creates personalized itineraries based on your preferences and real-time weather
             </p>
             {profile?.travel_preferences && (
-              <p className="text-sm text-primary mt-2 flex items-center justify-center gap-1">
+              <p className="text-sm text-primary mt-2 flex items-center gap-1">
                 <Sparkles className="w-4 h-4" />
                 Using your saved travel preferences
               </p>
@@ -414,4 +417,4 @@ const Planner = () => {
   );
 };
 
-export default Planner;
+export default NewTrip;
