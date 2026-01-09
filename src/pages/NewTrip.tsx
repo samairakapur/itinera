@@ -1,26 +1,209 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
 import { useProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Calendar, MapPin, Users, DollarSign, Zap, Utensils, Sparkles, Cloud, ArrowLeft, Save } from 'lucide-react';
+import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { TripPreferencesForm } from '@/components/trip/TripPreferencesForm';
+import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
+import { DayCard, DayData } from '@/components/trip/DayCard';
+import { TravelTips } from '@/components/trip/TravelTips';
+import { Activity } from '@/components/trip/ActivityCard';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
+
+interface ParsedItinerary {
+  summary: string;
+  days: DayData[];
+  packingTips: string[];
+  transportTips: string[];
+  weatherNotes: string;
+}
+
+const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
+  const result: ParsedItinerary = {
+    summary: '',
+    days: [],
+    packingTips: [],
+    transportTips: [],
+    weatherNotes: '',
+  };
+
+  // Extract summary (first paragraph or intro)
+  const summaryMatch = text.match(/^([^#\n*-]+(?:\n[^#\n*-]+)*)/);
+  if (summaryMatch) {
+    result.summary = summaryMatch[1].trim().substring(0, 200);
+  }
+
+  // Parse days
+  const dayRegex = /(?:^|\n)(?:##?\s*)?(?:Day\s*(\d+)|(\d+)\s*[-–—]\s*)/gi;
+  const dayMatches = [...text.matchAll(dayRegex)];
+
+  for (let i = 0; i < numDays; i++) {
+    const dayNumber = i + 1;
+    const dayData: DayData = {
+      dayNumber,
+      title: `Day ${dayNumber}`,
+      morning: [],
+      afternoon: [],
+      evening: [],
+    };
+
+    // Find day section
+    const dayMatch = dayMatches.find(m => {
+      const num = parseInt(m[1] || m[2]);
+      return num === dayNumber;
+    });
+
+    if (dayMatch) {
+      // Extract title from the day header
+      const titleMatch = text.slice(dayMatch.index || 0, (dayMatch.index || 0) + 100)
+        .match(/Day\s*\d+\s*[-–—:]\s*([^\n]+)/i);
+      if (titleMatch) {
+        dayData.title = titleMatch[1].trim();
+      }
+
+      // Get the content for this day
+      const startIdx = dayMatch.index || 0;
+      const nextDayMatch = dayMatches.find(m => {
+        const num = parseInt(m[1] || m[2]);
+        return num === dayNumber + 1;
+      });
+      const endIdx = nextDayMatch?.index || text.length;
+      const dayContent = text.slice(startIdx, endIdx);
+
+      // Parse activities by time of day
+      const parseActivities = (content: string, timeLabel: string): Activity[] => {
+        const activities: Activity[] = [];
+        const timeRegex = new RegExp(`(?:${timeLabel})[:\\s]*([\\s\\S]*?)(?=(?:Morning|Afternoon|Evening|Night|Day\\s*\\d|$))`, 'i');
+        const timeMatch = content.match(timeRegex);
+        
+        if (timeMatch) {
+          const timeContent = timeMatch[1];
+          // Extract bullet points or numbered items
+          const itemRegex = /(?:^|\n)\s*(?:[-•*]|\d+[.)]\s*)\s*\*?\*?([^*\n]+)\*?\*?(?:\s*[-–—:]\s*([^\n]+))?/g;
+          const items = [...timeContent.matchAll(itemRegex)];
+          
+          items.forEach((item, idx) => {
+            const title = item[1].trim().replace(/\*+/g, '');
+            const description = item[2]?.trim().replace(/\*+/g, '');
+            
+            if (title && title.length > 2) {
+              const type = title.toLowerCase().includes('restaurant') || 
+                          title.toLowerCase().includes('lunch') || 
+                          title.toLowerCase().includes('dinner') ||
+                          title.toLowerCase().includes('breakfast') ||
+                          title.toLowerCase().includes('café') ||
+                          title.toLowerCase().includes('cafe') ||
+                          title.toLowerCase().includes('eat')
+                ? 'restaurant' 
+                : 'attraction';
+              
+              activities.push({
+                id: `day${dayNumber}-${timeLabel}-${idx}`,
+                type,
+                title,
+                description,
+              });
+            }
+          });
+        }
+        
+        // Fallback: parse any bolded items
+        if (activities.length === 0) {
+          const boldRegex = /\*\*([^*]+)\*\*/g;
+          const boldMatches = [...content.matchAll(boldRegex)];
+          boldMatches.forEach((match, idx) => {
+            const title = match[1].trim();
+            if (title.length > 2 && !title.toLowerCase().startsWith('day') && !title.toLowerCase().includes('morning') && !title.toLowerCase().includes('afternoon') && !title.toLowerCase().includes('evening')) {
+              activities.push({
+                id: `day${dayNumber}-bold-${idx}`,
+                type: 'attraction',
+                title,
+              });
+            }
+          });
+        }
+        
+        return activities;
+      };
+
+      dayData.morning = parseActivities(dayContent, 'Morning');
+      dayData.afternoon = parseActivities(dayContent, 'Afternoon');
+      dayData.evening = parseActivities(dayContent, 'Evening');
+
+      // If no time-based activities found, try to distribute all activities
+      if (dayData.morning.length === 0 && dayData.afternoon.length === 0 && dayData.evening.length === 0) {
+        const allActivities: Activity[] = [];
+        const bulletRegex = /(?:^|\n)\s*(?:[-•*]|\d+[.)]\s*)\s*\*?\*?([^*\n]+)\*?\*?(?:[:\s]*([^\n]+))?/g;
+        const bullets = [...dayContent.matchAll(bulletRegex)];
+        
+        bullets.forEach((item, idx) => {
+          const title = item[1].trim().replace(/\*+/g, '');
+          const description = item[2]?.trim().replace(/\*+/g, '');
+          
+          if (title && title.length > 3 && !title.toLowerCase().startsWith('day')) {
+            const type = title.toLowerCase().includes('restaurant') || 
+                        title.toLowerCase().includes('lunch') || 
+                        title.toLowerCase().includes('dinner') ||
+                        title.toLowerCase().includes('breakfast')
+              ? 'restaurant' 
+              : 'attraction';
+            
+            allActivities.push({
+              id: `day${dayNumber}-item-${idx}`,
+              type,
+              title,
+              description,
+            });
+          }
+        });
+
+        // Distribute among time slots
+        const third = Math.ceil(allActivities.length / 3);
+        dayData.morning = allActivities.slice(0, third);
+        dayData.afternoon = allActivities.slice(third, third * 2);
+        dayData.evening = allActivities.slice(third * 2);
+      }
+    }
+
+    result.days.push(dayData);
+  }
+
+  // Parse tips sections
+  const packingMatch = text.match(/(?:Packing|What to Pack)[^:]*:([\s\S]*?)(?=(?:Transport|Getting Around|Weather|$))/i);
+  if (packingMatch) {
+    const tips = packingMatch[1].match(/[-•*]\s*([^\n]+)/g);
+    if (tips) {
+      result.packingTips = tips.map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(t => t.length > 2);
+    }
+  }
+
+  const transportMatch = text.match(/(?:Transport|Getting Around)[^:]*:([\s\S]*?)(?=(?:Packing|Weather|Tips|$))/i);
+  if (transportMatch) {
+    const tips = transportMatch[1].match(/[-•*]\s*([^\n]+)/g);
+    if (tips) {
+      result.transportTips = tips.map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(t => t.length > 2);
+    }
+  }
+
+  const weatherMatch = text.match(/(?:Weather)[^:]*:\s*([^\n]+)/i);
+  if (weatherMatch) {
+    result.weatherNotes = weatherMatch[1].trim();
+  }
+
+  return result;
+};
 
 const NewTrip = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: cities } = useCities();
   const { data: profile } = useProfile();
-  
+
   const [selectedCity, setSelectedCity] = useState('');
   const [numDays, setNumDays] = useState(3);
   const [travelStyle, setTravelStyle] = useState('family');
@@ -28,19 +211,21 @@ const NewTrip = () => {
   const [pace, setPace] = useState('medium');
   const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedItinerary, setGeneratedItinerary] = useState('');
-  
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [rawItinerary, setRawItinerary] = useState('');
+  const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
+  const [preferencesCollapsed, setPreferencesCollapsed] = useState(false);
+
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Pre-fill from user preferences
   useEffect(() => {
     if (profile?.travel_preferences) {
       const prefs = profile.travel_preferences;
-      
+
       if (prefs.dietaryRestrictions?.length) {
         setDietaryPreferences(prefs.dietaryRestrictions);
       }
-      
+
       if (prefs.pacePreference) {
         const paceMap: Record<string, string> = {
           'Fast-paced': 'full',
@@ -49,7 +234,7 @@ const NewTrip = () => {
         };
         setPace(paceMap[prefs.pacePreference] || 'medium');
       }
-      
+
       if (prefs.dailyBudget) {
         const budgetMap: Record<string, string> = {
           'Budget': 'budget',
@@ -61,21 +246,13 @@ const NewTrip = () => {
     }
   }, [profile]);
 
+  // Parse itinerary when raw text changes
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (rawItinerary && rawItinerary.length > 100) {
+      const parsed = parseItineraryText(rawItinerary, numDays);
+      setParsedItinerary(parsed);
     }
-  }, [generatedItinerary]);
-
-  const dietaryOptions = [
-    'Vegetarian',
-    'Vegan',
-    'Halal',
-    'Kosher',
-    'Gluten-Free',
-    'Dairy-Free',
-    'Nut-Free',
-  ];
+  }, [rawItinerary, numDays]);
 
   const toggleDietary = (option: string) => {
     setDietaryPreferences(prev =>
@@ -104,7 +281,9 @@ const NewTrip = () => {
     }
 
     setIsGenerating(true);
-    setGeneratedItinerary('');
+    setRawItinerary('');
+    setParsedItinerary(null);
+    setPreferencesCollapsed(true);
 
     try {
       const response = await fetch(ITINERARY_URL, {
@@ -161,7 +340,7 @@ const NewTrip = () => {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
-              setGeneratedItinerary(prev => prev + content);
+              setRawItinerary(prev => prev + content);
             }
           } catch {
             buffer = line + '\n' + buffer;
@@ -179,11 +358,56 @@ const NewTrip = () => {
     }
   };
 
+  const handleActivityRemove = useCallback((dayNumber: number, activityId: string) => {
+    if (!parsedItinerary) return;
+    
+    setParsedItinerary(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        days: prev.days.map(day => {
+          if (day.dayNumber !== dayNumber) return day;
+          return {
+            ...day,
+            morning: day.morning.filter(a => a.id !== activityId),
+            afternoon: day.afternoon.filter(a => a.id !== activityId),
+            evening: day.evening.filter(a => a.id !== activityId),
+          };
+        }),
+      };
+    });
+    toast.success('Activity removed');
+  }, [parsedItinerary]);
+
+  const handleActivityToggleMustDo = useCallback((dayNumber: number, activityId: string) => {
+    if (!parsedItinerary) return;
+    
+    setParsedItinerary(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        days: prev.days.map(day => {
+          if (day.dayNumber !== dayNumber) return day;
+          const toggleMustDo = (activities: Activity[]) =>
+            activities.map(a => a.id === activityId ? { ...a, mustDo: !a.mustDo } : a);
+          return {
+            ...day,
+            morning: toggleMustDo(day.morning),
+            afternoon: toggleMustDo(day.afternoon),
+            evening: toggleMustDo(day.evening),
+          };
+        }),
+      };
+    });
+  }, [parsedItinerary]);
+
+  const selectedCityData = cities?.find(c => c.id === selectedCity);
+
   if (!user) {
     return (
       <div className="min-h-screen py-8">
         <div className="container px-4">
-          <Card className="max-w-lg mx-auto">
+          <Card className="max-w-lg mx-auto border-0 shadow-card">
             <CardHeader className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
                 <Calendar className="w-8 h-8 text-primary" />
@@ -194,7 +418,7 @@ const NewTrip = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" onClick={() => navigate('/auth')}>
+              <Button className="w-full" size="lg" onClick={() => navigate('/auth')}>
                 Sign In to Continue
               </Button>
             </CardContent>
@@ -205,212 +429,169 @@ const NewTrip = () => {
   }
 
   return (
-    <div className="min-h-screen py-8">
-      <div className="container px-4">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <Button 
-              variant="ghost" 
-              onClick={() => navigate('/trips')}
-              className="mb-4 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Trips
-            </Button>
-            <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-              Plan Your Family Trip
-            </h1>
-            <p className="text-muted-foreground">
-              Our AI creates personalized itineraries based on your preferences and real-time weather
+    <div className="min-h-screen pb-12" ref={contentRef}>
+      <div className="container px-4 max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="py-6 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/trips')}
+            className="-ml-2 mb-2"
+            size="sm"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Trips
+          </Button>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
+            Plan Your Family Trip
+          </h1>
+          {profile?.travel_preferences && (
+            <p className="text-sm text-primary mt-1 flex items-center gap-1">
+              <Sparkles className="w-4 h-4" />
+              Using your saved preferences & real-time weather
             </p>
-            {profile?.travel_preferences && (
-              <p className="text-sm text-primary mt-2 flex items-center gap-1">
-                <Sparkles className="w-4 h-4" />
-                Using your saved travel preferences
-              </p>
-            )}
-          </div>
+          )}
+        </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Form */}
-            <Card>
-              <CardContent className="p-6 space-y-6">
-                {/* City Selection */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Destination
-                  </Label>
-                  <Select value={selectedCity} onValueChange={setSelectedCity}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a city" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cities?.map((city) => (
-                        <SelectItem key={city.id} value={city.id}>
-                          {city.name}, {city.country}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+        <div className="space-y-6">
+          {/* Preferences Form */}
+          <TripPreferencesForm
+            cities={cities || []}
+            selectedCity={selectedCity}
+            onCityChange={setSelectedCity}
+            numDays={numDays}
+            onNumDaysChange={setNumDays}
+            travelStyle={travelStyle}
+            onTravelStyleChange={setTravelStyle}
+            budgetLevel={budgetLevel}
+            onBudgetLevelChange={setBudgetLevel}
+            pace={pace}
+            onPaceChange={setPace}
+            dietaryPreferences={dietaryPreferences}
+            onDietaryToggle={toggleDietary}
+            isCollapsed={preferencesCollapsed}
+            onToggleCollapsed={() => setPreferencesCollapsed(!preferencesCollapsed)}
+            hasItinerary={!!parsedItinerary}
+          />
+
+          {/* Generate Button */}
+          {(!parsedItinerary || !preferencesCollapsed) && (
+            <Button
+              className="w-full h-14 text-base font-semibold shadow-lg"
+              size="lg"
+              onClick={handleGenerate}
+              disabled={isGenerating || !selectedCity}
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Creating your perfect itinerary...
+                </>
+              ) : parsedItinerary ? (
+                <>
+                  <RefreshCw className="w-5 h-5 mr-2" />
+                  Regenerate Itinerary
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate Itinerary
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Loading State */}
+          {isGenerating && !parsedItinerary && (
+            <Card className="border-0 shadow-card">
+              <CardContent className="py-12 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+                  <Sparkles className="w-8 h-8 text-primary" />
                 </div>
+                <p className="text-muted-foreground">
+                  Crafting your personalized adventure...
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  This usually takes 10-20 seconds
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
-                {/* Number of Days */}
-                <div className="space-y-4">
-                  <Label className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Trip Duration: {numDays} {numDays === 1 ? 'day' : 'days'}
-                  </Label>
-                  <Slider
-                    value={[numDays]}
-                    onValueChange={([value]) => setNumDays(value)}
-                    min={1}
-                    max={14}
-                    step={1}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>1 day</span>
-                    <span>14 days</span>
-                  </div>
-                </div>
+          {/* Generated Itinerary */}
+          {parsedItinerary && selectedCityData && (
+            <>
+              {/* Overview Card */}
+              <TripOverviewCard
+                cityName={selectedCityData.name}
+                countryName={selectedCityData.country}
+                numDays={numDays}
+                travelStyle={travelStyle}
+                pace={pace}
+                budgetLevel={budgetLevel}
+                summary={parsedItinerary.summary}
+              />
 
-                {/* Travel Style */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Travel Style
-                  </Label>
-                  <Select value={travelStyle} onValueChange={setTravelStyle}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="family">Family with Kids</SelectItem>
-                      <SelectItem value="adventure">Adventure Seekers</SelectItem>
-                      <SelectItem value="culture">Culture & History</SelectItem>
-                      <SelectItem value="food">Food & Culinary</SelectItem>
-                      <SelectItem value="relaxed">Relaxed & Easy-going</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Budget Level */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" />
-                    Budget Level
-                  </Label>
-                  <Select value={budgetLevel} onValueChange={setBudgetLevel}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="budget">Budget-Friendly ($)</SelectItem>
-                      <SelectItem value="moderate">Moderate ($$)</SelectItem>
-                      <SelectItem value="upscale">Upscale ($$$)</SelectItem>
-                      <SelectItem value="luxury">Luxury ($$$$)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Pace */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Zap className="w-4 h-4" />
-                    Daily Pace
-                  </Label>
-                  <Select value={pace} onValueChange={setPace}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="light">Light (2-3 activities/day)</SelectItem>
-                      <SelectItem value="medium">Medium (4-5 activities/day)</SelectItem>
-                      <SelectItem value="full">Full (6+ activities/day)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Dietary Preferences */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2">
-                    <Utensils className="w-4 h-4" />
-                    Dietary Preferences (optional)
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {dietaryOptions.map((option) => (
-                      <Badge
-                        key={option}
-                        variant={dietaryPreferences.includes(option) ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => toggleDietary(option)}
-                      >
-                        {option}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Generate Button */}
+              {/* Regenerate Button (when collapsed) */}
+              {preferencesCollapsed && (
                 <Button
+                  variant="outline"
                   className="w-full"
-                  size="lg"
                   onClick={handleGenerate}
-                  disabled={isGenerating || !selectedCity}
+                  disabled={isGenerating}
                 >
                   {isGenerating ? (
                     <>
-                      <div className="w-4 h-4 mr-2 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                      Generating...
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Regenerating...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Generate Itinerary
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Regenerate Itinerary
                     </>
                   )}
                 </Button>
+              )}
 
-                {profile?.travel_preferences && (
-                  <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                    <Cloud className="w-3 h-3" />
-                    Includes real-time weather data
-                  </p>
-                )}
+              {/* Day Cards */}
+              <div className="space-y-4">
+                {parsedItinerary.days.map((day, index) => (
+                  <DayCard
+                    key={day.dayNumber}
+                    day={day}
+                    defaultOpen={index === 0}
+                    onActivityRemove={handleActivityRemove}
+                    onActivityToggleMustDo={handleActivityToggleMustDo}
+                  />
+                ))}
+              </div>
+
+              {/* Travel Tips */}
+              <TravelTips
+                packingTips={parsedItinerary.packingTips}
+                transportTips={parsedItinerary.transportTips}
+                weatherNotes={parsedItinerary.weatherNotes}
+              />
+            </>
+          )}
+
+          {/* Empty State */}
+          {!parsedItinerary && !isGenerating && (
+            <Card className="border-0 shadow-sm bg-muted/30">
+              <CardContent className="py-16 text-center">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+                  <Calendar className="w-10 h-10 text-muted-foreground/50" />
+                </div>
+                <h3 className="font-display text-lg font-semibold text-foreground mb-2">
+                  Ready to plan your trip?
+                </h3>
+                <p className="text-muted-foreground max-w-sm mx-auto">
+                  Select your destination, set your preferences, and let our AI create the perfect itinerary for you.
+                </p>
               </CardContent>
             </Card>
-
-            {/* Generated Itinerary */}
-            <Card className={generatedItinerary ? '' : 'hidden lg:block'}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
-                  Your Itinerary
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {generatedItinerary ? (
-                  <ScrollArea className="h-[500px] pr-4" ref={scrollRef}>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {generatedItinerary}
-                      </div>
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <div className="h-[500px] flex items-center justify-center text-center">
-                    <div className="text-muted-foreground">
-                      <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                      <p>Your personalized itinerary will appear here</p>
-                      <p className="text-sm mt-1">Select a city and click generate</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          )}
         </div>
       </div>
     </div>
