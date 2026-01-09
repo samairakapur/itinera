@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { TripPreferencesForm } from '@/components/trip/TripPreferencesForm';
+import { TripPreferencesForm, TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
@@ -198,18 +198,68 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
   return result;
 };
 
+// Helper to convert trip length string to number
+const tripLengthToNumDays = (tripLength: string): number => {
+  switch (tripLength) {
+    case '1': return 1;
+    case '2-3': return 3;
+    case '4-5': return 5;
+    case '6-7': return 7;
+    case '8-10': return 10;
+    case '11+': return 14;
+    default: return 3;
+  }
+};
+
+// Helper to map preferences for API
+const mapTravelGroup = (group: string): string => {
+  const map: Record<string, string> = {
+    'solo': 'solo traveler',
+    'couple': 'couple',
+    'family-young': 'family with young children',
+    'family-teens': 'family with teenagers',
+    'friends': 'group of friends',
+    'multi-gen': 'multi-generational family',
+  };
+  return map[group] || 'family';
+};
+
+const mapDailyPace = (pace: string): string => {
+  const map: Record<string, string> = {
+    'relaxed': 'light',
+    'balanced': 'medium',
+    'fast': 'full',
+  };
+  return map[pace] || 'medium';
+};
+
+const mapBudgetStyle = (budget: string): string => {
+  const map: Record<string, string> = {
+    'budget': 'budget',
+    'mid-range': 'moderate',
+    'luxury': 'upscale',
+  };
+  return map[budget] || 'moderate';
+};
+
 const NewTrip = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: cities } = useCities();
   const { data: profile } = useProfile();
 
-  const [selectedCity, setSelectedCity] = useState('');
-  const [numDays, setNumDays] = useState(3);
-  const [travelStyle, setTravelStyle] = useState('family');
-  const [budgetLevel, setBudgetLevel] = useState('moderate');
-  const [pace, setPace] = useState('medium');
-  const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
+  const [preferences, setPreferences] = useState<TripPreferences>({
+    destination: '',
+    tripLength: '',
+    travelGroup: '',
+    dailyPace: '',
+    mainInterests: [],
+    budgetStyle: '',
+    dietaryPreferences: [],
+    comfortPreferences: [],
+    tripVibe: '',
+    specialOccasion: 'none',
+  });
   const [isGenerating, setIsGenerating] = useState(false);
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
@@ -217,34 +267,24 @@ const NewTrip = () => {
 
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Pre-fill from user preferences
+  // Pre-fill from user profile preferences
   useEffect(() => {
     if (profile?.travel_preferences) {
       const prefs = profile.travel_preferences;
-
-      if (prefs.dietaryRestrictions?.length) {
-        setDietaryPreferences(prefs.dietaryRestrictions);
-      }
-
-      if (prefs.pacePreference) {
-        const paceMap: Record<string, string> = {
-          'Fast-paced': 'full',
-          'Balanced': 'medium',
-          'Relaxed': 'light',
-        };
-        setPace(paceMap[prefs.pacePreference] || 'medium');
-      }
-
-      if (prefs.dailyBudget) {
-        const budgetMap: Record<string, string> = {
-          'Budget': 'budget',
-          'Mid-range': 'moderate',
-          'Premium': 'upscale',
-        };
-        setBudgetLevel(budgetMap[prefs.dailyBudget] || 'moderate');
-      }
+      setPreferences(prev => ({
+        ...prev,
+        dietaryPreferences: prefs.dietaryRestrictions || [],
+        dailyPace: prefs.pacePreference === 'Fast-paced' ? 'fast' :
+                   prefs.pacePreference === 'Relaxed' ? 'relaxed' : 
+                   prefs.pacePreference === 'Balanced' ? 'balanced' : prev.dailyPace,
+        budgetStyle: prefs.dailyBudget === 'Budget' ? 'budget' :
+                     prefs.dailyBudget === 'Mid-range' ? 'mid-range' :
+                     prefs.dailyBudget === 'Premium' ? 'luxury' : prev.budgetStyle,
+      }));
     }
   }, [profile]);
+
+  const numDays = tripLengthToNumDays(preferences.tripLength);
 
   // Parse itinerary when raw text changes
   useEffect(() => {
@@ -254,14 +294,6 @@ const NewTrip = () => {
     }
   }, [rawItinerary, numDays]);
 
-  const toggleDietary = (option: string) => {
-    setDietaryPreferences(prev =>
-      prev.includes(option)
-        ? prev.filter(d => d !== option)
-        : [...prev, option]
-    );
-  };
-
   const handleGenerate = async () => {
     if (!user) {
       toast.error('Please sign in to create an itinerary');
@@ -269,12 +301,12 @@ const NewTrip = () => {
       return;
     }
 
-    if (!selectedCity) {
-      toast.error('Please select a city');
+    if (!preferences.destination) {
+      toast.error('Please select a destination');
       return;
     }
 
-    const city = cities?.find(c => c.id === selectedCity);
+    const city = cities?.find(c => c.id === preferences.destination);
     if (!city) {
       toast.error('City not found');
       return;
@@ -296,11 +328,17 @@ const NewTrip = () => {
           cityName: city.name,
           countryName: city.country,
           numDays,
-          travelStyle,
-          budgetLevel,
-          pace,
-          dietaryPreferences,
-          userPreferences: profile?.travel_preferences || null,
+          travelStyle: mapTravelGroup(preferences.travelGroup),
+          budgetLevel: mapBudgetStyle(preferences.budgetStyle),
+          pace: mapDailyPace(preferences.dailyPace),
+          dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
+          userPreferences: {
+            ...profile?.travel_preferences,
+            mainInterests: preferences.mainInterests,
+            comfortPreferences: preferences.comfortPreferences,
+            tripVibe: preferences.tripVibe,
+            specialOccasion: preferences.specialOccasion,
+          },
           cityDescription: city.description,
         }),
       });
@@ -401,7 +439,7 @@ const NewTrip = () => {
     });
   }, [parsedItinerary]);
 
-  const selectedCityData = cities?.find(c => c.id === selectedCity);
+  const selectedCityData = cities?.find(c => c.id === preferences.destination);
 
   if (!user) {
     return (
@@ -457,49 +495,13 @@ const NewTrip = () => {
           {/* Preferences Form */}
           <TripPreferencesForm
             cities={cities || []}
-            selectedCity={selectedCity}
-            onCityChange={setSelectedCity}
-            numDays={numDays}
-            onNumDaysChange={setNumDays}
-            travelStyle={travelStyle}
-            onTravelStyleChange={setTravelStyle}
-            budgetLevel={budgetLevel}
-            onBudgetLevelChange={setBudgetLevel}
-            pace={pace}
-            onPaceChange={setPace}
-            dietaryPreferences={dietaryPreferences}
-            onDietaryToggle={toggleDietary}
+            preferences={preferences}
+            onPreferencesChange={setPreferences}
+            onSubmit={handleGenerate}
             isCollapsed={preferencesCollapsed}
             onToggleCollapsed={() => setPreferencesCollapsed(!preferencesCollapsed)}
             hasItinerary={!!parsedItinerary}
           />
-
-          {/* Generate Button */}
-          {(!parsedItinerary || !preferencesCollapsed) && (
-            <Button
-              className="w-full h-14 text-base font-semibold shadow-lg"
-              size="lg"
-              onClick={handleGenerate}
-              disabled={isGenerating || !selectedCity}
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Creating your perfect itinerary...
-                </>
-              ) : parsedItinerary ? (
-                <>
-                  <RefreshCw className="w-5 h-5 mr-2" />
-                  Regenerate Itinerary
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-5 h-5 mr-2" />
-                  Generate Itinerary
-                </>
-              )}
-            </Button>
-          )}
 
           {/* Loading State */}
           {isGenerating && !parsedItinerary && (
@@ -526,9 +528,9 @@ const NewTrip = () => {
                 cityName={selectedCityData.name}
                 countryName={selectedCityData.country}
                 numDays={numDays}
-                travelStyle={travelStyle}
-                pace={pace}
-                budgetLevel={budgetLevel}
+                travelStyle={mapTravelGroup(preferences.travelGroup)}
+                pace={mapDailyPace(preferences.dailyPace)}
+                budgetLevel={mapBudgetStyle(preferences.budgetStyle)}
                 summary={parsedItinerary.summary}
               />
 
@@ -587,7 +589,7 @@ const NewTrip = () => {
                   Ready to plan your trip?
                 </h3>
                 <p className="text-muted-foreground max-w-sm mx-auto">
-                  Select your destination, set your preferences, and let our AI create the perfect itinerary for you.
+                  Fill in your trip details above and let our AI create the perfect itinerary for you.
                 </p>
               </CardContent>
             </Card>
