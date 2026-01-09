@@ -102,17 +102,22 @@ export const DayCard = ({
     ? (id: string) => onActivityMove(day.dayNumber, id, 'down')
     : undefined;
 
+  // Get preview of activities for collapsed state
+  const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
+  const previewActivities = allActivities.slice(0, 3);
+  const remainingCount = allActivities.length - 3;
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="border shadow-sm overflow-hidden">
+      <Card className="border shadow-sm overflow-hidden bg-card">
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-primary flex items-center justify-center text-primary-foreground font-bold text-lg">
+                <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0">
                   {day.dayNumber}
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <h3 className="font-display text-lg font-bold text-foreground">
                     Day {day.dayNumber} – {day.title}
                   </h3>
@@ -120,9 +125,28 @@ export const DayCard = ({
                     {totalActivities} {totalActivities === 1 ? 'activity' : 'activities'}
                     {day.date && ` • ${day.date}`}
                   </p>
+                  {/* Activity preview when collapsed */}
+                  {!isOpen && previewActivities.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {previewActivities.map((activity) => (
+                        <span
+                          key={activity.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-xs text-muted-foreground"
+                        >
+                          {activity.type === 'restaurant' ? '🍽️' : '🏛️'}
+                          <span className="truncate max-w-[120px]">{activity.title}</span>
+                        </span>
+                      ))}
+                      {remainingCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-xs text-muted-foreground">
+                          +{remainingCount} more
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0">
                 {day.weather && (
                   <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted text-sm">
                     <span>{day.weather.temp}°C</span>
