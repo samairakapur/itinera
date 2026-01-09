@@ -556,19 +556,6 @@ const NewTrip = () => {
                 </Button>
               )}
 
-              {/* Day Cards */}
-              <div className="space-y-4">
-                {parsedItinerary.days.map((day, index) => (
-                  <DayCard
-                    key={day.dayNumber}
-                    day={day}
-                    defaultOpen={index === 0}
-                    onActivityRemove={handleActivityRemove}
-                    onActivityToggleMustDo={handleActivityToggleMustDo}
-                  />
-                ))}
-              </div>
-
               {/* Travel Tips */}
               <TravelTips
                 packingTips={parsedItinerary.packingTips}
