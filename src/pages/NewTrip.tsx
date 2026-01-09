@@ -9,7 +9,7 @@ import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner';
 import { TripPreferencesForm, TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
-import { ItineraryTextBox, DayData } from '@/components/trip/ItineraryTextBox';
+import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 
@@ -556,8 +556,18 @@ const NewTrip = () => {
                 </Button>
               )}
 
-              {/* Itinerary Text Box */}
-              <ItineraryTextBox days={parsedItinerary.days} />
+              {/* Day Cards */}
+              <div className="space-y-4">
+                {parsedItinerary.days.map((day, index) => (
+                  <DayCard
+                    key={day.dayNumber}
+                    day={day}
+                    defaultOpen={index === 0}
+                    onActivityRemove={handleActivityRemove}
+                    onActivityToggleMustDo={handleActivityToggleMustDo}
+                  />
+                ))}
+              </div>
 
               {/* Travel Tips */}
               <TravelTips
