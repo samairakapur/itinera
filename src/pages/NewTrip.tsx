@@ -319,11 +319,22 @@ const NewTrip = () => {
     setPreferencesCollapsed(true);
 
     try {
+      // Get the user's session token for authentication
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+
+      if (!accessToken) {
+        toast.error('Session expired. Please sign in again.');
+        navigate('/auth');
+        return;
+      }
+
       const response = await fetch(ITINERARY_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           cityName: city.name,
