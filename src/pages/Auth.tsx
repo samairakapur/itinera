@@ -4,14 +4,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Plane, MapPin, Users } from 'lucide-react';
 import { z } from 'zod';
+import { PasswordStrengthIndicator, isPasswordStrong, isCommonPassword } from '@/components/auth/PasswordStrengthIndicator';
 
 const emailSchema = z.string().email('Please enter a valid email address');
-const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Password must contain at least one special character');
 const nameSchema = z.string().min(2, 'Name must be at least 2 characters');
 
 const Auth = () => {
@@ -80,6 +86,20 @@ const Auth = () => {
         setIsSubmitting(false);
         return;
       }
+    }
+
+    // Check for common passwords
+    if (isCommonPassword(signupPassword)) {
+      toast.error('This password is too common. Please choose a stronger password.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Validate password strength
+    if (!isPasswordStrong(signupPassword)) {
+      toast.error('Please ensure your password meets all the requirements.');
+      setIsSubmitting(false);
+      return;
     }
 
     if (signupPassword !== signupConfirmPassword) {
@@ -218,6 +238,7 @@ const Auth = () => {
                         onChange={(e) => setSignupPassword(e.target.value)}
                         required
                       />
+                      <PasswordStrengthIndicator password={signupPassword} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="signup-confirm">Confirm Password</Label>
