@@ -12,6 +12,7 @@ import ProfileSetup from "@/pages/ProfileSetup";
 import Destinations from "@/pages/Destinations";
 import CityDetail from "@/pages/CityDetail";
 import Trips from "@/pages/Trips";
+import TripDetail from "@/pages/TripDetail";
 import NewTrip from "@/pages/NewTrip";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/NotFound";
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/destinations" element={<RequireProfile><Destinations /></RequireProfile>} />
               <Route path="/city/:cityId" element={<RequireProfile><CityDetail /></RequireProfile>} />
               <Route path="/trips" element={<RequireProfile><Trips /></RequireProfile>} />
+              <Route path="/trips/:tripId" element={<RequireProfile><TripDetail /></RequireProfile>} />
               <Route path="/planner/new" element={<RequireProfile><NewTrip /></RequireProfile>} />
               <Route path="/profile" element={<RequireProfile><Profile /></RequireProfile>} />
             </Route>

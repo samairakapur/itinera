@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
 import { useProfile } from '@/hooks/useProfile';
+import { useCreateItinerary } from '@/hooks/useItineraries';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
+import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { GuidedTripForm } from '@/components/trip/guided';
@@ -14,6 +15,7 @@ import { DayCard, DayData, DayWeather } from '@/components/trip/DayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
+import { DateSelectionStep } from '@/components/trip/DateSelectionStep';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
@@ -358,11 +360,14 @@ const mapBudgetStyle = (budget: string): string => {
   return map[budget] || 'moderate';
 };
 
+type ViewMode = 'form' | 'itinerary' | 'dates';
+
 const NewTrip = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: cities } = useCities();
   const { data: profile } = useProfile();
+  const createItinerary = useCreateItinerary();
 
   const [preferences, setPreferences] = useState<TripPreferences>({
     destination: '',
@@ -380,7 +385,7 @@ const NewTrip = () => {
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
   const [weatherData, setWeatherData] = useState<DayWeather[]>([]);
-  const [preferencesCollapsed, setPreferencesCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('form');
 
   // Add activity dialog state
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -414,6 +419,7 @@ const NewTrip = () => {
     if (rawItinerary && rawItinerary.length > 100) {
       const parsed = parseItineraryText(rawItinerary, numDays, weatherData);
       setParsedItinerary(parsed);
+      setViewMode('itinerary');
     }
   }, [rawItinerary, numDays, weatherData]);
 
@@ -439,7 +445,7 @@ const NewTrip = () => {
     setRawItinerary('');
     setParsedItinerary(null);
     setWeatherData([]);
-    setPreferencesCollapsed(true);
+    setViewMode('itinerary');
 
     try {
       const { supabase } = await import('@/integrations/supabase/client');
@@ -536,6 +542,7 @@ const NewTrip = () => {
     } catch (error) {
       console.error('Error generating itinerary:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate itinerary');
+      setViewMode('form');
     } finally {
       setIsGenerating(false);
     }
@@ -653,6 +660,33 @@ const NewTrip = () => {
     toast.success(editActivity ? 'Activity updated' : 'Activity added');
   }, [parsedItinerary, addDialogDay, addDialogTimeSlot, editActivity]);
 
+  const handleProceedToDates = () => {
+    setViewMode('dates');
+  };
+
+  const handleSaveTrip = async (startDate: Date, endDate: Date) => {
+    if (!parsedItinerary || !preferences.destination) return;
+
+    const city = cities?.find(c => c.id === preferences.destination);
+    if (!city) return;
+
+    await createItinerary.mutateAsync({
+      cityId: preferences.destination,
+      name: `${city.name} Adventure`,
+      numDays,
+      startDate,
+      endDate,
+      budgetLevel: mapBudgetStyle(preferences.budgetStyle),
+      pace: mapDailyPace(preferences.dailyPace),
+      travelStyle: mapTravelGroup(preferences.travelGroup),
+      dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
+      days: parsedItinerary.days,
+      summary: parsedItinerary.summary,
+    });
+
+    navigate('/trips');
+  };
+
   const selectedCityData = cities?.find(c => c.id === preferences.destination);
 
   if (!user) {
@@ -681,7 +715,7 @@ const NewTrip = () => {
   }
 
   // Show guided form when no itinerary yet
-  if (!parsedItinerary && !isGenerating) {
+  if (viewMode === 'form' && !isGenerating) {
     return (
       <div className="min-h-screen" ref={contentRef}>
         {/* Back button */}
@@ -702,6 +736,23 @@ const NewTrip = () => {
           onPreferencesChange={setPreferences}
           onSubmit={handleGenerate}
         />
+      </div>
+    );
+  }
+
+  // Date selection view
+  if (viewMode === 'dates' && selectedCityData) {
+    return (
+      <div className="min-h-screen py-8" ref={contentRef}>
+        <div className="container px-4 max-w-lg mx-auto">
+          <DateSelectionStep
+            cityName={selectedCityData.name}
+            numDays={numDays}
+            onBack={() => setViewMode('itinerary')}
+            onSave={handleSaveTrip}
+            isSaving={createItinerary.isPending}
+          />
+        </div>
       </div>
     );
   }
@@ -763,7 +814,7 @@ const NewTrip = () => {
                 summary={parsedItinerary.summary}
               />
 
-              {/* Regenerate Button */}
+              {/* Action Buttons */}
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -772,6 +823,7 @@ const NewTrip = () => {
                     setParsedItinerary(null);
                     setRawItinerary('');
                     setWeatherData([]);
+                    setViewMode('form');
                   }}
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
@@ -779,21 +831,21 @@ const NewTrip = () => {
                 </Button>
                 <Button
                   variant="outline"
-                  className="flex-1"
                   onClick={handleGenerate}
                   disabled={isGenerating}
                 >
                   {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Regenerating...
-                    </>
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Regenerate
-                    </>
+                    <RefreshCw className="w-4 h-4" />
                   )}
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleProceedToDates}
+                >
+                  Next
+                  <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </div>
 
@@ -815,6 +867,16 @@ const NewTrip = () => {
                 transportTips={parsedItinerary.transportTips}
                 weatherNotes={parsedItinerary.weatherNotes}
               />
+
+              {/* Bottom Save Button */}
+              <Button
+                size="lg"
+                className="w-full"
+                onClick={handleProceedToDates}
+              >
+                Select Dates & Save Trip
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </>
           )}
         </div>
