@@ -101,6 +101,16 @@ async function fetchWeather(cityName: string): Promise<string> {
   }
 }
 
+// Calculate activities per time slot based on pace
+function getActivitiesPerSlot(pace: string): number {
+  switch (pace) {
+    case 'light': return 1;
+    case 'medium': return 2;
+    case 'full': return 2;
+    default: return 2;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -181,25 +191,70 @@ serve(async (req) => {
       userProfileContext = parts.length > 0 ? `\n\nUser Profile & Preferences:\n${parts.join('\n')}` : "";
     }
 
-    const systemPrompt = `You are an expert travel planner specializing in creating personalized, practical itineraries. Generate detailed day-by-day travel itineraries that account for weather conditions, user preferences, and local knowledge.
+    const activitiesPerSlot = getActivitiesPerSlot(pace);
+    const totalActivitiesPerDay = activitiesPerSlot * 3; // morning, afternoon, evening
 
-Format your response as a structured itinerary with:
-- Day headers (Day 1, Day 2, etc.)
-- Time slots (Morning, Afternoon, Evening)
-- Specific activity recommendations with brief descriptions
-- Restaurant suggestions that match dietary preferences
-- Weather-appropriate alternatives when needed
-- Practical tips (best times to visit, crowd avoidance, etc.)
-- Walking distances and transport suggestions
+    const cuisineContext = userPreferences?.preferredCuisines?.length 
+      ? `Focus restaurant suggestions on these cuisine types: ${userPreferences.preferredCuisines.join(', ')}. `
+      : '';
 
-Be specific with real place names and attractions. Consider the user's fitness level and pace preferences when planning activities.`;
+    const systemPrompt = `You are an expert travel planner for ${cityName}, ${countryName}. Generate a detailed, personalized itinerary.
+
+CRITICAL FORMAT REQUIREMENTS - Follow this EXACT structure:
+
+## Summary
+[2-3 sentence overview of the trip]
+
+## Day 1: [Thematic title - e.g., "Historic City Center"]
+### Weather Note
+[One sentence about expected weather and indoor/outdoor balance recommendation]
+
+### Morning
+- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration: e.g., "1.5 hours"]
+  [1-2 sentence description with specific location/address in ${cityName}]
+- **[Activity Name]** | [Type] | [Duration]
+  [Description]
+
+### Afternoon
+- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration]
+  [Description]
+- **[Lunch: Restaurant Name]** | restaurant | [Duration: e.g., "1 hour"]
+  [Description mentioning cuisine type and why it matches preferences]
+
+### Evening
+- **[Activity Name]** | [Type] | [Duration]
+  [Description]
+- **[Dinner: Restaurant Name]** | restaurant | [Duration]
+  [Description]
+
+[Repeat for each day with ## Day 2, ## Day 3, etc.]
+
+## Packing Tips
+- [Tip 1]
+- [Tip 2]
+- [Tip 3]
+
+## Transport Tips
+- [Tip 1]
+- [Tip 2]
+
+STRICT RULES:
+1. Each time slot (Morning/Afternoon/Evening) MUST have exactly ${activitiesPerSlot} activities
+2. Include at least one restaurant per day matching user's cuisine preferences
+3. Use REAL places and attractions that exist in ${cityName} - no made up names
+4. Day titles must be thematic (e.g., "Art & Culture", "Royal Heritage") - NOT "Day 1" or the city name
+5. Each activity must include the pipe-separated metadata format: **Name** | type | duration
+6. Weather notes should recommend indoor activities on rainy days
+7. ${cuisineContext}Respect all dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
+8. Consider walking distances and group nearby attractions
+9. Account for the user's pace preference: ${pace} (${pace === 'light' ? '4-5' : pace === 'medium' ? '5-6' : '6-8'} activities per day)`;
 
     const userPrompt = `Create a ${numDays}-day itinerary for ${cityName}, ${countryName}.
 
 Trip Parameters:
 - Travel style: ${travelStyle}
 - Budget level: ${budgetLevel}
-- Daily pace: ${pace}
+- Daily pace: ${pace} (${totalActivitiesPerDay} activities per day total)
 - Dietary preferences: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None specified'}
 ${userProfileContext}
 
@@ -208,13 +263,14 @@ ${cityDescription ? `\nAbout the destination:\n${cityDescription}` : ''}
 Weather Forecast (next 7 days):
 ${weatherForecast}
 
-Please create a detailed day-by-day itinerary that:
-1. Accounts for the weather forecast (suggest indoor activities on rainy days, outdoor activities on nice days)
-2. Matches the user's pace and fitness level
-3. Includes meal recommendations matching their dietary preferences and budget
-4. Groups nearby attractions to minimize travel time
-5. Includes realistic timing and walking distances
-6. Suggests the best times to visit popular spots to avoid crowds (if the user prefers)`;
+Generate exactly ${numDays} days. Each day must have:
+- A unique thematic title (NOT "Day X" or the city name)
+- A weather note with indoor/outdoor recommendations
+- Morning: ${activitiesPerSlot} activities
+- Afternoon: ${activitiesPerSlot} activities (including lunch)
+- Evening: ${activitiesPerSlot} activities (including dinner)
+
+Use the EXACT format specified. Every activity needs: **Name** | type | duration on its own line.`;
 
     console.log('Sending request to Lovable AI...');
     

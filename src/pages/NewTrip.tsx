@@ -33,137 +33,167 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
     weatherNotes: '',
   };
 
-  // Extract summary (first paragraph or intro)
-  const summaryMatch = text.match(/^([^#\n*-]+(?:\n[^#\n*-]+)*)/);
+  // Extract summary from ## Summary section or first paragraph
+  const summaryMatch = text.match(/##\s*Summary\s*\n([\s\S]*?)(?=##|$)/i);
   if (summaryMatch) {
-    result.summary = summaryMatch[1].trim().substring(0, 200);
+    result.summary = summaryMatch[1].trim().substring(0, 300);
+  } else {
+    // Fallback: first paragraph before any headers
+    const firstPara = text.match(/^([^#\n*-]+(?:\n[^#\n*-]+)*)/);
+    if (firstPara) {
+      result.summary = firstPara[1].trim().substring(0, 200);
+    }
   }
 
-  // Parse days
-  const dayRegex = /(?:^|\n)(?:##?\s*)?(?:Day\s*(\d+)|(\d+)\s*[-–—]\s*)/gi;
-  const dayMatches = [...text.matchAll(dayRegex)];
+  // Find all day sections using ## Day N pattern
+  const daySectionRegex = /##\s*Day\s*(\d+)[:\s]*([^\n]*)/gi;
+  const daySections: { dayNumber: number; title: string; startIndex: number }[] = [];
+  let match;
+  
+  while ((match = daySectionRegex.exec(text)) !== null) {
+    daySections.push({
+      dayNumber: parseInt(match[1]),
+      title: match[2].trim().replace(/^[-–—:\s]+/, '').trim(),
+      startIndex: match.index,
+    });
+  }
 
+  // Parse each day
   for (let i = 0; i < numDays; i++) {
     const dayNumber = i + 1;
+    const daySection = daySections.find(d => d.dayNumber === dayNumber);
+    
     const dayData: DayData = {
       dayNumber,
-      title: `Day ${dayNumber}`,
+      title: daySection?.title || `Exploring Day ${dayNumber}`,
       morning: [],
       afternoon: [],
       evening: [],
     };
 
-    // Find day section
-    const dayMatch = dayMatches.find(m => {
-      const num = parseInt(m[1] || m[2]);
-      return num === dayNumber;
-    });
+    // Clean up the title - remove "Day X" if it appears in the title
+    if (dayData.title.toLowerCase().startsWith('day')) {
+      dayData.title = dayData.title.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim();
+    }
+    // Default title if empty
+    if (!dayData.title || dayData.title.length < 3) {
+      dayData.title = `Exploring ${dayNumber === 1 ? 'the City' : 'More Attractions'}`;
+    }
 
-    if (dayMatch) {
-      // Extract title from the day header
-      const titleMatch = text.slice(dayMatch.index || 0, (dayMatch.index || 0) + 100)
-        .match(/Day\s*\d+\s*[-–—:]\s*([^\n]+)/i);
-      if (titleMatch) {
-        dayData.title = titleMatch[1].trim();
-      }
+    if (daySection) {
+      // Get content between this day and the next day (or end of days section)
+      const nextDayIndex = daySections.find(d => d.dayNumber === dayNumber + 1)?.startIndex;
+      const endOfDays = text.search(/##\s*(Packing|Transport|Tips)/i);
+      const endIndex = nextDayIndex ?? (endOfDays > 0 ? endOfDays : text.length);
+      const dayContent = text.slice(daySection.startIndex, endIndex);
 
-      // Get the content for this day
-      const startIdx = dayMatch.index || 0;
-      const nextDayMatch = dayMatches.find(m => {
-        const num = parseInt(m[1] || m[2]);
-        return num === dayNumber + 1;
-      });
-      const endIdx = nextDayMatch?.index || text.length;
-      const dayContent = text.slice(startIdx, endIdx);
-
-      // Parse activities by time of day
-      const parseActivities = (content: string, timeLabel: string): Activity[] => {
+      // Parse activities from each time slot
+      const parseTimeSlot = (content: string, slotName: string): Activity[] => {
         const activities: Activity[] = [];
-        const timeRegex = new RegExp(`(?:${timeLabel})[:\\s]*([\\s\\S]*?)(?=(?:Morning|Afternoon|Evening|Night|Day\\s*\\d|$))`, 'i');
-        const timeMatch = content.match(timeRegex);
         
-        if (timeMatch) {
-          const timeContent = timeMatch[1];
-          // Extract bullet points or numbered items
-          const itemRegex = /(?:^|\n)\s*(?:[-•*]|\d+[.)]\s*)\s*\*?\*?([^*\n]+)\*?\*?(?:\s*[-–—:]\s*([^\n]+))?/g;
-          const items = [...timeContent.matchAll(itemRegex)];
+        // Find the section for this time slot
+        const slotRegex = new RegExp(`###?\\s*${slotName}\\s*\\n([\\s\\S]*?)(?=###|##|$)`, 'i');
+        const slotMatch = content.match(slotRegex);
+        
+        if (!slotMatch) return activities;
+        
+        const slotContent = slotMatch[1];
+        
+        // Parse activities in format: - **Name** | type | duration
+        const activityRegex = /[-•]\s*\*\*([^*]+)\*\*\s*\|?\s*([^|\n]*)\|?\s*([^|\n]*)?(?:\n\s*([^\n-•#]+))?/g;
+        let activityMatch;
+        let idx = 0;
+        
+        while ((activityMatch = activityRegex.exec(slotContent)) !== null) {
+          const title = activityMatch[1].trim();
+          const typeHint = activityMatch[2]?.trim().toLowerCase() || '';
+          const duration = activityMatch[3]?.trim() || '';
+          const description = activityMatch[4]?.trim() || '';
           
-          items.forEach((item, idx) => {
-            const title = item[1].trim().replace(/\*+/g, '');
-            const description = item[2]?.trim().replace(/\*+/g, '');
+          if (title && title.length > 2) {
+            // Determine type from the type field or title keywords
+            const isRestaurant = typeHint.includes('restaurant') || 
+                                title.toLowerCase().includes('lunch') ||
+                                title.toLowerCase().includes('dinner') ||
+                                title.toLowerCase().includes('breakfast') ||
+                                title.toLowerCase().includes('café') ||
+                                title.toLowerCase().includes('cafe') ||
+                                title.toLowerCase().includes('restaurant');
             
-            if (title && title.length > 2) {
-              const type = title.toLowerCase().includes('restaurant') || 
-                          title.toLowerCase().includes('lunch') || 
-                          title.toLowerCase().includes('dinner') ||
-                          title.toLowerCase().includes('breakfast') ||
-                          title.toLowerCase().includes('café') ||
-                          title.toLowerCase().includes('cafe') ||
-                          title.toLowerCase().includes('eat')
-                ? 'restaurant' 
-                : 'attraction';
-              
-              activities.push({
-                id: `day${dayNumber}-${timeLabel}-${idx}`,
-                type,
-                title,
-                description,
-              });
-            }
-          });
+            activities.push({
+              id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
+              type: isRestaurant ? 'restaurant' : 'attraction',
+              title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
+              description: description || undefined,
+              duration: duration || undefined,
+            });
+            idx++;
+          }
         }
         
-        // Fallback: parse any bolded items
+        // Fallback: try simpler bullet point parsing
         if (activities.length === 0) {
-          const boldRegex = /\*\*([^*]+)\*\*/g;
-          const boldMatches = [...content.matchAll(boldRegex)];
-          boldMatches.forEach((match, idx) => {
-            const title = match[1].trim();
-            if (title.length > 2 && !title.toLowerCase().startsWith('day') && !title.toLowerCase().includes('morning') && !title.toLowerCase().includes('afternoon') && !title.toLowerCase().includes('evening')) {
+          const simpleBulletRegex = /[-•]\s*\*?\*?([^*\n]+)\*?\*?[:\s]*([^\n]*)/g;
+          let simpleMatch;
+          
+          while ((simpleMatch = simpleBulletRegex.exec(slotContent)) !== null) {
+            const title = simpleMatch[1].trim().replace(/\*+/g, '').replace(/\|.*$/, '').trim();
+            const rest = simpleMatch[2]?.trim() || '';
+            
+            if (title && title.length > 3 && 
+                !title.toLowerCase().includes('weather') &&
+                !title.toLowerCase().includes('note')) {
+              const isRestaurant = title.toLowerCase().includes('lunch') ||
+                                  title.toLowerCase().includes('dinner') ||
+                                  title.toLowerCase().includes('restaurant') ||
+                                  title.toLowerCase().includes('café') ||
+                                  title.toLowerCase().includes('cafe');
+              
               activities.push({
-                id: `day${dayNumber}-bold-${idx}`,
-                type: 'attraction',
+                id: `day${dayNumber}-${slotName.toLowerCase()}-fallback-${activities.length}`,
+                type: isRestaurant ? 'restaurant' : 'attraction',
                 title,
+                description: rest || undefined,
               });
             }
-          });
+          }
         }
         
         return activities;
       };
 
-      dayData.morning = parseActivities(dayContent, 'Morning');
-      dayData.afternoon = parseActivities(dayContent, 'Afternoon');
-      dayData.evening = parseActivities(dayContent, 'Evening');
+      dayData.morning = parseTimeSlot(dayContent, 'Morning');
+      dayData.afternoon = parseTimeSlot(dayContent, 'Afternoon');
+      dayData.evening = parseTimeSlot(dayContent, 'Evening');
 
-      // If no time-based activities found, try to distribute all activities
+      // If still no activities found, try to extract all bolded items
       if (dayData.morning.length === 0 && dayData.afternoon.length === 0 && dayData.evening.length === 0) {
         const allActivities: Activity[] = [];
-        const bulletRegex = /(?:^|\n)\s*(?:[-•*]|\d+[.)]\s*)\s*\*?\*?([^*\n]+)\*?\*?(?:[:\s]*([^\n]+))?/g;
-        const bullets = [...dayContent.matchAll(bulletRegex)];
+        const boldRegex = /\*\*([^*]+)\*\*/g;
+        let boldMatch;
         
-        bullets.forEach((item, idx) => {
-          const title = item[1].trim().replace(/\*+/g, '');
-          const description = item[2]?.trim().replace(/\*+/g, '');
-          
-          if (title && title.length > 3 && !title.toLowerCase().startsWith('day')) {
-            const type = title.toLowerCase().includes('restaurant') || 
-                        title.toLowerCase().includes('lunch') || 
-                        title.toLowerCase().includes('dinner') ||
-                        title.toLowerCase().includes('breakfast')
-              ? 'restaurant' 
-              : 'attraction';
+        while ((boldMatch = boldRegex.exec(dayContent)) !== null) {
+          const title = boldMatch[1].trim();
+          if (title.length > 3 && 
+              !title.toLowerCase().startsWith('day') &&
+              !title.toLowerCase().includes('morning') &&
+              !title.toLowerCase().includes('afternoon') &&
+              !title.toLowerCase().includes('evening') &&
+              !title.toLowerCase().includes('weather')) {
+            
+            const isRestaurant = title.toLowerCase().includes('lunch') ||
+                                title.toLowerCase().includes('dinner') ||
+                                title.toLowerCase().includes('restaurant');
             
             allActivities.push({
-              id: `day${dayNumber}-item-${idx}`,
-              type,
+              id: `day${dayNumber}-bold-${allActivities.length}`,
+              type: isRestaurant ? 'restaurant' : 'attraction',
               title,
-              description,
             });
           }
-        });
-
-        // Distribute among time slots
+        }
+        
+        // Distribute activities across time slots
         const third = Math.ceil(allActivities.length / 3);
         dayData.morning = allActivities.slice(0, third);
         dayData.afternoon = allActivities.slice(third, third * 2);
@@ -174,26 +204,33 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
     result.days.push(dayData);
   }
 
-  // Parse tips sections
-  const packingMatch = text.match(/(?:Packing|What to Pack)[^:]*:([\s\S]*?)(?=(?:Transport|Getting Around|Weather|$))/i);
+  // Parse packing tips
+  const packingMatch = text.match(/##\s*Packing\s*Tips?\s*\n([\s\S]*?)(?=##|$)/i);
   if (packingMatch) {
-    const tips = packingMatch[1].match(/[-•*]\s*([^\n]+)/g);
+    const tips = packingMatch[1].match(/[-•]\s*([^\n]+)/g);
     if (tips) {
-      result.packingTips = tips.map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(t => t.length > 2);
+      result.packingTips = tips.map(t => t.replace(/^[-•]\s*/, '').trim()).filter(t => t.length > 2);
     }
   }
 
-  const transportMatch = text.match(/(?:Transport|Getting Around)[^:]*:([\s\S]*?)(?=(?:Packing|Weather|Tips|$))/i);
+  // Parse transport tips
+  const transportMatch = text.match(/##\s*Transport\s*Tips?\s*\n([\s\S]*?)(?=##|$)/i);
   if (transportMatch) {
-    const tips = transportMatch[1].match(/[-•*]\s*([^\n]+)/g);
+    const tips = transportMatch[1].match(/[-•]\s*([^\n]+)/g);
     if (tips) {
-      result.transportTips = tips.map(t => t.replace(/^[-•*]\s*/, '').trim()).filter(t => t.length > 2);
+      result.transportTips = tips.map(t => t.replace(/^[-•]\s*/, '').trim()).filter(t => t.length > 2);
     }
   }
 
-  const weatherMatch = text.match(/(?:Weather)[^:]*:\s*([^\n]+)/i);
-  if (weatherMatch) {
-    result.weatherNotes = weatherMatch[1].trim();
+  // Extract weather notes from day sections
+  const weatherNotes: string[] = [];
+  const weatherNoteRegex = /###?\s*Weather\s*Note\s*\n([^\n#]+)/gi;
+  let weatherMatch;
+  while ((weatherMatch = weatherNoteRegex.exec(text)) !== null) {
+    weatherNotes.push(weatherMatch[1].trim());
+  }
+  if (weatherNotes.length > 0) {
+    result.weatherNotes = weatherNotes[0];
   }
 
   return result;
