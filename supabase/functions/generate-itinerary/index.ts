@@ -35,31 +35,40 @@ interface ItineraryRequest {
   dietaryPreferences: string[];
   userPreferences: TravelPreferences | null;
   cityDescription?: string;
+  preferredStartTime?: string;
 }
 
-async function fetchWeather(cityName: string): Promise<string> {
+interface DayWeather {
+  date: string;
+  condition: string;
+  tempMin: number;
+  tempMax: number;
+  precipChance: number;
+}
+
+async function fetchWeather(cityName: string, numDays: number): Promise<DayWeather[]> {
   try {
     // Using Open-Meteo (free, no API key required)
-    // First geocode the city
     const geoResponse = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1`
     );
     const geoData = await geoResponse.json();
     
     if (!geoData.results || geoData.results.length === 0) {
-      return "Weather data unavailable";
+      return [];
     }
     
     const { latitude, longitude } = geoData.results[0];
     
-    // Get 7-day forecast
+    // Get forecast for requested days (max 7 from free API)
+    const forecastDays = Math.min(numDays, 7);
     const weatherResponse = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&forecast_days=7`
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&forecast_days=${forecastDays}`
     );
     const weatherData = await weatherResponse.json();
     
     if (!weatherData.daily) {
-      return "Weather data unavailable";
+      return [];
     }
     
     const weatherCodes: Record<number, string> = {
@@ -84,20 +93,16 @@ async function fetchWeather(cityName: string): Promise<string> {
       95: "Thunderstorm",
     };
     
-    const forecast = weatherData.daily.time.map((date: string, i: number) => {
-      const maxTemp = Math.round(weatherData.daily.temperature_2m_max[i]);
-      const minTemp = Math.round(weatherData.daily.temperature_2m_min[i]);
-      const precipProb = weatherData.daily.precipitation_probability_max[i];
-      const code = weatherData.daily.weathercode[i];
-      const condition = weatherCodes[code] || "Variable";
-      
-      return `${date}: ${condition}, ${minTemp}°C - ${maxTemp}°C, ${precipProb}% chance of rain`;
-    }).join('\n');
-    
-    return forecast;
+    return weatherData.daily.time.map((date: string, i: number) => ({
+      date,
+      condition: weatherCodes[weatherData.daily.weathercode[i]] || "Variable",
+      tempMin: Math.round(weatherData.daily.temperature_2m_min[i]),
+      tempMax: Math.round(weatherData.daily.temperature_2m_max[i]),
+      precipChance: weatherData.daily.precipitation_probability_max[i],
+    }));
   } catch (error) {
     console.error('Weather fetch error:', error);
-    return "Weather data unavailable";
+    return [];
   }
 }
 
@@ -108,6 +113,16 @@ function getActivitiesPerSlot(pace: string): number {
     case 'medium': return 2;
     case 'full': return 2;
     default: return 2;
+  }
+}
+
+// Determine default start time based on pace
+function getDefaultStartTime(pace: string): string {
+  switch (pace) {
+    case 'light': return '10:00 AM';
+    case 'medium': return '9:00 AM';
+    case 'full': return '8:30 AM';
+    default: return '9:00 AM';
   }
 }
 
@@ -155,7 +170,8 @@ serve(async (req) => {
       pace,
       dietaryPreferences,
       userPreferences,
-      cityDescription
+      cityDescription,
+      preferredStartTime,
     }: ItineraryRequest = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -163,9 +179,16 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Fetch weather for the city
-    const weatherForecast = await fetchWeather(cityName);
-    console.log('Weather forecast:', weatherForecast);
+    // Fetch per-day weather for the city
+    const weatherByDay = await fetchWeather(cityName, numDays);
+    console.log('Weather by day:', JSON.stringify(weatherByDay));
+
+    // Build weather context for prompt
+    const weatherContext = weatherByDay.length > 0
+      ? weatherByDay.map((w, i) => 
+          `Day ${i + 1} (${w.date}): ${w.condition}, ${w.tempMin}°C - ${w.tempMax}°C, ${w.precipChance}% rain chance`
+        ).join('\n')
+      : 'Weather data unavailable - assume typical conditions for the season';
 
     // Build user profile context
     let userProfileContext = "";
@@ -193,12 +216,13 @@ serve(async (req) => {
 
     const activitiesPerSlot = getActivitiesPerSlot(pace);
     const totalActivitiesPerDay = activitiesPerSlot * 3; // morning, afternoon, evening
+    const startTime = preferredStartTime || getDefaultStartTime(pace);
 
     const cuisineContext = userPreferences?.preferredCuisines?.length 
       ? `Focus restaurant suggestions on these cuisine types: ${userPreferences.preferredCuisines.join(', ')}. `
       : '';
 
-    const systemPrompt = `You are an expert travel planner for ${cityName}, ${countryName}. Generate a detailed, personalized itinerary.
+    const systemPrompt = `You are an expert travel planner for ${cityName}, ${countryName}. Generate a detailed, personalized itinerary with reasoning for each recommendation.
 
 CRITICAL FORMAT REQUIREMENTS - Follow this EXACT structure:
 
@@ -206,26 +230,33 @@ CRITICAL FORMAT REQUIREMENTS - Follow this EXACT structure:
 [2-3 sentence overview of the trip]
 
 ## Day 1: [Thematic title - e.g., "Historic City Center"]
-### Weather Note
-[One sentence about expected weather and indoor/outdoor balance recommendation]
+### Start Time: ${startTime}
+### Weather
+Condition: [e.g., "Partly cloudy"]
+Temperature: [e.g., "12°C - 18°C"]
+Rain: [e.g., "20%"]
+Note: [One sentence recommendation based on weather, e.g., "Great day for outdoor sightseeing, but bring a light jacket for the evening."]
 
 ### Morning
-- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration: e.g., "1.5 hours"]
+- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration: e.g., "1.5 hours"] | [Time: e.g., "9:00 AM"]
   [1-2 sentence description with specific location/address in ${cityName}]
-- **[Activity Name]** | [Type] | [Duration]
-  [Description]
+  Why: [1 sentence explaining why this is recommended at this time - consider proximity, crowds, weather, energy levels, user preferences]
 
 ### Afternoon
-- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration]
+- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration] | [Time]
   [Description]
-- **[Lunch: Restaurant Name]** | restaurant | [Duration: e.g., "1 hour"]
+  Why: [Reasoning]
+- **[Lunch: Restaurant Name]** | restaurant | [Duration: e.g., "1 hour"] | [Time]
   [Description mentioning cuisine type and why it matches preferences]
+  Why: [Reasoning based on cuisine preferences, location, timing]
 
 ### Evening
-- **[Activity Name]** | [Type] | [Duration]
+- **[Activity Name]** | [Type] | [Duration] | [Time]
   [Description]
-- **[Dinner: Restaurant Name]** | restaurant | [Duration]
+  Why: [Reasoning]
+- **[Dinner: Restaurant Name]** | restaurant | [Duration] | [Time]
   [Description]
+  Why: [Reasoning]
 
 [Repeat for each day with ## Day 2, ## Day 3, etc.]
 
@@ -243,11 +274,15 @@ STRICT RULES:
 2. Include at least one restaurant per day matching user's cuisine preferences
 3. Use REAL places and attractions that exist in ${cityName} - no made up names
 4. Day titles must be thematic (e.g., "Art & Culture", "Royal Heritage") - NOT "Day 1" or the city name
-5. Each activity must include the pipe-separated metadata format: **Name** | type | duration
-6. Weather notes should recommend indoor activities on rainy days
-7. ${cuisineContext}Respect all dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
-8. Consider walking distances and group nearby attractions
-9. Account for the user's pace preference: ${pace} (${pace === 'light' ? '4-5' : pace === 'medium' ? '5-6' : '6-8'} activities per day)`;
+5. Each activity must include: **Name** | type | duration | time
+6. MUST include "Why:" reasoning for EVERY activity explaining the recommendation
+7. Weather notes should recommend indoor activities on rainy days (>50% rain chance)
+8. ${cuisineContext}Respect all dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
+9. Consider walking distances and group nearby attractions
+10. Account for the user's pace preference: ${pace} (${totalActivitiesPerDay} activities per day)
+11. Morning activities should start at ${startTime}
+12. Consider crowd timing (e.g., "visit early to avoid crowds", "best at sunset")
+13. Match activities to energy levels (lighter activities after meals, energetic ones in morning)`;
 
     const userPrompt = `Create a ${numDays}-day itinerary for ${cityName}, ${countryName}.
 
@@ -255,22 +290,32 @@ Trip Parameters:
 - Travel style: ${travelStyle}
 - Budget level: ${budgetLevel}
 - Daily pace: ${pace} (${totalActivitiesPerDay} activities per day total)
+- Preferred start time: ${startTime}
 - Dietary preferences: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None specified'}
 ${userProfileContext}
 
 ${cityDescription ? `\nAbout the destination:\n${cityDescription}` : ''}
 
-Weather Forecast (next 7 days):
-${weatherForecast}
+Weather Forecast by Day:
+${weatherContext}
 
 Generate exactly ${numDays} days. Each day must have:
 - A unique thematic title (NOT "Day X" or the city name)
-- A weather note with indoor/outdoor recommendations
-- Morning: ${activitiesPerSlot} activities
-- Afternoon: ${activitiesPerSlot} activities (including lunch)
-- Evening: ${activitiesPerSlot} activities (including dinner)
+- Start Time section showing when the day begins
+- Weather section with condition, temperature, rain chance, and planning note
+- Morning: ${activitiesPerSlot} activities with time and reasoning
+- Afternoon: ${activitiesPerSlot} activities (including lunch) with time and reasoning
+- Evening: ${activitiesPerSlot} activities (including dinner) with time and reasoning
 
-Use the EXACT format specified. Every activity needs: **Name** | type | duration on its own line.`;
+IMPORTANT: Every activity MUST include a "Why:" line explaining why it's recommended at that specific time, considering:
+- Proximity to previous/next activity
+- Crowd timing (avoiding peak hours where relevant)
+- Weather suitability for that day
+- User's energy levels (e.g., lighter activities after lunch)
+- Cuisine preferences for restaurant recommendations
+- User's stated interests and travel style
+
+Use the EXACT format specified with pipe-separated metadata and "Why:" reasoning lines.`;
 
     console.log('Sending request to Lovable AI...');
     
@@ -311,9 +356,14 @@ Use the EXACT format specified. Every activity needs: **Name** | type | duration
       });
     }
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-    });
+    // Include weather data in metadata header for client parsing
+    const responseHeaders = {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "X-Weather-Data": JSON.stringify(weatherByDay),
+    };
+
+    return new Response(response.body, { headers: responseHeaders });
   } catch (error) {
     console.error("Error in generate-itinerary:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {

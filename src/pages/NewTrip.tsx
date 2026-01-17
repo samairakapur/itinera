@@ -10,9 +10,10 @@ import { toast } from 'sonner';
 import { TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { GuidedTripForm } from '@/components/trip/guided';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
-import { DayCard, DayData } from '@/components/trip/DayCard';
+import { DayCard, DayData, DayWeather } from '@/components/trip/DayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
+import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
@@ -24,7 +25,7 @@ interface ParsedItinerary {
   weatherNotes: string;
 }
 
-const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
+const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[]): ParsedItinerary => {
   const result: ParsedItinerary = {
     summary: '',
     days: [],
@@ -38,7 +39,6 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
   if (summaryMatch) {
     result.summary = summaryMatch[1].trim().substring(0, 300);
   } else {
-    // Fallback: first paragraph before any headers
     const firstPara = text.match(/^([^#\n*-]+(?:\n[^#\n*-]+)*)/);
     if (firstPara) {
       result.summary = firstPara[1].trim().substring(0, 200);
@@ -63,35 +63,80 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
     const dayNumber = i + 1;
     const daySection = daySections.find(d => d.dayNumber === dayNumber);
     
+    // Get weather for this day from API data
+    const dayWeatherData = weatherData?.[i];
+    
     const dayData: DayData = {
       dayNumber,
       title: daySection?.title || `Exploring Day ${dayNumber}`,
+      startTime: '9:00 AM', // Default, will be overridden if found
+      weather: dayWeatherData ? {
+        date: dayWeatherData.date,
+        condition: dayWeatherData.condition,
+        tempMin: dayWeatherData.tempMin,
+        tempMax: dayWeatherData.tempMax,
+        precipChance: dayWeatherData.precipChance,
+        recommendation: '',
+      } : undefined,
       morning: [],
       afternoon: [],
       evening: [],
     };
 
-    // Clean up the title - remove "Day X" if it appears in the title
+    // Clean up the title
     if (dayData.title.toLowerCase().startsWith('day')) {
       dayData.title = dayData.title.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim();
     }
-    // Default title if empty
     if (!dayData.title || dayData.title.length < 3) {
       dayData.title = `Exploring ${dayNumber === 1 ? 'the City' : 'More Attractions'}`;
     }
 
     if (daySection) {
-      // Get content between this day and the next day (or end of days section)
       const nextDayIndex = daySections.find(d => d.dayNumber === dayNumber + 1)?.startIndex;
       const endOfDays = text.search(/##\s*(Packing|Transport|Tips)/i);
       const endIndex = nextDayIndex ?? (endOfDays > 0 ? endOfDays : text.length);
       const dayContent = text.slice(daySection.startIndex, endIndex);
 
-      // Parse activities from each time slot
+      // Extract start time
+      const startTimeMatch = dayContent.match(/###?\s*Start\s*Time[:\s]*([^\n]+)/i);
+      if (startTimeMatch) {
+        dayData.startTime = startTimeMatch[1].trim();
+      }
+
+      // Extract weather note/recommendation from the day
+      const weatherNoteMatch = dayContent.match(/Note:\s*([^\n]+)/i);
+      if (weatherNoteMatch && dayData.weather) {
+        dayData.weather.recommendation = weatherNoteMatch[1].trim();
+        dayData.weatherNote = weatherNoteMatch[1].trim();
+      }
+
+      // Parse weather section if present (for conditions not from API)
+      const weatherMatch = dayContent.match(/###?\s*Weather\s*\n([\s\S]*?)(?=###|$)/i);
+      if (weatherMatch && !dayData.weather) {
+        const weatherSection = weatherMatch[1];
+        const conditionMatch = weatherSection.match(/Condition:\s*([^\n]+)/i);
+        const tempMatch = weatherSection.match(/Temperature:\s*([^\n]+)/i);
+        const rainMatch = weatherSection.match(/Rain:\s*(\d+)/i);
+        const noteMatch = weatherSection.match(/Note:\s*([^\n]+)/i);
+
+        if (conditionMatch || tempMatch) {
+          const tempRange = tempMatch?.[1]?.match(/(-?\d+)[°\s]*[-–—]\s*(-?\d+)/);
+          dayData.weather = {
+            date: '',
+            condition: conditionMatch?.[1]?.trim() || 'Variable',
+            tempMin: tempRange ? parseInt(tempRange[1]) : 10,
+            tempMax: tempRange ? parseInt(tempRange[2]) : 20,
+            precipChance: rainMatch ? parseInt(rainMatch[1]) : 0,
+            recommendation: noteMatch?.[1]?.trim() || '',
+          };
+          dayData.weatherNote = noteMatch?.[1]?.trim();
+        }
+      }
+
+      // Parse activities with reasoning
       const parseTimeSlot = (content: string, slotName: string): Activity[] => {
         const activities: Activity[] = [];
         
-        // Find the section for this time slot
         const slotRegex = new RegExp(`###?\\s*${slotName}\\s*\\n([\\s\\S]*?)(?=###|##|$)`, 'i');
         const slotMatch = content.match(slotRegex);
         
@@ -99,37 +144,71 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
         
         const slotContent = slotMatch[1];
         
-        // Parse activities in format: - **Name** | type | duration
-        const activityRegex = /[-•]\s*\*\*([^*]+)\*\*\s*\|?\s*([^|\n]*)\|?\s*([^|\n]*)?(?:\n\s*([^\n-•#]+))?/g;
-        let activityMatch;
-        let idx = 0;
+        // Parse activities: **Name** | type | duration | time
+        // Followed by description line and Why: reasoning
+        const activityBlocks = slotContent.split(/(?=[-•]\s*\*\*)/);
         
-        while ((activityMatch = activityRegex.exec(slotContent)) !== null) {
-          const title = activityMatch[1].trim();
-          const typeHint = activityMatch[2]?.trim().toLowerCase() || '';
-          const duration = activityMatch[3]?.trim() || '';
-          const description = activityMatch[4]?.trim() || '';
+        activityBlocks.forEach((block, idx) => {
+          if (!block.trim()) return;
+          
+          // Match the header line: - **Name** | type | duration | time
+          const headerMatch = block.match(/[-•]\s*\*\*([^*]+)\*\*\s*\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)$/m);
+          
+          if (!headerMatch) {
+            // Try simpler pattern
+            const simpleMatch = block.match(/[-•]\s*\*\*([^*]+)\*\*/);
+            if (simpleMatch) {
+              const title = simpleMatch[1].trim();
+              if (title.length > 2) {
+                const descMatch = block.match(/\*\*[^*]+\*\*[^\n]*\n\s*([^\n]+)/);
+                const whyMatch = block.match(/Why:\s*([^\n]+)/i);
+                
+                const isRestaurant = title.toLowerCase().includes('lunch') ||
+                                    title.toLowerCase().includes('dinner') ||
+                                    title.toLowerCase().includes('restaurant') ||
+                                    title.toLowerCase().includes('café');
+                
+                activities.push({
+                  id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
+                  type: isRestaurant ? 'restaurant' : 'attraction',
+                  title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
+                  description: descMatch?.[1]?.trim().replace(/^Why:.*$/i, '').trim() || undefined,
+                  reasoning: whyMatch?.[1]?.trim(),
+                });
+              }
+            }
+            return;
+          }
+          
+          const title = headerMatch[1].trim();
+          const typeHint = headerMatch[2]?.trim().toLowerCase() || '';
+          const duration = headerMatch[3]?.trim() || '';
+          const time = headerMatch[4]?.trim() || '';
+          
+          // Get description (line after header, before Why:)
+          const restOfBlock = block.slice(block.indexOf(headerMatch[0]) + headerMatch[0].length);
+          const descMatch = restOfBlock.match(/^\s*\n?\s*([^\n]+?)(?:\s*\n\s*Why:|$)/);
+          const whyMatch = restOfBlock.match(/Why:\s*([^\n]+)/i);
           
           if (title && title.length > 2) {
-            // Determine type from the type field or title keywords
             const isRestaurant = typeHint.includes('restaurant') || 
                                 title.toLowerCase().includes('lunch') ||
                                 title.toLowerCase().includes('dinner') ||
                                 title.toLowerCase().includes('breakfast') ||
                                 title.toLowerCase().includes('café') ||
-                                title.toLowerCase().includes('cafe') ||
-                                title.toLowerCase().includes('restaurant');
+                                title.toLowerCase().includes('cafe');
             
             activities.push({
               id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
               type: isRestaurant ? 'restaurant' : 'attraction',
               title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
-              description: description || undefined,
+              description: descMatch?.[1]?.trim() || undefined,
               duration: duration || undefined,
+              time: time || undefined,
+              reasoning: whyMatch?.[1]?.trim(),
             });
-            idx++;
           }
-        }
+        });
         
         // Fallback: try simpler bullet point parsing
         if (activities.length === 0) {
@@ -142,12 +221,11 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
             
             if (title && title.length > 3 && 
                 !title.toLowerCase().includes('weather') &&
-                !title.toLowerCase().includes('note')) {
+                !title.toLowerCase().includes('note') &&
+                !title.toLowerCase().includes('why')) {
               const isRestaurant = title.toLowerCase().includes('lunch') ||
                                   title.toLowerCase().includes('dinner') ||
-                                  title.toLowerCase().includes('restaurant') ||
-                                  title.toLowerCase().includes('café') ||
-                                  title.toLowerCase().includes('cafe');
+                                  title.toLowerCase().includes('restaurant');
               
               activities.push({
                 id: `day${dayNumber}-${slotName.toLowerCase()}-fallback-${activities.length}`,
@@ -166,7 +244,7 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
       dayData.afternoon = parseTimeSlot(dayContent, 'Afternoon');
       dayData.evening = parseTimeSlot(dayContent, 'Evening');
 
-      // If still no activities found, try to extract all bolded items
+      // If still no activities, extract all bolded items
       if (dayData.morning.length === 0 && dayData.afternoon.length === 0 && dayData.evening.length === 0) {
         const allActivities: Activity[] = [];
         const boldRegex = /\*\*([^*]+)\*\*/g;
@@ -193,7 +271,7 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
           }
         }
         
-        // Distribute activities across time slots
+        // Distribute across time slots
         const third = Math.ceil(allActivities.length / 3);
         dayData.morning = allActivities.slice(0, third);
         dayData.afternoon = allActivities.slice(third, third * 2);
@@ -222,13 +300,13 @@ const parseItineraryText = (text: string, numDays: number): ParsedItinerary => {
     }
   }
 
-  // Extract weather notes from day sections
+  // Extract first weather note for overall summary
   const weatherNotes: string[] = [];
-  const weatherNoteRegex = /###?\s*Weather\s*Note\s*\n([^\n#]+)/gi;
-  let weatherMatch;
-  while ((weatherMatch = weatherNoteRegex.exec(text)) !== null) {
-    weatherNotes.push(weatherMatch[1].trim());
-  }
+  result.days.forEach(day => {
+    if (day.weatherNote) {
+      weatherNotes.push(`Day ${day.dayNumber}: ${day.weatherNote}`);
+    }
+  });
   if (weatherNotes.length > 0) {
     result.weatherNotes = weatherNotes[0];
   }
@@ -301,7 +379,14 @@ const NewTrip = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
+  const [weatherData, setWeatherData] = useState<DayWeather[]>([]);
   const [preferencesCollapsed, setPreferencesCollapsed] = useState(false);
+
+  // Add activity dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDialogDay, setAddDialogDay] = useState(1);
+  const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
+  const [editActivity, setEditActivity] = useState<Activity | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -327,10 +412,10 @@ const NewTrip = () => {
   // Parse itinerary when raw text changes
   useEffect(() => {
     if (rawItinerary && rawItinerary.length > 100) {
-      const parsed = parseItineraryText(rawItinerary, numDays);
+      const parsed = parseItineraryText(rawItinerary, numDays, weatherData);
       setParsedItinerary(parsed);
     }
-  }, [rawItinerary, numDays]);
+  }, [rawItinerary, numDays, weatherData]);
 
   const handleGenerate = async () => {
     if (!user) {
@@ -353,10 +438,10 @@ const NewTrip = () => {
     setIsGenerating(true);
     setRawItinerary('');
     setParsedItinerary(null);
+    setWeatherData([]);
     setPreferencesCollapsed(true);
 
     try {
-      // Get the user's session token for authentication
       const { supabase } = await import('@/integrations/supabase/client');
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -395,6 +480,17 @@ const NewTrip = () => {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to generate itinerary');
+      }
+
+      // Extract weather data from header if present
+      const weatherHeader = response.headers.get('X-Weather-Data');
+      if (weatherHeader) {
+        try {
+          const weather = JSON.parse(weatherHeader);
+          setWeatherData(weather);
+        } catch (e) {
+          console.warn('Failed to parse weather data from header');
+        }
       }
 
       if (!response.body) {
@@ -487,6 +583,75 @@ const NewTrip = () => {
       };
     });
   }, [parsedItinerary]);
+
+  const handleActivityEdit = useCallback((dayNumber: number, activityId: string) => {
+    if (!parsedItinerary) return;
+    
+    const day = parsedItinerary.days.find(d => d.dayNumber === dayNumber);
+    if (!day) return;
+    
+    const activity = [...day.morning, ...day.afternoon, ...day.evening].find(a => a.id === activityId);
+    if (!activity) return;
+    
+    // Determine which time slot
+    let timeSlot: 'morning' | 'afternoon' | 'evening' = 'morning';
+    if (day.afternoon.some(a => a.id === activityId)) timeSlot = 'afternoon';
+    if (day.evening.some(a => a.id === activityId)) timeSlot = 'evening';
+    
+    setEditActivity(activity);
+    setAddDialogDay(dayNumber);
+    setAddDialogTimeSlot(timeSlot);
+    setAddDialogOpen(true);
+  }, [parsedItinerary]);
+
+  const handleAddActivity = useCallback((dayNumber: number, timeSlot: 'morning' | 'afternoon' | 'evening') => {
+    setEditActivity(null);
+    setAddDialogDay(dayNumber);
+    setAddDialogTimeSlot(timeSlot);
+    setAddDialogOpen(true);
+  }, []);
+
+  const handleSaveActivity = useCallback((activityData: Omit<Activity, 'id'>) => {
+    if (!parsedItinerary) return;
+    
+    setParsedItinerary(prev => {
+      if (!prev) return prev;
+      
+      return {
+        ...prev,
+        days: prev.days.map(day => {
+          if (day.dayNumber !== addDialogDay) return day;
+          
+          const newActivity: Activity = {
+            ...activityData,
+            id: editActivity?.id || `day${addDialogDay}-${addDialogTimeSlot}-custom-${Date.now()}`,
+          };
+          
+          // If editing, replace the activity
+          if (editActivity) {
+            const replaceActivity = (activities: Activity[]) =>
+              activities.map(a => a.id === editActivity.id ? newActivity : a);
+            return {
+              ...day,
+              morning: replaceActivity(day.morning),
+              afternoon: replaceActivity(day.afternoon),
+              evening: replaceActivity(day.evening),
+            };
+          }
+          
+          // If adding new, append to the correct time slot
+          return {
+            ...day,
+            morning: addDialogTimeSlot === 'morning' ? [...day.morning, newActivity] : day.morning,
+            afternoon: addDialogTimeSlot === 'afternoon' ? [...day.afternoon, newActivity] : day.afternoon,
+            evening: addDialogTimeSlot === 'evening' ? [...day.evening, newActivity] : day.evening,
+          };
+        }),
+      };
+    });
+    
+    toast.success(editActivity ? 'Activity updated' : 'Activity added');
+  }, [parsedItinerary, addDialogDay, addDialogTimeSlot, editActivity]);
 
   const selectedCityData = cities?.find(c => c.id === preferences.destination);
 
@@ -606,6 +771,7 @@ const NewTrip = () => {
                   onClick={() => {
                     setParsedItinerary(null);
                     setRawItinerary('');
+                    setWeatherData([]);
                   }}
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
@@ -638,6 +804,8 @@ const NewTrip = () => {
                   day={day}
                   onActivityRemove={handleActivityRemove}
                   onActivityToggleMustDo={handleActivityToggleMustDo}
+                  onActivityEdit={handleActivityEdit}
+                  onAddActivity={handleAddActivity}
                 />
               ))}
 
@@ -651,6 +819,16 @@ const NewTrip = () => {
           )}
         </div>
       </div>
+
+      {/* Add/Edit Activity Dialog */}
+      <AddActivityDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSave={handleSaveActivity}
+        dayNumber={addDialogDay}
+        timeSlot={addDialogTimeSlot}
+        editActivity={editActivity}
+      />
     </div>
   );
 };
