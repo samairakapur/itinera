@@ -17,7 +17,7 @@ import {
   Home, 
   MapPin, 
   Calendar, 
-  Heart, 
+  Navigation, 
   LogOut,
   User
 } from 'lucide-react';
@@ -27,6 +27,7 @@ const navLinks = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/destinations', label: 'Destinations', icon: MapPin },
   { href: '/trips', label: 'My Trips', icon: Calendar },
+  { href: '/nearby', label: 'Nearby', icon: Navigation },
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
