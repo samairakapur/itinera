@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { TripPreferencesForm, TripPreferences } from '@/components/trip/TripPreferencesForm';
+import { TripPreferences } from '@/components/trip/TripPreferencesForm';
+import { GuidedTripForm } from '@/components/trip/guided';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
@@ -466,6 +467,32 @@ const NewTrip = () => {
     );
   }
 
+  // Show guided form when no itinerary yet
+  if (!parsedItinerary && !isGenerating) {
+    return (
+      <div className="min-h-screen" ref={contentRef}>
+        {/* Back button */}
+        <div className="absolute top-4 left-4 z-30">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/trips')}
+            size="sm"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back
+          </Button>
+        </div>
+
+        <GuidedTripForm
+          cities={cities || []}
+          preferences={preferences}
+          onPreferencesChange={setPreferences}
+          onSubmit={handleGenerate}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-12" ref={contentRef}>
       <div className="container px-4 max-w-2xl mx-auto">
@@ -481,30 +508,19 @@ const NewTrip = () => {
             Back to Trips
           </Button>
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
-            Plan Your Family Trip
+            Your Trip to {selectedCityData?.name}
           </h1>
           {profile?.travel_preferences && (
             <p className="text-sm text-primary mt-1 flex items-center gap-1">
               <Sparkles className="w-4 h-4" />
-              Using your saved preferences & real-time weather
+              Personalized with your preferences
             </p>
           )}
         </div>
 
         <div className="space-y-6">
-          {/* Preferences Form */}
-          <TripPreferencesForm
-            cities={cities || []}
-            preferences={preferences}
-            onPreferencesChange={setPreferences}
-            onSubmit={handleGenerate}
-            isCollapsed={preferencesCollapsed}
-            onToggleCollapsed={() => setPreferencesCollapsed(!preferencesCollapsed)}
-            hasItinerary={!!parsedItinerary}
-          />
-
           {/* Loading State */}
-          {isGenerating && !parsedItinerary && (
+          {isGenerating && (
             <Card className="border-0 shadow-card">
               <CardContent className="py-12 text-center">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
@@ -534,11 +550,22 @@ const NewTrip = () => {
                 summary={parsedItinerary.summary}
               />
 
-              {/* Regenerate Button (when collapsed) */}
-              {preferencesCollapsed && (
+              {/* Regenerate Button */}
+              <div className="flex gap-3">
                 <Button
                   variant="outline"
-                  className="w-full"
+                  className="flex-1"
+                  onClick={() => {
+                    setParsedItinerary(null);
+                    setRawItinerary('');
+                  }}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Edit Preferences
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
                   onClick={handleGenerate}
                   disabled={isGenerating}
                 >
@@ -550,11 +577,21 @@ const NewTrip = () => {
                   ) : (
                     <>
                       <RefreshCw className="w-4 h-4 mr-2" />
-                      Regenerate Itinerary
+                      Regenerate
                     </>
                   )}
                 </Button>
-              )}
+              </div>
+
+              {/* Day Cards */}
+              {parsedItinerary.days.map((day) => (
+                <DayCard
+                  key={day.dayNumber}
+                  day={day}
+                  onActivityRemove={handleActivityRemove}
+                  onActivityToggleMustDo={handleActivityToggleMustDo}
+                />
+              ))}
 
               {/* Travel Tips */}
               <TravelTips
@@ -563,23 +600,6 @@ const NewTrip = () => {
                 weatherNotes={parsedItinerary.weatherNotes}
               />
             </>
-          )}
-
-          {/* Empty State */}
-          {!parsedItinerary && !isGenerating && (
-            <Card className="border-0 shadow-sm bg-muted/30">
-              <CardContent className="py-16 text-center">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
-                  <Calendar className="w-10 h-10 text-muted-foreground/50" />
-                </div>
-                <h3 className="font-display text-lg font-semibold text-foreground mb-2">
-                  Ready to plan your trip?
-                </h3>
-                <p className="text-muted-foreground max-w-sm mx-auto">
-                  Fill in your trip details above and let our AI create the perfect itinerary for you.
-                </p>
-              </CardContent>
-            </Card>
           )}
         </div>
       </div>
