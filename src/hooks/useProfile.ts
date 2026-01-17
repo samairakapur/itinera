@@ -61,26 +61,30 @@ export const useUpdateProfile = () => {
     mutationFn: async (updates: { travel_preferences?: TravelPreferences; profile_complete?: boolean }) => {
       if (!user?.id) throw new Error('No user');
 
-      // Cast to satisfy Supabase types while keeping our interface
-      const updatePayload: Record<string, unknown> = {};
-      if (updates.travel_preferences !== undefined) {
-        updatePayload.travel_preferences = JSON.parse(JSON.stringify(updates.travel_preferences));
-      }
-      if (updates.profile_complete !== undefined) {
-        updatePayload.profile_complete = updates.profile_complete;
-      }
+      // Build the upsert payload with user id
+      const upsertPayload = {
+        id: user.id,
+        email: user.email || null,
+        travel_preferences: updates.travel_preferences 
+          ? JSON.parse(JSON.stringify(updates.travel_preferences)) 
+          : undefined,
+        profile_complete: updates.profile_complete,
+      };
 
+      // Use upsert to handle both insert (new user) and update (existing user)
       const { data, error } = await supabase
         .from('profiles')
-        .update(updatePayload)
-        .eq('id', user.id)
+        .upsert(upsertPayload, { onConflict: 'id' })
         .select()
         .single();
 
       if (error) throw error;
-      return data;
+      return data as Profile;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Immediately update the cache with the new data
+      queryClient.setQueryData(['profile', user?.id], data);
+      // Also invalidate to ensure fresh data
       queryClient.invalidateQueries({ queryKey: ['profile', user?.id] });
     },
   });
