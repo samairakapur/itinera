@@ -114,7 +114,9 @@ export const DayCard = ({
                 </div>
                 <div>
                   <h3 className="font-display text-lg font-bold text-foreground">
-                    Day {day.dayNumber} – {day.title}
+                    Day {day.dayNumber} – {day.title && !day.title.toLowerCase().startsWith('day') 
+                      ? day.title 
+                      : day.title.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim() || 'Exploring'}
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {totalActivities} {totalActivities === 1 ? 'activity' : 'activities'}
