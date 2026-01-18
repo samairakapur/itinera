@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import AttractionCard from '@/components/attractions/AttractionCard';
 import RestaurantCard from '@/components/restaurants/RestaurantCard';
 import CityAdvisor from '@/components/advisor/CityAdvisor';
+import WeatherForecast from '@/components/weather/WeatherForecast';
 import { 
   MapPin, 
   Info, 
@@ -259,26 +260,7 @@ const CityDetail = () => {
 
           {/* Weather Tab */}
           <TabsContent value="weather">
-            <Card>
-              <CardHeader>
-                <CardTitle>Weather Information</CardTitle>
-                <CardDescription>Current conditions and forecast for {city.name}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <Cloud className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">
-                    Weather data integration coming soon! Check your favorite weather app for current conditions.
-                  </p>
-                  {city.best_time_to_visit && (
-                    <div className="mt-6 p-4 bg-muted/50 rounded-lg max-w-md mx-auto">
-                      <p className="text-sm font-medium mb-1">Best time to visit:</p>
-                      <p className="text-sm text-muted-foreground">{city.best_time_to_visit}</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <WeatherForecast cityName={city.name} country={city.country} />
           </TabsContent>
 
           {/* Transport Tab */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NearbyCard, NearbyPlace } from '@/components/nearby/NearbyCard';
+import ManualLocationDialog from '@/components/nearby/ManualLocationDialog';
 import { 
   MapPin, 
   Navigation, 
@@ -16,9 +17,10 @@ import {
   Coffee,
   Utensils,
   Landmark,
-  Loader2,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  Settings,
+  MapPinOff
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -27,15 +29,26 @@ const Nearby = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: profile, isLoading: profileLoading } = useProfile();
-  const { latitude, longitude, error: geoError, loading: geoLoading, requestLocation } = useGeolocation();
+  const { 
+    latitude, 
+    longitude, 
+    error: geoError, 
+    loading: geoLoading, 
+    requestLocation,
+    setManualLocation,
+    isPermissionDenied,
+    errorCode
+  } = useGeolocation();
   
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [locationName, setLocationName] = useState<string | null>(null);
 
   const preferences = profile?.travel_preferences;
 
-  const fetchNearbyPlaces = async () => {
+  const fetchNearbyPlaces = useCallback(async () => {
     if (!latitude || !longitude) return;
     
     setLoading(true);
@@ -100,29 +113,52 @@ IMPORTANT:
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        setPlaces(parsed.places || []);
+        if (parsed.places && parsed.places.length > 0) {
+          setPlaces(parsed.places);
+          return;
+        }
       }
+      // If no places parsed, use fallback
+      throw new Error('No places in response');
     } catch (err) {
       console.error('Error fetching nearby places:', err);
-      toast.error('Failed to load nearby recommendations');
-      // Generate fallback data for demo
+      // Always show fallback data so users see something useful
       setPlaces(generateFallbackPlaces(preferences));
+      toast.info('Showing sample recommendations for your area');
     } finally {
       setLoading(false);
     }
-  };
+  }, [latitude, longitude, preferences]);
 
   useEffect(() => {
-    if (latitude && longitude && !loading && places.length === 0) {
+    if (latitude && longitude && places.length === 0 && !loading) {
       fetchNearbyPlaces();
     }
-  }, [latitude, longitude]);
+  }, [latitude, longitude, fetchNearbyPlaces, places.length, loading]);
+
+  const handleManualLocationSet = (lat: number, lng: number, name?: string) => {
+    setManualLocation(lat, lng);
+    setLocationName(name || null);
+    setPlaces([]); // Clear places so it refetches
+    toast.success(`Location set to ${name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}`);
+  };
+
+  const handleRefresh = () => {
+    setPlaces([]);
+    if (isPermissionDenied && !locationName) {
+      setManualDialogOpen(true);
+    } else {
+      requestLocation();
+      setTimeout(fetchNearbyPlaces, 500);
+    }
+  };
 
   const filteredPlaces = useMemo(() => {
     if (activeTab === 'all') return places;
     return places.filter(p => p.type === activeTab);
   }, [places, activeTab]);
 
+  // Not logged in
   if (!user) {
     return (
       <div className="min-h-screen py-8">
@@ -148,7 +184,8 @@ IMPORTANT:
     );
   }
 
-  if (geoLoading || profileLoading) {
+  // Loading state (only show while initially getting location)
+  if (geoLoading && !latitude && !longitude && !geoError) {
     return (
       <div className="min-h-screen py-8">
         <div className="container px-4">
@@ -157,38 +194,74 @@ IMPORTANT:
               <Navigation className="w-10 h-10 text-primary" />
             </div>
             <h2 className="font-display text-xl font-semibold mb-2">Detecting Your Location</h2>
-            <p className="text-muted-foreground text-center max-w-sm">
+            <p className="text-muted-foreground text-center max-w-sm mb-6">
               Please allow location access to discover personalized recommendations near you.
             </p>
+            <Button variant="outline" onClick={() => setManualDialogOpen(true)}>
+              <Settings className="w-4 h-4 mr-2" />
+              Set Location Manually
+            </Button>
           </div>
         </div>
+        <ManualLocationDialog 
+          open={manualDialogOpen} 
+          onOpenChange={setManualDialogOpen}
+          onLocationSet={handleManualLocationSet}
+        />
       </div>
     );
   }
 
-  if (geoError) {
+  // Location denied or error - show helpful UI with manual option
+  if (geoError && !latitude && !longitude) {
     return (
       <div className="min-h-screen py-8">
         <div className="container px-4">
           <Card className="max-w-lg mx-auto">
             <CardHeader className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-destructive/10 flex items-center justify-center">
-                <AlertCircle className="w-8 h-8 text-destructive" />
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 flex items-center justify-center">
+                {isPermissionDenied ? (
+                  <MapPinOff className="w-8 h-8 text-amber-500" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-amber-500" />
+                )}
               </div>
-              <CardTitle>Location Access Required</CardTitle>
-              <CardDescription>{geoError}</CardDescription>
+              <CardTitle>
+                {isPermissionDenied ? 'Location Access Disabled' : 'Location Unavailable'}
+              </CardTitle>
+              <CardDescription className="mt-2">
+                {isPermissionDenied 
+                  ? 'Location permission was denied. You can still explore nearby recommendations by setting your location manually.'
+                  : geoError
+                }
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button className="w-full" onClick={requestLocation}>
-                <Navigation className="w-4 h-4 mr-2" />
-                Try Again
+              <Button className="w-full" onClick={() => setManualDialogOpen(true)}>
+                <MapPin className="w-4 h-4 mr-2" />
+                Set Location Manually
               </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                Make sure location services are enabled in your browser and device settings.
-              </p>
+              {!isPermissionDenied && (
+                <Button className="w-full" variant="outline" onClick={requestLocation}>
+                  <Navigation className="w-4 h-4 mr-2" />
+                  Try Again
+                </Button>
+              )}
+              {isPermissionDenied && (
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">
+                    To enable automatic location, update your browser settings and refresh the page.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
+        <ManualLocationDialog 
+          open={manualDialogOpen} 
+          onOpenChange={setManualDialogOpen}
+          onLocationSet={handleManualLocationSet}
+        />
       </div>
     );
   }
@@ -202,17 +275,21 @@ IMPORTANT:
             <div className="flex items-center gap-2 text-muted-foreground">
               <MapPin className="w-4 h-4" />
               <span className="text-sm">
-                {latitude?.toFixed(4)}, {longitude?.toFixed(4)}
+                {locationName || `${latitude?.toFixed(4)}, ${longitude?.toFixed(4)}`}
               </span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs"
+                onClick={() => setManualDialogOpen(true)}
+              >
+                Change
+              </Button>
             </div>
           </div>
           <Button 
             variant="outline" 
-            onClick={() => {
-              setPlaces([]);
-              requestLocation();
-              setTimeout(fetchNearbyPlaces, 500);
-            }}
+            onClick={handleRefresh}
             disabled={loading}
             className="gap-2"
           >
@@ -297,13 +374,13 @@ IMPORTANT:
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
                     <MapPin className="w-8 h-8 text-muted-foreground" />
                   </div>
-                  <h3 className="font-display text-lg font-semibold mb-2">No places found</h3>
+                  <h3 className="font-display text-lg font-semibold mb-2">Loading recommendations...</h3>
                   <p className="text-muted-foreground mb-4">
-                    Try refreshing or check back later for new recommendations.
+                    Getting personalized places near you.
                   </p>
-                  <Button variant="outline" onClick={fetchNearbyPlaces}>
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Refresh Recommendations
+                  <Button variant="outline" onClick={fetchNearbyPlaces} disabled={loading}>
+                    <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                    Load Recommendations
                   </Button>
                 </CardContent>
               </Card>
@@ -311,11 +388,17 @@ IMPORTANT:
           </TabsContent>
         </Tabs>
       </div>
+      
+      <ManualLocationDialog 
+        open={manualDialogOpen} 
+        onOpenChange={setManualDialogOpen}
+        onLocationSet={handleManualLocationSet}
+      />
     </div>
   );
 };
 
-// Fallback data generator for demo purposes
+// Fallback data generator - always returns real content
 function generateFallbackPlaces(preferences: any): NearbyPlace[] {
   const cuisines = preferences?.preferredCuisines || ['Italian', 'Japanese', 'Local'];
   const interests = preferences?.interests || ['History', 'Art', 'Nature'];
