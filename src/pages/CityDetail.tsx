@@ -1,9 +1,10 @@
 import { useParams } from 'react-router-dom';
 import { useCity } from '@/hooks/useCities';
-import { useAttractions } from '@/hooks/useAttractions';
-import { useRestaurants } from '@/hooks/useRestaurants';
+import { usePersonalizedAttractions } from '@/hooks/usePersonalizedAttractions';
+import { usePersonalizedRestaurants } from '@/hooks/usePersonalizedRestaurants';
 import { useTransport } from '@/hooks/useTransport';
 import { useNeighborhoods } from '@/hooks/useNeighborhoods';
+import { useProfile } from '@/hooks/useProfile';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,16 +26,18 @@ import {
   Users,
   Plane,
   Car,
-  Train
+  Train,
+  Sparkles
 } from 'lucide-react';
 
 const CityDetail = () => {
   const { cityId } = useParams<{ cityId: string }>();
   const { data: city, isLoading: cityLoading } = useCity(cityId);
-  const { data: attractions, isLoading: attractionsLoading } = useAttractions(cityId);
-  const { data: restaurants, isLoading: restaurantsLoading } = useRestaurants(cityId);
+  const { data: attractions, isLoading: attractionsLoading } = usePersonalizedAttractions(cityId);
+  const { data: restaurants, isLoading: restaurantsLoading } = usePersonalizedRestaurants(cityId);
   const { data: transport, isLoading: transportLoading } = useTransport(cityId);
   const { data: neighborhoods, isLoading: neighborhoodsLoading } = useNeighborhoods(cityId);
+  const { data: profile } = useProfile();
 
   if (cityLoading) {
     return (
@@ -419,7 +422,13 @@ const CityDetail = () => {
           </TabsContent>
 
           {/* Attractions Tab */}
-          <TabsContent value="attractions">
+          <TabsContent value="attractions" className="space-y-4">
+            {profile?.travel_preferences && (
+              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-4 py-2 rounded-lg">
+                <Sparkles className="w-4 h-4" />
+                <span>Personalized recommendations based on your preferences</span>
+              </div>
+            )}
             {attractionsLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -434,8 +443,15 @@ const CityDetail = () => {
               </div>
             ) : attractions && attractions.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {attractions.map((attraction) => (
-                  <AttractionCard key={attraction.id} attraction={attraction} />
+                {attractions.map((attraction, index) => (
+                  <div key={attraction.id} className="relative">
+                    {index < 3 && profile?.travel_preferences && (
+                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground">
+                        Top Pick
+                      </Badge>
+                    )}
+                    <AttractionCard attraction={attraction} />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -449,7 +465,13 @@ const CityDetail = () => {
           </TabsContent>
 
           {/* Restaurants Tab */}
-          <TabsContent value="restaurants">
+          <TabsContent value="restaurants" className="space-y-4">
+            {profile?.travel_preferences && (
+              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-4 py-2 rounded-lg">
+                <Sparkles className="w-4 h-4" />
+                <span>Personalized recommendations based on your cuisine preferences</span>
+              </div>
+            )}
             {restaurantsLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -464,8 +486,15 @@ const CityDetail = () => {
               </div>
             ) : restaurants && restaurants.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {restaurants.map((restaurant) => (
-                  <RestaurantCard key={restaurant.id} restaurant={restaurant} />
+                {restaurants.map((restaurant, index) => (
+                  <div key={restaurant.id} className="relative">
+                    {index < 3 && profile?.travel_preferences && (
+                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground">
+                        Top Pick
+                      </Badge>
+                    )}
+                    <RestaurantCard restaurant={restaurant} />
+                  </div>
                 ))}
               </div>
             ) : (
