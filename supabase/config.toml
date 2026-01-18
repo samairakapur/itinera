@@ -7,3 +7,7 @@ verify_jwt = false
 [functions.generate-itinerary]
 enabled = true
 verify_jwt = false
+
+[functions.populate-city-data]
+enabled = true
+verify_jwt = false
