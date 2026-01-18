@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,8 @@ import {
   Leaf,
   Phone,
   Globe,
-  DollarSign
+  DollarSign,
+  Utensils
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToggleFavorite, useIsFavorite } from '@/hooks/useFavorites';
@@ -17,11 +19,16 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Restaurant } from '@/hooks/useRestaurants';
 
+// Default fallback image for restaurants
+const DEFAULT_RESTAURANT_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600';
+
 interface RestaurantCardProps {
   restaurant: Restaurant;
 }
 
 const RestaurantCard = ({ restaurant }: RestaurantCardProps) => {
+  const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const { user } = useAuth();
   const toggleFavorite = useToggleFavorite();
   const isFavorite = useIsFavorite(undefined, restaurant.id);
@@ -48,20 +55,29 @@ const RestaurantCard = ({ restaurant }: RestaurantCardProps) => {
     return '$'.repeat(level);
   };
 
+  const imageUrl = imageError || !restaurant.image_url ? DEFAULT_RESTAURANT_IMAGE : restaurant.image_url;
+
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
-      <div className="relative aspect-video overflow-hidden">
-        {restaurant.image_url ? (
-          <img
-            src={restaurant.image_url}
-            alt={restaurant.name}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-secondary/10 to-accent/10 flex items-center justify-center">
-            <MapPin className="w-8 h-8 text-secondary/40" />
+      <div className="relative aspect-video overflow-hidden bg-muted">
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 to-accent/10 flex items-center justify-center animate-pulse">
+            <Utensils className="w-8 h-8 text-secondary/40" />
           </div>
         )}
+        <img
+          src={imageUrl}
+          alt={restaurant.name}
+          className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+            imageLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            setImageError(true);
+            setImageLoaded(true);
+          }}
+          loading="lazy"
+        />
         <Button
           variant="ghost"
           size="icon"

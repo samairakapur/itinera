@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,11 +18,16 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Attraction } from '@/hooks/useAttractions';
 
+// Default fallback image for attractions
+const DEFAULT_ATTRACTION_IMAGE = 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=600';
+
 interface AttractionCardProps {
   attraction: Attraction;
 }
 
 const AttractionCard = ({ attraction }: AttractionCardProps) => {
+  const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const { user } = useAuth();
   const toggleFavorite = useToggleFavorite();
   const isFavorite = useIsFavorite(attraction.id);
@@ -48,20 +54,29 @@ const AttractionCard = ({ attraction }: AttractionCardProps) => {
     return `$${price}`;
   };
 
+  const imageUrl = imageError || !attraction.image_url ? DEFAULT_ATTRACTION_IMAGE : attraction.image_url;
+
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
-      <div className="relative aspect-video overflow-hidden">
-        {attraction.image_url ? (
-          <img
-            src={attraction.image_url}
-            alt={attraction.name}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
+      <div className="relative aspect-video overflow-hidden bg-muted">
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center animate-pulse">
             <MapPin className="w-8 h-8 text-primary/40" />
           </div>
         )}
+        <img
+          src={imageUrl}
+          alt={attraction.name}
+          className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+            imageLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            setImageError(true);
+            setImageLoaded(true);
+          }}
+          loading="lazy"
+        />
         <Button
           variant="ghost"
           size="icon"
