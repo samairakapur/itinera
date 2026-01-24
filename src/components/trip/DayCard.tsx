@@ -43,6 +43,7 @@ export interface DayData {
 
 interface DayCardProps {
   day: DayData;
+  cityName?: string; // City context for navigation
   defaultOpen?: boolean;
   onActivityRemove?: (dayNumber: number, activityId: string) => void;
   onActivitySwap?: (dayNumber: number, activityId: string) => void;
@@ -75,6 +76,7 @@ const TimeSlot = ({
   activities,
   dayNumber,
   timeSlot,
+  cityName,
   onRemove,
   onSwap,
   onToggleMustDo,
@@ -88,6 +90,7 @@ const TimeSlot = ({
   activities: Activity[];
   dayNumber: number;
   timeSlot: 'morning' | 'afternoon' | 'evening';
+  cityName?: string;
   onRemove?: (id: string) => void;
   onSwap?: (id: string) => void;
   onToggleMustDo?: (id: string) => void;
@@ -124,6 +127,7 @@ const TimeSlot = ({
             <ActivityCard
               key={activity.id}
               activity={activity}
+              cityName={cityName}
               onRemove={onRemove}
               onSwap={onSwap}
               onToggleMustDo={onToggleMustDo}
@@ -156,6 +160,7 @@ const TimeSlot = ({
 
 export const DayCard = ({
   day,
+  cityName,
   defaultOpen = false,
   onActivityRemove,
   onActivitySwap,
@@ -301,6 +306,7 @@ export const DayCard = ({
               activities={day.morning}
               dayNumber={day.dayNumber}
               timeSlot="morning"
+              cityName={cityName}
               onRemove={handleRemove}
               onSwap={handleSwap}
               onToggleMustDo={handleToggleMustDo}
@@ -315,6 +321,7 @@ export const DayCard = ({
               activities={day.afternoon}
               dayNumber={day.dayNumber}
               timeSlot="afternoon"
+              cityName={cityName}
               onRemove={handleRemove}
               onSwap={handleSwap}
               onToggleMustDo={handleToggleMustDo}
@@ -329,6 +336,7 @@ export const DayCard = ({
               activities={day.evening}
               dayNumber={day.dayNumber}
               timeSlot="evening"
+              cityName={cityName}
               onRemove={handleRemove}
               onSwap={handleSwap}
               onToggleMustDo={handleToggleMustDo}

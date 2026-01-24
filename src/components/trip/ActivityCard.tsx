@@ -12,7 +12,11 @@ import {
   Bookmark,
   Lightbulb,
   Edit,
-  Ticket
+  Ticket,
+  Navigation,
+  ExternalLink,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,7 +33,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export interface Activity {
   id: string;
@@ -39,6 +49,10 @@ export interface Activity {
   time?: string;
   duration?: string;
   location?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  cityName?: string;
   mustDo?: boolean;
   reasoning?: string; // Why this activity was recommended
   isPrebooked?: boolean; // User has already booked this
@@ -47,6 +61,7 @@ export interface Activity {
 
 interface ActivityCardProps {
   activity: Activity;
+  cityName?: string; // City context for directions
   onRemove?: (id: string) => void;
   onSwap?: (id: string) => void;
   onToggleMustDo?: (id: string) => void;
@@ -75,6 +90,7 @@ const typeColors = {
 
 export const ActivityCard = ({
   activity,
+  cityName,
   onRemove,
   onSwap,
   onToggleMustDo,
@@ -85,8 +101,58 @@ export const ActivityCard = ({
   isLast,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
+  const [copied, setCopied] = useState(false);
   const Icon = typeIcons[activity.type] || Star;
   const colorClass = typeColors[activity.type] || typeColors.custom;
+
+  // Build Google Maps URL for directions
+  const getGoogleMapsUrl = () => {
+    // Use coordinates if available
+    if (activity.latitude && activity.longitude) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${activity.latitude},${activity.longitude}&destination_place_id=`;
+    }
+    
+    // Build search query from available info
+    const parts: string[] = [];
+    if (activity.title) parts.push(activity.title);
+    if (activity.address) parts.push(activity.address);
+    else if (activity.location) parts.push(activity.location);
+    
+    // Add city context
+    const city = activity.cityName || cityName;
+    if (city && !parts.some(p => p.toLowerCase().includes(city.toLowerCase()))) {
+      parts.push(city);
+    }
+    
+    const query = encodeURIComponent(parts.join(', '));
+    return `https://www.google.com/maps/dir/?api=1&destination=${query}`;
+  };
+
+  const getMapsQuery = () => {
+    const parts: string[] = [];
+    if (activity.title) parts.push(activity.title);
+    if (activity.address) parts.push(activity.address);
+    else if (activity.location) parts.push(activity.location);
+    const city = activity.cityName || cityName;
+    if (city) parts.push(city);
+    return parts.join(', ');
+  };
+
+  const handleCopyQuery = async () => {
+    const query = getMapsQuery();
+    try {
+      await navigator.clipboard.writeText(query);
+      setCopied(true);
+      toast.success('Location copied to clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy');
+    }
+  };
+
+  const handleOpenMaps = () => {
+    window.open(getGoogleMapsUrl(), '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <Card className={cn(
@@ -202,6 +268,60 @@ export const ActivityCard = ({
                     {activity.location}
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* How to get there - Navigation Button */}
+            {activity.type !== 'transport' && (
+              <div className="mt-3 flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-8 text-xs gap-1.5 bg-sky/5 border-sky/20 text-sky hover:bg-sky/10 hover:text-sky"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      How to get there
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="start">
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground">
+                        Get directions from your current location
+                      </p>
+                      <Button 
+                        onClick={handleOpenMaps}
+                        className="w-full gap-2"
+                        size="sm"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Open in Google Maps
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleCopyQuery}
+                        className="w-full gap-2"
+                        size="sm"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copy location
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-[10px] text-muted-foreground pt-1 border-t">
+                        {getMapsQuery()}
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
 

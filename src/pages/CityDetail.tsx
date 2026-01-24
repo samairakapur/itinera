@@ -13,6 +13,7 @@ import AttractionCard from '@/components/attractions/AttractionCard';
 import RestaurantCard from '@/components/restaurants/RestaurantCard';
 import CityAdvisor from '@/components/advisor/CityAdvisor';
 import WeatherForecast from '@/components/weather/WeatherForecast';
+import PersonalizedTransportRecommendation from '@/components/transport/PersonalizedTransportRecommendation';
 import { 
   MapPin, 
   Info, 
@@ -265,6 +266,13 @@ const CityDetail = () => {
 
           {/* Transport Tab */}
           <TabsContent value="transport" className="space-y-6">
+            {/* Personalized Transport Recommendation */}
+            <PersonalizedTransportRecommendation 
+              transport={transport}
+              preferences={profile?.travel_preferences}
+              cityName={city.name}
+            />
+
             {transportLoading ? (
               <Card>
                 <CardContent className="p-8">
