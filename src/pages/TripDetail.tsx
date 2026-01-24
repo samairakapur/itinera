@@ -103,7 +103,7 @@ const TripDetail = () => {
         </div>
         <div className="space-y-6">
           <TripOverviewCard cityName={itinerary.cities?.name || ''} countryName={itinerary.cities?.country || ''} numDays={itinerary.num_days} travelStyle={itinerary.travel_style || ''} pace={itinerary.pace || ''} budgetLevel={itinerary.budget_level || ''} summary="" />
-          {days.map(day => <DayCard key={day.dayNumber} day={day} onActivityRemove={handleActivityRemove} onAddActivity={handleAddActivity} />)}
+          {days.map(day => <DayCard key={day.dayNumber} day={day} cityName={itinerary.cities?.name} onActivityRemove={handleActivityRemove} onAddActivity={handleAddActivity} />)}
         </div>
       </div>
       <AddActivityDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onSave={handleSaveActivity} dayNumber={addDialogDay} timeSlot={addDialogTimeSlot} editActivity={editActivity} />
