@@ -21,10 +21,10 @@ const Destinations = () => {
         {/* Header */}
         <div className="max-w-2xl mx-auto text-center mb-12">
           <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Explore Family-Friendly Destinations
+            Explore Amazing Destinations
           </h1>
           <p className="text-muted-foreground mb-8">
-            Discover cities perfect for your next family adventure
+            Discover cities perfect for your next adventure
           </p>
           
           {/* Search */}

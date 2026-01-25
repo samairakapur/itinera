@@ -511,7 +511,7 @@ function generateFallbackPlaces(preferences: any): NearbyPlace[] {
       id: '9',
       name: `${cuisines[1] || 'Local'} Flavors`,
       type: 'restaurant',
-      description: `Traditional ${cuisines[1] || 'local'} dishes in a cozy family-run restaurant.`,
+      description: `Traditional ${cuisines[1] || 'local'} dishes in a cozy local restaurant.`,
       distance: '0.9 km',
       rating: 4.4,
       priceLevel: 2,

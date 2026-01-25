@@ -133,7 +133,7 @@ const RestaurantCard = ({ restaurant }: RestaurantCardProps) => {
           {restaurant.is_family_friendly && (
             <Badge variant="secondary" className="text-xs">
               <Users className="w-3 h-3 mr-1" />
-              Family-Friendly
+              Group-Friendly
             </Badge>
           )}
           {restaurant.has_kids_menu && (
