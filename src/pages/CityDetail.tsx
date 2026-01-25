@@ -3,7 +3,6 @@ import { useCity } from '@/hooks/useCities';
 import { usePersonalizedAttractions } from '@/hooks/usePersonalizedAttractions';
 import { usePersonalizedRestaurants } from '@/hooks/usePersonalizedRestaurants';
 import { useTransport } from '@/hooks/useTransport';
-import { useNeighborhoods } from '@/hooks/useNeighborhoods';
 import { useProfile } from '@/hooks/useProfile';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +12,9 @@ import AttractionCard from '@/components/attractions/AttractionCard';
 import RestaurantCard from '@/components/restaurants/RestaurantCard';
 import CityAdvisor from '@/components/advisor/CityAdvisor';
 import WeatherForecast from '@/components/weather/WeatherForecast';
+import MonthlyClimateSummary from '@/components/weather/MonthlyClimateSummary';
 import PersonalizedTransportRecommendation from '@/components/transport/PersonalizedTransportRecommendation';
+import PersonalizedInsiderTips from '@/components/overview/PersonalizedInsiderTips';
 import { 
   MapPin, 
   Info, 
@@ -25,7 +26,6 @@ import {
   Clock,
   DollarSign,
   Shield,
-  Users,
   Plane,
   Car,
   Train,
@@ -38,7 +38,6 @@ const CityDetail = () => {
   const { data: attractions, isLoading: attractionsLoading } = usePersonalizedAttractions(cityId);
   const { data: restaurants, isLoading: restaurantsLoading } = usePersonalizedRestaurants(cityId);
   const { data: transport, isLoading: transportLoading } = useTransport(cityId);
-  const { data: neighborhoods, isLoading: neighborhoodsLoading } = useNeighborhoods(cityId);
   const { data: profile } = useProfile();
 
   if (cityLoading) {
@@ -67,6 +66,16 @@ const CityDetail = () => {
 
   const airportOptions = transport?.airport_transfer_options as Array<{ method: string; duration: string; cost: string }> || [];
 
+  // Parse content into bullet points
+  const parseIntoBullets = (text: string): string[] => {
+    // Split by common separators: periods followed by space/capital, semicolons, or existing bullets
+    const parts = text
+      .split(/(?<=[.!?])\s+(?=[A-Z])|;\s*|•\s*/)
+      .map(s => s.trim())
+      .filter(s => s.length > 10);
+    return parts.length > 0 ? parts : [text];
+  };
+
   return (
     <div className="min-h-screen">
       {/* Hero */}
@@ -81,19 +90,19 @@ const CityDetail = () => {
           <div className="w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
+        <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8">
           <div className="container">
             <div className="flex items-center gap-2 text-white/80 text-sm mb-2">
               <MapPin className="w-4 h-4" />
               {city.country}
             </div>
-            <h1 className="font-display text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-3">
+            <h1 className="font-display text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-3">
               {city.name}
             </h1>
             {city.tags && city.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {city.tags.slice(0, 5).map((tag) => (
-                  <Badge key={tag} variant="secondary" className="bg-white/20 text-white border-0">
+                  <Badge key={tag} variant="secondary" className="bg-white/20 text-white border-0 text-xs">
                     {tag}
                   </Badge>
                 ))}
@@ -104,154 +113,142 @@ const CityDetail = () => {
       </div>
 
       {/* Content */}
-      <div className="container px-4 py-8">
-        <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="w-full flex-wrap h-auto gap-2 bg-muted/50 p-2">
-            <TabsTrigger value="overview" className="flex items-center gap-2">
+      <div className="container px-4 py-6 md:py-8">
+        <Tabs defaultValue="overview" className="space-y-6 md:space-y-8">
+          {/* Mobile-friendly tabs with icons AND text */}
+          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto gap-1 bg-muted/50 p-1.5">
+            <TabsTrigger value="overview" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Info className="w-4 h-4" />
-              <span className="hidden sm:inline">Overview</span>
+              <span>Overview</span>
             </TabsTrigger>
-            <TabsTrigger value="weather" className="flex items-center gap-2">
+            <TabsTrigger value="weather" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Cloud className="w-4 h-4" />
-              <span className="hidden sm:inline">Weather</span>
+              <span>Weather</span>
             </TabsTrigger>
-            <TabsTrigger value="transport" className="flex items-center gap-2">
+            <TabsTrigger value="transport" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Bus className="w-4 h-4" />
-              <span className="hidden sm:inline">Getting Around</span>
+              <span className="hidden xs:inline">Getting Around</span>
+              <span className="xs:hidden">Transport</span>
             </TabsTrigger>
-            <TabsTrigger value="attractions" className="flex items-center gap-2">
+            <TabsTrigger value="attractions" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Landmark className="w-4 h-4" />
-              <span className="hidden sm:inline">Attractions</span>
+              <span>Attractions</span>
             </TabsTrigger>
-            <TabsTrigger value="restaurants" className="flex items-center gap-2">
+            <TabsTrigger value="restaurants" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <UtensilsCrossed className="w-4 h-4" />
-              <span className="hidden sm:inline">Restaurants</span>
+              <span>Restaurants</span>
             </TabsTrigger>
-            <TabsTrigger value="advisor" className="flex items-center gap-2">
+            <TabsTrigger value="advisor" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Bot className="w-4 h-4" />
-              <span className="hidden sm:inline">AI Advisor</span>
+              <span className="hidden xs:inline">AI Advisor</span>
+              <span className="xs:hidden">Advisor</span>
             </TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
+          {/* Overview Tab - Restructured */}
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+              <div className="lg:col-span-2 space-y-4 md:space-y-6">
+                {/* About Section */}
                 {city.description && (
                   <Card>
-                    <CardHeader>
-                      <CardTitle>About {city.name}</CardTitle>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">About {city.name}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-muted-foreground leading-relaxed">{city.description}</p>
+                      <p className="text-muted-foreground leading-relaxed text-sm md:text-base">
+                        {city.description}
+                      </p>
                     </CardContent>
                   </Card>
                 )}
 
-                {city.family_tips && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-primary" />
-                        Insider Tips
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-muted-foreground leading-relaxed">{city.family_tips}</p>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {neighborhoods && neighborhoods.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Neighborhoods</CardTitle>
-                      <CardDescription>Best areas to explore and discover</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {neighborhoods.map((neighborhood) => (
-                          <div key={neighborhood.id} className="p-4 rounded-lg bg-muted/50">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-semibold">{neighborhood.name}</h4>
-                              {neighborhood.is_family_friendly && (
-                                <Badge variant="secondary" className="text-xs">Recommended</Badge>
-                              )}
-                            </div>
-                            {neighborhood.description && (
-                              <p className="text-sm text-muted-foreground">{neighborhood.description}</p>
-                            )}
-                            {neighborhood.highlight && (
-                              <p className="text-sm text-primary mt-2">✨ {neighborhood.highlight}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                {/* Personalized Insider Tips */}
+                <PersonalizedInsiderTips 
+                  city={city} 
+                  preferences={profile?.travel_preferences} 
+                />
               </div>
 
               <div className="space-y-4">
+                {/* Quick Info - Bullet format */}
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="pb-3">
                     <CardTitle className="text-base">Quick Info</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {city.currency && (
-                      <div className="flex items-center gap-3">
-                        <DollarSign className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Currency</p>
-                          <p className="text-sm text-muted-foreground">{city.currency}</p>
-                        </div>
-                      </div>
-                    )}
-                    {city.language && (
-                      <div className="flex items-center gap-3">
-                        <Info className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Language</p>
-                          <p className="text-sm text-muted-foreground">{city.language}</p>
-                        </div>
-                      </div>
-                    )}
-                    {city.timezone && (
-                      <div className="flex items-center gap-3">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm font-medium">Timezone</p>
-                          <p className="text-sm text-muted-foreground">{city.timezone}</p>
-                        </div>
-                      </div>
-                    )}
+                  <CardContent>
+                    <ul className="space-y-3">
+                      {city.currency && (
+                        <li className="flex items-start gap-3">
+                          <DollarSign className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="text-sm">
+                            <span className="font-medium">Currency:</span>{' '}
+                            <span className="text-muted-foreground">{city.currency}</span>
+                          </div>
+                        </li>
+                      )}
+                      {city.language && (
+                        <li className="flex items-start gap-3">
+                          <Info className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="text-sm">
+                            <span className="font-medium">Language:</span>{' '}
+                            <span className="text-muted-foreground">{city.language}</span>
+                          </div>
+                        </li>
+                      )}
+                      {city.timezone && (
+                        <li className="flex items-start gap-3">
+                          <Clock className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="text-sm">
+                            <span className="font-medium">Timezone:</span>{' '}
+                            <span className="text-muted-foreground">{city.timezone}</span>
+                          </div>
+                        </li>
+                      )}
+                    </ul>
                   </CardContent>
                 </Card>
 
+                {/* Best Time to Visit - Bullet format */}
                 {city.best_time_to_visit && (
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
-                        <Cloud className="w-4 h-4" />
+                        <Cloud className="w-4 h-4 text-primary" />
                         Best Time to Visit
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground">{city.best_time_to_visit}</p>
+                      <ul className="space-y-2">
+                        {parseIntoBullets(city.best_time_to_visit).map((point, index) => (
+                          <li key={index} className="flex items-start gap-2 text-sm">
+                            <span className="text-primary font-bold mt-0.5">•</span>
+                            <span className="text-muted-foreground">{point}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </CardContent>
                   </Card>
                 )}
 
+                {/* Safety Notes - Bullet format */}
                 {city.safety_notes && (
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
+                        <Shield className="w-4 h-4 text-primary" />
                         Safety Notes
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground">{city.safety_notes}</p>
+                      <ul className="space-y-2">
+                        {parseIntoBullets(city.safety_notes).map((point, index) => (
+                          <li key={index} className="flex items-start gap-2 text-sm">
+                            <span className="text-primary font-bold mt-0.5">•</span>
+                            <span className="text-muted-foreground">{point}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </CardContent>
                   </Card>
                 )}
@@ -259,13 +256,14 @@ const CityDetail = () => {
             </div>
           </TabsContent>
 
-          {/* Weather Tab */}
-          <TabsContent value="weather">
+          {/* Weather Tab - Enhanced with Monthly Climate */}
+          <TabsContent value="weather" className="space-y-6">
             <WeatherForecast cityName={city.name} country={city.country} />
+            <MonthlyClimateSummary cityName={city.name} />
           </TabsContent>
 
           {/* Transport Tab */}
-          <TabsContent value="transport" className="space-y-6">
+          <TabsContent value="transport" className="space-y-4 md:space-y-6">
             {/* Personalized Transport Recommendation */}
             <PersonalizedTransportRecommendation 
               transport={transport}
@@ -284,24 +282,24 @@ const CityDetail = () => {
               <>
                 {transport.public_transport_overview && (
                   <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base md:text-lg">
                         <Bus className="w-5 h-5 text-primary" />
                         Public Transport Overview
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-muted-foreground">{transport.public_transport_overview}</p>
+                      <p className="text-muted-foreground text-sm md:text-base">{transport.public_transport_overview}</p>
                     </CardContent>
                   </Card>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                   {transport.metro_info && (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
-                          <Train className="w-4 h-4" />
+                          <Train className="w-4 h-4 text-primary" />
                           Metro/Subway
                         </CardTitle>
                       </CardHeader>
@@ -313,9 +311,9 @@ const CityDetail = () => {
 
                   {transport.bus_info && (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
-                          <Bus className="w-4 h-4" />
+                          <Bus className="w-4 h-4 text-primary" />
                           Bus System
                         </CardTitle>
                       </CardHeader>
@@ -327,9 +325,9 @@ const CityDetail = () => {
 
                   {transport.ticket_options && (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
+                          <DollarSign className="w-4 h-4 text-primary" />
                           Ticket Options
                         </CardTitle>
                       </CardHeader>
@@ -341,9 +339,9 @@ const CityDetail = () => {
 
                   {transport.family_pass_info && (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
+                          <DollarSign className="w-4 h-4 text-primary" />
                           Group & Multi-Day Passes
                         </CardTitle>
                       </CardHeader>
@@ -356,19 +354,19 @@ const CityDetail = () => {
 
                 {airportOptions.length > 0 && (
                   <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Plane className="w-5 h-5" />
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base md:text-lg">
+                        <Plane className="w-5 h-5 text-primary" />
                         Airport Transfers
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                         {airportOptions.map((option, index) => (
-                          <div key={index} className="p-4 rounded-lg bg-muted/50">
-                            <p className="font-medium">{option.method}</p>
-                            <p className="text-sm text-muted-foreground">{option.duration}</p>
-                            <p className="text-sm text-primary font-medium">{option.cost}</p>
+                          <div key={index} className="p-3 md:p-4 rounded-lg bg-muted/50">
+                            <p className="font-medium text-sm md:text-base">{option.method}</p>
+                            <p className="text-xs md:text-sm text-muted-foreground">{option.duration}</p>
+                            <p className="text-xs md:text-sm text-primary font-medium">{option.cost}</p>
                           </div>
                         ))}
                       </div>
@@ -378,23 +376,23 @@ const CityDetail = () => {
 
                 {(transport.car_rental_daily_cost || transport.parking_notes) && (
                   <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Car className="w-5 h-5" />
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base md:text-lg">
+                        <Car className="w-5 h-5 text-primary" />
                         Driving
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-3 md:space-y-4">
                       {transport.car_rental_daily_cost && (
                         <div>
                           <p className="font-medium text-sm">Car Rental</p>
-                          <p className="text-sm text-muted-foreground">{transport.car_rental_daily_cost}</p>
+                          <p className="text-xs md:text-sm text-muted-foreground">{transport.car_rental_daily_cost}</p>
                         </div>
                       )}
                       {transport.parking_notes && (
                         <div>
                           <p className="font-medium text-sm">Parking</p>
-                          <p className="text-sm text-muted-foreground">{transport.parking_notes}</p>
+                          <p className="text-xs md:text-sm text-muted-foreground">{transport.parking_notes}</p>
                         </div>
                       )}
                     </CardContent>
@@ -414,13 +412,13 @@ const CityDetail = () => {
           {/* Attractions Tab */}
           <TabsContent value="attractions" className="space-y-4">
             {profile?.travel_preferences && (
-              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-4 py-2 rounded-lg">
-                <Sparkles className="w-4 h-4" />
+              <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
+                <Sparkles className="w-4 h-4 flex-shrink-0" />
                 <span>Personalized recommendations based on your preferences</span>
               </div>
             )}
             {attractionsLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <Card key={i} className="overflow-hidden animate-pulse">
                     <div className="aspect-video bg-muted" />
@@ -432,11 +430,11 @@ const CityDetail = () => {
                 ))}
               </div>
             ) : attractions && attractions.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {attractions.map((attraction, index) => (
                   <div key={attraction.id} className="relative">
                     {index < 3 && profile?.travel_preferences && (
-                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground">
+                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground text-xs">
                         Top Pick
                       </Badge>
                     )}
@@ -457,13 +455,13 @@ const CityDetail = () => {
           {/* Restaurants Tab */}
           <TabsContent value="restaurants" className="space-y-4">
             {profile?.travel_preferences && (
-              <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 px-4 py-2 rounded-lg">
-                <Sparkles className="w-4 h-4" />
+              <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
+                <Sparkles className="w-4 h-4 flex-shrink-0" />
                 <span>Personalized recommendations based on your cuisine preferences</span>
               </div>
             )}
             {restaurantsLoading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <Card key={i} className="overflow-hidden animate-pulse">
                     <div className="aspect-video bg-muted" />
@@ -475,11 +473,11 @@ const CityDetail = () => {
                 ))}
               </div>
             ) : restaurants && restaurants.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {restaurants.map((restaurant, index) => (
                   <div key={restaurant.id} className="relative">
                     {index < 3 && profile?.travel_preferences && (
-                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground">
+                      <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground text-xs">
                         Top Pick
                       </Badge>
                     )}
