@@ -1,29 +1,70 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCities } from '@/hooks/useCities';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import CityCard from '@/components/cities/CityCard';
+import { DestinationFilters } from '@/components/destinations/DestinationFilters';
 import { Search, MapPin } from 'lucide-react';
 
 const Destinations = () => {
+  const navigate = useNavigate();
   const { data: cities, isLoading } = useCities();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState('all');
+  const [selectedCity, setSelectedCity] = useState('all');
 
-  const filteredCities = cities?.filter(city => 
-    city.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    city.country.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    city.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-  ) || [];
+  const filteredCities = useMemo(() => {
+    if (!cities) return [];
+
+    return cities.filter(city => {
+      // Apply country filter
+      if (selectedCountry !== 'all' && city.country !== selectedCountry) {
+        return false;
+      }
+
+      // Apply city filter
+      if (selectedCity !== 'all' && city.id !== selectedCity) {
+        return false;
+      }
+
+      // Apply search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          city.name.toLowerCase().includes(query) ||
+          city.country.toLowerCase().includes(query) ||
+          city.tags?.some(tag => tag.toLowerCase().includes(query))
+        );
+      }
+
+      return true;
+    });
+  }, [cities, searchQuery, selectedCountry, selectedCity]);
+
+  const handleClearFilters = () => {
+    setSelectedCountry('all');
+    setSelectedCity('all');
+    setSearchQuery('');
+  };
+
+  // When city is directly selected from filter, navigate to it
+  const handleCityFilterChange = (cityId: string) => {
+    setSelectedCity(cityId);
+    if (cityId !== 'all') {
+      navigate(`/city/${cityId}`);
+    }
+  };
 
   return (
     <div className="min-h-screen py-8">
       <div className="container px-4">
         {/* Header */}
-        <div className="max-w-2xl mx-auto text-center mb-12">
+        <div className="max-w-2xl mx-auto text-center mb-8">
           <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
             Explore Amazing Destinations
           </h1>
-          <p className="text-muted-foreground mb-8">
+          <p className="text-muted-foreground mb-6">
             Discover cities perfect for your next adventure
           </p>
           
@@ -39,6 +80,20 @@ const Destinations = () => {
             />
           </div>
         </div>
+
+        {/* Filters */}
+        {cities && cities.length > 0 && (
+          <div className="mb-8">
+            <DestinationFilters
+              cities={cities}
+              selectedCountry={selectedCountry}
+              selectedCity={selectedCity}
+              onCountryChange={setSelectedCountry}
+              onCityChange={handleCityFilterChange}
+              onClearFilters={handleClearFilters}
+            />
+          </div>
+        )}
 
         {/* Cities Grid */}
         {isLoading ? (
@@ -66,7 +121,7 @@ const Destinations = () => {
             </div>
             <h3 className="font-display text-lg font-semibold mb-2">No destinations found</h3>
             <p className="text-muted-foreground">
-              Try adjusting your search terms
+              Try adjusting your search or filters
             </p>
           </div>
         )}

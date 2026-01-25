@@ -161,19 +161,21 @@ export const AddActivityDialog = ({
           {/* Time and Duration */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="time">Time</Label>
+              <Label htmlFor="time">Scheduled Time</Label>
               <Input
                 id="time"
-                placeholder="e.g., 10:00 AM"
+                type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">Leave empty for flexible timing</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="duration">Duration</Label>
+              <Label htmlFor="duration">Duration (minutes)</Label>
               <Input
                 id="duration"
-                placeholder="e.g., 2 hours"
+                type="number"
+                placeholder="e.g., 120"
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
               />

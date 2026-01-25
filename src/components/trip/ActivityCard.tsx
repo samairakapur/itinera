@@ -16,7 +16,10 @@ import {
   Navigation,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  CheckCircle2,
+  Circle,
+  ChevronDown
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,20 +57,23 @@ export interface Activity {
   longitude?: number;
   cityName?: string;
   mustDo?: boolean;
-  reasoning?: string; // Why this activity was recommended
-  isPrebooked?: boolean; // User has already booked this
+  reasoning?: string;
+  isPrebooked?: boolean;
   bookingReference?: string;
+  travelTimeMinutes?: number;
 }
 
 interface ActivityCardProps {
   activity: Activity;
-  cityName?: string; // City context for directions
+  cityName?: string;
+  isCompleted?: boolean;
   onRemove?: (id: string) => void;
   onSwap?: (id: string) => void;
   onToggleMustDo?: (id: string) => void;
   onMoveUp?: (id: string) => void;
   onMoveDown?: (id: string) => void;
   onEdit?: (id: string) => void;
+  onToggleComplete?: (id: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
 }
@@ -91,12 +97,14 @@ const typeColors = {
 export const ActivityCard = ({
   activity,
   cityName,
+  isCompleted = false,
   onRemove,
   onSwap,
   onToggleMustDo,
   onMoveUp,
   onMoveDown,
   onEdit,
+  onToggleComplete,
   isFirst,
   isLast,
 }: ActivityCardProps) => {
@@ -105,20 +113,16 @@ export const ActivityCard = ({
   const Icon = typeIcons[activity.type] || Star;
   const colorClass = typeColors[activity.type] || typeColors.custom;
 
-  // Build Google Maps URL for directions
   const getGoogleMapsUrl = () => {
-    // Use coordinates if available
     if (activity.latitude && activity.longitude) {
       return `https://www.google.com/maps/dir/?api=1&destination=${activity.latitude},${activity.longitude}&destination_place_id=`;
     }
     
-    // Build search query from available info
     const parts: string[] = [];
     if (activity.title) parts.push(activity.title);
     if (activity.address) parts.push(activity.address);
     else if (activity.location) parts.push(activity.location);
     
-    // Add city context
     const city = activity.cityName || cityName;
     if (city && !parts.some(p => p.toLowerCase().includes(city.toLowerCase()))) {
       parts.push(city);
@@ -158,10 +162,25 @@ export const ActivityCard = ({
     <Card className={cn(
       "border shadow-sm hover:shadow-md transition-all duration-200",
       activity.mustDo && "ring-2 ring-primary/30 bg-primary/5",
-      activity.isPrebooked && "ring-2 ring-teal/30 bg-teal/5"
+      activity.isPrebooked && "ring-2 ring-teal/30 bg-teal/5",
+      isCompleted && "opacity-60 bg-muted/50"
     )}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
+          {/* Completion Toggle */}
+          {onToggleComplete && (
+            <button
+              onClick={() => onToggleComplete(activity.id)}
+              className="mt-1 shrink-0"
+            >
+              {isCompleted ? (
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+              ) : (
+                <Circle className="w-5 h-5 text-muted-foreground hover:text-primary transition-colors" />
+              )}
+            </button>
+          )}
+
           {/* Icon */}
           <div className={cn("p-2.5 rounded-xl shrink-0 border", colorClass)}>
             <Icon className="w-4 h-4" />
@@ -172,7 +191,12 @@ export const ActivityCard = ({
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="font-semibold text-foreground">{activity.title}</h4>
+                  <h4 className={cn(
+                    "font-semibold text-foreground",
+                    isCompleted && "line-through"
+                  )}>
+                    {activity.title}
+                  </h4>
                   {activity.mustDo && (
                     <Badge variant="default" className="text-xs px-2 py-0.5">
                       Must-Do
@@ -271,7 +295,7 @@ export const ActivityCard = ({
               </div>
             )}
 
-            {/* How to get there - Navigation Button */}
+            {/* How to get there */}
             {activity.type !== 'transport' && (
               <div className="mt-3 flex items-center gap-2">
                 <Popover>
@@ -332,23 +356,32 @@ export const ActivityCard = ({
               </div>
             )}
 
-            {/* Reasoning - Why this was recommended */}
+            {/* Reasoning - Enhanced visibility with always-visible indicator */}
             {activity.reasoning && (
               <Collapsible open={showReasoning} onOpenChange={setShowReasoning}>
                 <CollapsibleTrigger asChild>
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="mt-2 h-7 px-2 text-xs text-primary hover:text-primary"
+                    className={cn(
+                      "mt-2 h-8 px-3 text-xs gap-2 border",
+                      showReasoning 
+                        ? "bg-primary/10 border-primary/20 text-primary" 
+                        : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                    )}
                   >
-                    <Lightbulb className="w-3 h-3 mr-1" />
-                    {showReasoning ? 'Hide why' : 'Why this?'}
+                    <Lightbulb className="w-3.5 h-3.5" />
+                    <span>{showReasoning ? 'Hide recommendation' : 'Why this?'}</span>
+                    <ChevronDown className={cn(
+                      "w-3 h-3 transition-transform",
+                      showReasoning && "rotate-180"
+                    )} />
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="mt-2 p-3 rounded-lg bg-primary/5 border border-primary/10 text-sm text-muted-foreground">
+                  <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
                     <div className="flex items-start gap-2">
-                      <Lightbulb className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <p>{activity.reasoning}</p>
                     </div>
                   </div>

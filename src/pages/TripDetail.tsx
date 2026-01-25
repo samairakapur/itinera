@@ -10,6 +10,7 @@ import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
 const TripDetail = () => {
   const { tripId } = useParams();
@@ -23,23 +24,48 @@ const TripDetail = () => {
   const [addDialogDay, setAddDialogDay] = useState(1);
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
+  const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
 
-  // Convert itinerary items to DayData format
+  // Convert itinerary items to DayData format with actual dates
   useEffect(() => {
     if (!itinerary) return;
     const daysMap: Record<number, DayData> = {};
+    const startDate = itinerary.start_date ? new Date(itinerary.start_date) : undefined;
+    
     for (let i = 1; i <= itinerary.num_days; i++) {
-      const dayDate = itinerary.start_date ? addDays(new Date(itinerary.start_date), i - 1) : undefined;
-      daysMap[i] = { dayNumber: i, title: `Day ${i}`, date: dayDate ? format(dayDate, 'MMM d') : undefined, morning: [], afternoon: [], evening: [] };
+      const dayDate = startDate ? addDays(startDate, i - 1) : undefined;
+      daysMap[i] = { 
+        dayNumber: i, 
+        title: `Day ${i}`, 
+        date: dayDate ? format(dayDate, 'MMM d') : undefined,
+        actualDate: dayDate,
+        morning: [], 
+        afternoon: [], 
+        evening: [] 
+      };
     }
+    
     itinerary.itinerary_items?.forEach(item => {
       const day = daysMap[item.day_number];
       if (!day) return;
-      const activity: Activity = { id: item.id, type: item.item_type as any, title: item.custom_title || 'Activity', description: item.custom_description || undefined, reasoning: item.notes || undefined };
+      const activity: Activity = { 
+        id: item.id, 
+        type: item.item_type as any, 
+        title: item.custom_title || 'Activity', 
+        description: item.custom_description || undefined, 
+        reasoning: item.notes || undefined,
+        time: (item as any).scheduled_time || undefined,
+      };
       if (item.time_slot === 'morning') day.morning.push(activity);
       else if (item.time_slot === 'afternoon') day.afternoon.push(activity);
       else day.evening.push(activity);
+      
+      // Track completed activities
+      if ((item as any).is_completed) {
+        setCompletedActivityIds(prev => new Set([...prev, item.id]));
+      }
     });
+    
     Object.values(daysMap).forEach(day => {
       day.morning.sort((a, b) => a.id.localeCompare(b.id));
       day.afternoon.sort((a, b) => a.id.localeCompare(b.id));
@@ -66,6 +92,23 @@ const TripDetail = () => {
     setAddDialogOpen(true);
   }, []);
 
+  const handleActivityEdit = useCallback((dayNumber: number, activityId: string) => {
+    const day = days.find(d => d.dayNumber === dayNumber);
+    if (!day) return;
+    
+    const activity = [...day.morning, ...day.afternoon, ...day.evening].find(a => a.id === activityId);
+    if (!activity) return;
+    
+    let timeSlot: 'morning' | 'afternoon' | 'evening' = 'morning';
+    if (day.afternoon.some(a => a.id === activityId)) timeSlot = 'afternoon';
+    if (day.evening.some(a => a.id === activityId)) timeSlot = 'evening';
+    
+    setEditActivity(activity);
+    setAddDialogDay(dayNumber);
+    setAddDialogTimeSlot(timeSlot);
+    setAddDialogOpen(true);
+  }, [days]);
+
   const handleSaveActivity = useCallback((activityData: Omit<Activity, 'id'>) => {
     const newDays = days.map(day => {
       if (day.dayNumber !== addDialogDay) return day;
@@ -79,6 +122,61 @@ const TripDetail = () => {
     saveChanges(newDays);
   }, [days, addDialogDay, addDialogTimeSlot, editActivity, saveChanges]);
 
+  const handleToggleActivityComplete = useCallback((dayNumber: number, activityId: string) => {
+    setCompletedActivityIds(prev => {
+      const next = new Set(prev);
+      if (next.has(activityId)) {
+        next.delete(activityId);
+      } else {
+        next.add(activityId);
+      }
+      return next;
+    });
+    toast.success('Activity updated');
+  }, []);
+
+  const handleCarryOverActivities = useCallback((fromDay: number, activityIds: string[]) => {
+    const nextDayNumber = fromDay + 1;
+    if (nextDayNumber > days.length) {
+      toast.error('No next day to carry activities to');
+      return;
+    }
+
+    const newDays = days.map(day => {
+      if (day.dayNumber === fromDay) {
+        // Remove carried activities from current day
+        return {
+          ...day,
+          morning: day.morning.filter(a => !activityIds.includes(a.id)),
+          afternoon: day.afternoon.filter(a => !activityIds.includes(a.id)),
+          evening: day.evening.filter(a => !activityIds.includes(a.id)),
+        };
+      }
+      if (day.dayNumber === nextDayNumber) {
+        // Find activities to carry over from original day
+        const fromDayData = days.find(d => d.dayNumber === fromDay);
+        if (!fromDayData) return day;
+        
+        const activitiesToCarry = [
+          ...fromDayData.morning,
+          ...fromDayData.afternoon,
+          ...fromDayData.evening,
+        ].filter(a => activityIds.includes(a.id));
+
+        // Add to morning of next day
+        return {
+          ...day,
+          morning: [...activitiesToCarry.map(a => ({ ...a, id: `carried-${a.id}` })), ...day.morning],
+        };
+      }
+      return day;
+    });
+
+    setDays(newDays);
+    saveChanges(newDays);
+    toast.success(`${activityIds.length} activities carried to Day ${nextDayNumber}`);
+  }, [days, saveChanges]);
+
   const handleDelete = () => {
     if (!tripId) return;
     deleteItinerary.mutate(tripId, { onSuccess: () => navigate('/trips') });
@@ -89,6 +187,10 @@ const TripDetail = () => {
 
   const startDate = itinerary.start_date ? new Date(itinerary.start_date) : null;
   const endDate = itinerary.end_date ? new Date(itinerary.end_date) : null;
+  
+  // Check if trip is ongoing (for showing check-in buttons)
+  const now = new Date();
+  const isOngoing = startDate && endDate && startDate <= now && endDate >= now;
 
   return (
     <div className="min-h-screen pb-12">
@@ -103,7 +205,21 @@ const TripDetail = () => {
         </div>
         <div className="space-y-6">
           <TripOverviewCard cityName={itinerary.cities?.name || ''} countryName={itinerary.cities?.country || ''} numDays={itinerary.num_days} travelStyle={itinerary.travel_style || ''} pace={itinerary.pace || ''} budgetLevel={itinerary.budget_level || ''} summary="" />
-          {days.map(day => <DayCard key={day.dayNumber} day={day} cityName={itinerary.cities?.name} onActivityRemove={handleActivityRemove} onAddActivity={handleAddActivity} />)}
+          {days.map(day => (
+            <DayCard 
+              key={day.dayNumber} 
+              day={day} 
+              cityName={itinerary.cities?.name}
+              startDate={startDate || undefined}
+              showCheckIn={isOngoing}
+              completedActivityIds={completedActivityIds}
+              onActivityRemove={handleActivityRemove} 
+              onActivityEdit={handleActivityEdit}
+              onAddActivity={handleAddActivity}
+              onToggleActivityComplete={handleToggleActivityComplete}
+              onCarryOverActivities={handleCarryOverActivities}
+            />
+          ))}
         </div>
       </div>
       <AddActivityDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onSave={handleSaveActivity} dayNumber={addDialogDay} timeSlot={addDialogTimeSlot} editActivity={editActivity} />

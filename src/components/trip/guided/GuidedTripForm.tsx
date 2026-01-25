@@ -6,16 +6,26 @@ import { cn } from '@/lib/utils';
 import { TripPreferences } from '../TripPreferencesForm';
 import { GuidedStepCard } from './GuidedStepCard';
 import { GuidedProgressBar } from './GuidedProgressBar';
+import { CitySearchStep } from '../CitySearchStep';
 
 interface City {
   id: string;
   name: string;
   country: string;
+  tags?: string[] | null;
+  image_url?: string | null;
+}
+
+interface TravelPreferences {
+  interests?: string[];
+  travelStyle?: string;
+  pacePreference?: string;
 }
 
 interface GuidedTripFormProps {
   cities: City[];
   preferences: TripPreferences;
+  userTravelPreferences?: TravelPreferences | null;
   onPreferencesChange: (prefs: TripPreferences) => void;
   onSubmit: () => void;
 }
@@ -32,8 +42,7 @@ interface StepDefinition {
   key: string;
   question: string;
   helper: string;
-  type: 'single' | 'multi';
-  maxSelect?: number;
+  type: 'single' | 'multi' | 'search';
   options?: StepOption[];
 }
 
@@ -42,8 +51,8 @@ const STEPS: StepDefinition[] = [
     id: 1,
     key: 'destination',
     question: 'Where would you like to go?',
-    helper: 'Pick your dream destination',
-    type: 'single',
+    helper: 'Search or pick from recommendations',
+    type: 'search',
   },
   {
     id: 2,
@@ -91,9 +100,8 @@ const STEPS: StepDefinition[] = [
     id: 5,
     key: 'mainInterests',
     question: 'What interests you most?',
-    helper: 'Select up to 3 that excite you',
+    helper: 'Select all that apply — no limits!',
     type: 'multi',
-    maxSelect: 3,
     options: [
       { value: 'food', label: 'Food & Cafés', icon: '🍽️' },
       { value: 'culture', label: 'Culture & History', icon: '🏛️' },
@@ -122,9 +130,8 @@ const STEPS: StepDefinition[] = [
     id: 7,
     key: 'dietaryPreferences',
     question: 'Any dietary preferences?',
-    helper: 'This directly influences restaurant picks',
+    helper: 'Select all that apply',
     type: 'multi',
-    maxSelect: 3,
     options: [
       { value: 'none', label: 'No Preference', icon: '🍽️' },
       { value: 'vegetarian', label: 'Vegetarian', icon: '🥗' },
@@ -139,8 +146,8 @@ const STEPS: StepDefinition[] = [
     id: 8,
     key: 'tripVibe',
     question: 'What vibe are you going for?',
-    helper: 'Set the mood for your adventure',
-    type: 'single',
+    helper: 'Select all that match your mood — unlimited!',
+    type: 'multi',
     options: [
       { value: 'cozy', label: 'Cozy & Relaxed', icon: '☕' },
       { value: 'adventurous', label: 'Adventurous', icon: '🏔️' },
@@ -158,6 +165,7 @@ type ExtendedPreferences = TripPreferences & { [key: string]: string | string[] 
 export const GuidedTripForm = ({
   cities,
   preferences,
+  userTravelPreferences,
   onPreferencesChange,
   onSubmit,
 }: GuidedTripFormProps) => {
@@ -178,15 +186,13 @@ export const GuidedTripForm = ({
     setExtendedPrefs(prev => ({ ...prev, [key]: value }));
   };
 
-  const toggleMultiSelect = (key: string, value: string, maxItems: number = 3) => {
+  // Unlimited multi-select (no maxItems limit)
+  const toggleMultiSelect = (key: string, value: string) => {
     setExtendedPrefs(prev => {
       const currentArray = (prev[key] as string[]) || [];
       if (currentArray.includes(value)) {
         return { ...prev, [key]: currentArray.filter(v => v !== value) };
       } else {
-        if (currentArray.length >= maxItems) {
-          return { ...prev, [key]: [...currentArray.slice(1), value] };
-        }
         return { ...prev, [key]: [...currentArray, value] };
       }
     });
@@ -223,21 +229,13 @@ export const GuidedTripForm = ({
 
   const handleSelect = (value: string) => {
     if (currentStepData.type === 'multi') {
-      toggleMultiSelect(currentStepData.key, value, currentStepData.maxSelect || 3);
+      toggleMultiSelect(currentStepData.key, value);
     } else {
       updatePreference(currentStepData.key, value);
     }
   };
 
   const getOptions = (): StepOption[] => {
-    if (currentStep === 1) {
-      return cities.map(city => ({
-        value: city.id,
-        label: city.name,
-        description: city.country,
-        icon: '🌍',
-      }));
-    }
     return currentStepData.options || [];
   };
 
@@ -287,28 +285,40 @@ export const GuidedTripForm = ({
               </p>
             </div>
 
-            {/* Options */}
-            <div className="space-y-3">
-              {getOptions().map((option) => (
-                <GuidedStepCard
-                  key={option.value}
-                  label={option.label}
-                  description={option.description}
-                  icon={option.icon}
-                  selected={
-                    currentStepData.type === 'multi'
-                      ? (getStepValue() as string[]).includes(option.value)
-                      : getStepValue() === option.value
-                  }
-                  onClick={() => handleSelect(option.value)}
-                />
-              ))}
-            </div>
+            {/* Step Content */}
+            {currentStepData.type === 'search' ? (
+              <CitySearchStep
+                cities={cities}
+                userPreferences={userTravelPreferences}
+                selectedCityId={extendedPrefs.destination as string}
+                onSelect={(cityId) => updatePreference('destination', cityId)}
+              />
+            ) : (
+              <>
+                {/* Options */}
+                <div className="space-y-3">
+                  {getOptions().map((option) => (
+                    <GuidedStepCard
+                      key={option.value}
+                      label={option.label}
+                      description={option.description}
+                      icon={option.icon}
+                      selected={
+                        currentStepData.type === 'multi'
+                          ? (getStepValue() as string[]).includes(option.value)
+                          : getStepValue() === option.value
+                      }
+                      onClick={() => handleSelect(option.value)}
+                    />
+                  ))}
+                </div>
 
-            {currentStepData.type === 'multi' && (
-              <p className="text-center text-sm text-muted-foreground mt-4">
-                {(getStepValue() as string[]).length} of {currentStepData.maxSelect} selected
-              </p>
+                {currentStepData.type === 'multi' && (
+                  <p className="text-center text-sm text-muted-foreground mt-4">
+                    {(getStepValue() as string[]).length} selected
+                  </p>
+                )}
+              </>
             )}
           </motion.div>
         </AnimatePresence>
