@@ -337,9 +337,9 @@ const mapTravelGroup = (group: string): string => {
     'family-young': 'family with young children',
     'family-teens': 'family with teenagers',
     'friends': 'group of friends',
-    'multi-gen': 'multi-generational family',
+    'multi-gen': 'multi-generational group',
   };
-  return map[group] || 'family';
+  return map[group] || 'group';
 };
 
 const mapDailyPace = (pace: string): string => {
@@ -700,7 +700,7 @@ const NewTrip = () => {
               </div>
               <CardTitle>Sign in to Plan Your Trip</CardTitle>
               <CardDescription>
-                Create personalized itineraries for your family adventures
+                Create personalized itineraries for your next adventure
               </CardDescription>
             </CardHeader>
             <CardContent>

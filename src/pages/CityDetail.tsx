@@ -152,8 +152,8 @@ const CityDetail = () => {
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Users className="w-5 h-5 text-primary" />
-                        Family Travel Tips
+                        <Sparkles className="w-5 h-5 text-primary" />
+                        Insider Tips
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -166,7 +166,7 @@ const CityDetail = () => {
                   <Card>
                     <CardHeader>
                       <CardTitle>Neighborhoods</CardTitle>
-                      <CardDescription>Best areas for families to explore</CardDescription>
+                      <CardDescription>Best areas to explore and discover</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -175,7 +175,7 @@ const CityDetail = () => {
                             <div className="flex items-center gap-2 mb-2">
                               <h4 className="font-semibold">{neighborhood.name}</h4>
                               {neighborhood.is_family_friendly && (
-                                <Badge variant="secondary" className="text-xs">Family-Friendly</Badge>
+                                <Badge variant="secondary" className="text-xs">Recommended</Badge>
                               )}
                             </div>
                             {neighborhood.description && (
@@ -343,8 +343,8 @@ const CityDetail = () => {
                     <Card>
                       <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
-                          <Users className="w-4 h-4" />
-                          Family Passes
+                          <DollarSign className="w-4 h-4" />
+                          Group & Multi-Day Passes
                         </CardTitle>
                       </CardHeader>
                       <CardContent>

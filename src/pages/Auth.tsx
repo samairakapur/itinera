@@ -150,10 +150,10 @@ const Auth = () => {
           {/* Welcome Message */}
           <div className="text-center mb-8">
             <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-              Your Family Adventure Awaits! 🌍
+              Your Next Adventure Awaits! 🌍
             </h1>
             <p className="text-muted-foreground">
-              Join thousands of families planning unforgettable trips
+              Join thousands of travelers planning unforgettable trips
             </p>
           </div>
 
@@ -176,7 +176,7 @@ const Auth = () => {
                       <Input
                         id="login-email"
                         type="email"
-                        placeholder="family@example.com"
+                        placeholder="you@example.com"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         required
@@ -211,7 +211,7 @@ const Auth = () => {
                       <Input
                         id="signup-name"
                         type="text"
-                        placeholder="The Smith Family"
+                        placeholder="Your Name"
                         value={signupName}
                         onChange={(e) => setSignupName(e.target.value)}
                         required
@@ -222,7 +222,7 @@ const Auth = () => {
                       <Input
                         id="signup-email"
                         type="email"
-                        placeholder="family@example.com"
+                        placeholder="you@example.com"
                         value={signupEmail}
                         onChange={(e) => setSignupEmail(e.target.value)}
                         required
@@ -276,7 +276,7 @@ const Auth = () => {
               <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-secondary/10 flex items-center justify-center">
                 <Users className="w-6 h-6 text-secondary-foreground" />
               </div>
-              <p className="text-sm text-muted-foreground">Family-First</p>
+              <p className="text-sm text-muted-foreground">Personalized</p>
             </div>
             <div className="p-4">
               <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-accent/30 flex items-center justify-center">
