@@ -158,6 +158,70 @@ export type Database = {
         }
         Relationships: []
       }
+      community_tips: {
+        Row: {
+          attraction_id: string | null
+          category: string
+          city_id: string
+          content: string
+          created_at: string
+          helpful_count: number
+          id: string
+          restaurant_id: string | null
+          tip_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attraction_id?: string | null
+          category: string
+          city_id: string
+          content: string
+          created_at?: string
+          helpful_count?: number
+          id?: string
+          restaurant_id?: string | null
+          tip_type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attraction_id?: string | null
+          category?: string
+          city_id?: string
+          content?: string
+          created_at?: string
+          helpful_count?: number
+          id?: string
+          restaurant_id?: string | null
+          tip_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_tips_attraction_id_fkey"
+            columns: ["attraction_id"]
+            isOneToOne: false
+            referencedRelation: "attractions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_tips_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_tips_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       favorites: {
         Row: {
           attraction_id: string | null

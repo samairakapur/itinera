@@ -28,12 +28,6 @@ const scoreAttraction = (attraction: Attraction, prefs: TravelPreferences | null
     else if (prefs.indoorOutdoor === 'balanced') score += 5;
   }
   
-  // Family-friendly matching
-  if (prefs.travelGroupTypes?.includes('family') || prefs.travelGroupTypes?.includes('kids')) {
-    if (attraction.is_family_friendly) score += 15;
-    else score -= 10;
-  }
-  
   // Interest matching
   if (prefs.interests && attraction.category) {
     const categoryLower = attraction.category.toLowerCase();

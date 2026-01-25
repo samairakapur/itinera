@@ -4,7 +4,6 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export interface TravelPreferences {
   ageRange?: string;
-  travelGroupTypes?: string[];
   fitnessLevel?: string;
   walkingTolerance?: string;
   crowdComfort?: string;

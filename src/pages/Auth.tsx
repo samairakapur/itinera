@@ -140,7 +140,7 @@ const Auth = () => {
           <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center">
             <Plane className="w-5 h-5 text-primary-foreground" />
           </div>
-          <span className="font-display text-xl font-bold text-foreground">TravelBuddy</span>
+          <span className="font-display text-xl font-bold text-foreground">Itinera</span>
         </a>
       </header>
 

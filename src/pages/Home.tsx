@@ -206,7 +206,7 @@ const Home = () => {
                   Ready to Plan Your Next Adventure?
                 </h2>
                 <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
-                  Join thousands of travelers who trust TravelBuddy for smarter trip planning. It's free to get started!
+                  Join thousands of travelers who trust Itinera for smarter trip planning. It's free to get started!
                 </p>
                 <Button size="lg" asChild>
                   <Link to="/auth">
@@ -228,10 +228,10 @@ const Home = () => {
               <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
                 <Plane className="w-4 h-4 text-primary-foreground" />
               </div>
-              <span className="font-display font-semibold text-foreground">TravelBuddy</span>
+              <span className="font-display font-semibold text-foreground">Itinera</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2024 TravelBuddy. Made with ❤️ for travelers everywhere.
+              © 2024 Itinera. Made with ❤️ for travelers everywhere.
             </p>
           </div>
         </div>

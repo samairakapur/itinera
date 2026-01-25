@@ -15,6 +15,7 @@ import WeatherForecast from '@/components/weather/WeatherForecast';
 import MonthlyClimateSummary from '@/components/weather/MonthlyClimateSummary';
 import PersonalizedTransportRecommendation from '@/components/transport/PersonalizedTransportRecommendation';
 import PersonalizedInsiderTips from '@/components/overview/PersonalizedInsiderTips';
+import { CommunityTipsDialog } from '@/components/community/CommunityTipsDialog';
 import { 
   MapPin, 
   Info, 
@@ -29,7 +30,8 @@ import {
   Plane,
   Car,
   Train,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react';
 
 const CityDetail = () => {
@@ -411,12 +413,19 @@ const CityDetail = () => {
 
           {/* Attractions Tab */}
           <TabsContent value="attractions" className="space-y-4">
-            {profile?.travel_preferences && (
-              <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
-                <Sparkles className="w-4 h-4 flex-shrink-0" />
-                <span>Personalized recommendations based on your preferences</span>
-              </div>
-            )}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {profile?.travel_preferences && (
+                <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
+                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                  <span>Personalized recommendations based on your preferences</span>
+                </div>
+              )}
+              <CommunityTipsDialog
+                cityId={city.id}
+                cityName={city.name}
+                category="attraction"
+              />
+            </div>
             {attractionsLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -454,12 +463,19 @@ const CityDetail = () => {
 
           {/* Restaurants Tab */}
           <TabsContent value="restaurants" className="space-y-4">
-            {profile?.travel_preferences && (
-              <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
-                <Sparkles className="w-4 h-4 flex-shrink-0" />
-                <span>Personalized recommendations based on your cuisine preferences</span>
-              </div>
-            )}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {profile?.travel_preferences && (
+                <div className="flex items-center gap-2 text-xs md:text-sm text-primary bg-primary/10 px-3 md:px-4 py-2 rounded-lg">
+                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                  <span>Personalized recommendations based on your cuisine preferences</span>
+                </div>
+              )}
+              <CommunityTipsDialog
+                cityId={city.id}
+                cityName={city.name}
+                category="restaurant"
+              />
+            </div>
             {restaurantsLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (

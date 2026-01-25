@@ -9,7 +9,6 @@ export default function ProfileSetup() {
 
   const handleComplete = async (preferences: {
     ageRange: string;
-    travelGroupTypes: string[];
     fitnessLevel: string;
     walkingTolerance: string;
     crowdComfort: string;
@@ -27,7 +26,6 @@ export default function ProfileSetup() {
   }) => {
     const travelPreferences: TravelPreferences = {
       ageRange: preferences.ageRange,
-      travelGroupTypes: preferences.travelGroupTypes,
       fitnessLevel: preferences.fitnessLevel,
       walkingTolerance: preferences.walkingTolerance,
       crowdComfort: preferences.crowdComfort,
