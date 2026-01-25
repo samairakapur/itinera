@@ -733,6 +733,7 @@ const NewTrip = () => {
         <GuidedTripForm
           cities={cities || []}
           preferences={preferences}
+          userTravelPreferences={profile?.travel_preferences as any}
           onPreferencesChange={setPreferences}
           onSubmit={handleGenerate}
         />

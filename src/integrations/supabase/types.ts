@@ -262,45 +262,63 @@ export type Database = {
       itinerary_items: {
         Row: {
           attraction_id: string | null
+          carried_from_day: number | null
+          completed_at: string | null
           created_at: string
           custom_description: string | null
           custom_title: string | null
           day_number: number
+          estimated_duration_minutes: number | null
           id: string
+          is_completed: boolean | null
           item_type: string
           itinerary_id: string
           notes: string | null
           order_index: number
           restaurant_id: string | null
+          scheduled_time: string | null
           time_slot: string
+          travel_time_from_previous: number | null
         }
         Insert: {
           attraction_id?: string | null
+          carried_from_day?: number | null
+          completed_at?: string | null
           created_at?: string
           custom_description?: string | null
           custom_title?: string | null
           day_number: number
+          estimated_duration_minutes?: number | null
           id?: string
+          is_completed?: boolean | null
           item_type: string
           itinerary_id: string
           notes?: string | null
           order_index?: number
           restaurant_id?: string | null
+          scheduled_time?: string | null
           time_slot: string
+          travel_time_from_previous?: number | null
         }
         Update: {
           attraction_id?: string | null
+          carried_from_day?: number | null
+          completed_at?: string | null
           created_at?: string
           custom_description?: string | null
           custom_title?: string | null
           day_number?: number
+          estimated_duration_minutes?: number | null
           id?: string
+          is_completed?: boolean | null
           item_type?: string
           itinerary_id?: string
           notes?: string | null
           order_index?: number
           restaurant_id?: string | null
+          scheduled_time?: string | null
           time_slot?: string
+          travel_time_from_previous?: number | null
         }
         Relationships: [
           {
@@ -571,6 +589,54 @@ export type Database = {
             columns: ["city_id"]
             isOneToOne: false
             referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trip_legs: {
+        Row: {
+          city_id: string
+          created_at: string
+          end_day: number
+          id: string
+          itinerary_id: string
+          leg_number: number
+          notes: string | null
+          start_day: number
+        }
+        Insert: {
+          city_id: string
+          created_at?: string
+          end_day: number
+          id?: string
+          itinerary_id: string
+          leg_number?: number
+          notes?: string | null
+          start_day?: number
+        }
+        Update: {
+          city_id?: string
+          created_at?: string
+          end_day?: number
+          id?: string
+          itinerary_id?: string
+          leg_number?: number
+          notes?: string | null
+          start_day?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_legs_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trip_legs_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "itineraries"
             referencedColumns: ["id"]
           },
         ]
