@@ -48,18 +48,6 @@ const PersonalizedInsiderTips = ({ city, preferences }: PersonalizedInsiderTipsP
       tipsList.push('Consider a self-guided walking tour to see multiple attractions while staying active.');
     }
 
-    // Group type tips
-    if (preferences.travelGroupTypes?.includes('solo')) {
-      tipsList.push('Solo dining is perfectly normal here - bring a book and enjoy the local café culture.');
-      tipsList.push('Join group tours or activities to meet fellow travelers if you want company.');
-    }
-    if (preferences.travelGroupTypes?.includes('couple')) {
-      tipsList.push(`Book a sunset viewing spot or romantic dinner in advance - these fill up quickly in ${city.name}.`);
-    }
-    if (preferences.travelGroupTypes?.includes('friends')) {
-      tipsList.push('Splitting Airbnbs or vacation rentals is often more economical and fun for groups.');
-    }
-
     // Interest-based tips
     if (preferences.interests?.includes('food')) {
       tipsList.push('Ask locals for restaurant recommendations - tourist areas often have inflated prices.');

@@ -10,24 +10,24 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { GuidedStepCard } from "@/components/trip/guided";
 import { Slider } from "@/components/ui/slider";
+import { ProfilePhotoUpload } from "@/components/profile/ProfilePhotoUpload";
 
 // Profile preference options with icons (matching GuidedProfileForm)
 const PROFILE_OPTIONS = {
   ageRange: [
-    { value: '13–17', label: '13–17', icon: '🎒' },
-    { value: '18–24', label: '18–24', icon: '🎓' },
-    { value: '25–34', label: '25–34', icon: '💼' },
-    { value: '35–44', label: '35–44', icon: '🏠' },
-    { value: '45–54', label: '45–54', icon: '🌟' },
-    { value: '55+', label: '55+', icon: '🌴' },
-  ],
-  travelGroupTypes: [
-    { value: 'Solo', label: 'Solo', icon: '🧍' },
-    { value: 'Couple', label: 'Couple', icon: '💑' },
-    { value: 'Family', label: 'Family', icon: '👨‍👩‍👧' },
-    { value: 'Friends', label: 'Friends', icon: '👯' },
-    { value: 'Kids', label: 'With Kids', icon: '👶' },
-    { value: 'Elderly', label: 'With Elderly', icon: '👴' },
+    { value: '13–15', label: '13–15', icon: '🎒' },
+    { value: '16–18', label: '16–18', icon: '🎓' },
+    { value: '19–21', label: '19–21', icon: '🎉' },
+    { value: '22–24', label: '22–24', icon: '🌟' },
+    { value: '25–29', label: '25–29', icon: '💼' },
+    { value: '30–34', label: '30–34', icon: '🏠' },
+    { value: '35–39', label: '35–39', icon: '✨' },
+    { value: '40–44', label: '40–44', icon: '🌿' },
+    { value: '45–49', label: '45–49', icon: '🍷' },
+    { value: '50–54', label: '50–54', icon: '🌅' },
+    { value: '55–59', label: '55–59', icon: '🌴' },
+    { value: '60–64', label: '60–64', icon: '🎭' },
+    { value: '65+', label: '65+', icon: '🏆' },
   ],
   fitnessLevel: [
     { value: 'Low', label: 'Low', description: 'Prefer minimal physical activity', icon: '🛋️' },
@@ -118,9 +118,11 @@ export default function Profile() {
     food: false,
   });
 
+  // Avatar
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
   // Personal Profile
   const [ageRange, setAgeRange] = useState("");
-  const [travelGroupTypes, setTravelGroupTypes] = useState<string[]>([]);
   const [fitnessLevel, setFitnessLevel] = useState("");
   const [walkingTolerance, setWalkingTolerance] = useState("");
   const [crowdComfort, setCrowdComfort] = useState("");
@@ -144,31 +146,32 @@ export default function Profile() {
 
   // Load existing preferences
   useEffect(() => {
-    if (profile?.travel_preferences) {
-      const prefs = profile.travel_preferences;
-      setAgeRange(prefs.ageRange || "");
-      setTravelGroupTypes(prefs.travelGroupTypes || []);
-      setFitnessLevel(prefs.fitnessLevel || "");
-      setWalkingTolerance(prefs.walkingTolerance || "");
-      setCrowdComfort(prefs.crowdComfort || "");
-      setPacePreference(prefs.pacePreference || "");
-      setIndoorOutdoor(prefs.indoorOutdoor || "");
-      setInterests(prefs.interests || []);
-      setScheduleFlexibility(prefs.scheduleFlexibility || "");
-      setDailyBudget(prefs.dailyBudget || "");
-      setValuePremiumSlider(prefs.valuePremiumSlider ?? 50);
-      setDiningSpendLevel(prefs.diningSpendLevel || "");
-      setPreferredCuisines(prefs.preferredCuisines || []);
-      setDietaryRestrictions(prefs.dietaryRestrictions || []);
-      setWillingnessToTryNew(prefs.willingnessToTryNew || "");
-      setDiningStyle(prefs.diningStyle || "");
+    if (profile) {
+      setAvatarUrl(profile.avatar_url);
+      if (profile.travel_preferences) {
+        const prefs = profile.travel_preferences;
+        setAgeRange(prefs.ageRange || "");
+        setFitnessLevel(prefs.fitnessLevel || "");
+        setWalkingTolerance(prefs.walkingTolerance || "");
+        setCrowdComfort(prefs.crowdComfort || "");
+        setPacePreference(prefs.pacePreference || "");
+        setIndoorOutdoor(prefs.indoorOutdoor || "");
+        setInterests(prefs.interests || []);
+        setScheduleFlexibility(prefs.scheduleFlexibility || "");
+        setDailyBudget(prefs.dailyBudget || "");
+        setValuePremiumSlider(prefs.valuePremiumSlider ?? 50);
+        setDiningSpendLevel(prefs.diningSpendLevel || "");
+        setPreferredCuisines(prefs.preferredCuisines || []);
+        setDietaryRestrictions(prefs.dietaryRestrictions || []);
+        setWillingnessToTryNew(prefs.willingnessToTryNew || "");
+        setDiningStyle(prefs.diningStyle || "");
+      }
     }
   }, [profile]);
 
   const handleSave = async (section: keyof EditingSectionState) => {
     const preferences: TravelPreferences = {
       ageRange,
-      travelGroupTypes,
       fitnessLevel,
       walkingTolerance,
       crowdComfort,
@@ -198,11 +201,6 @@ export default function Profile() {
 
   const toggleEdit = (section: keyof EditingSectionState) => {
     setEditing(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const getOptionLabel = (key: PreferenceKey, value: string) => {
-    const option = PROFILE_OPTIONS[key]?.find(o => o.value === value);
-    return option ? `${option.icon} ${option.label}` : value;
   };
 
   const toggleMultiSelect = (
@@ -329,6 +327,21 @@ export default function Profile() {
         </p>
       </div>
 
+      {/* Profile Photo Section */}
+      <Card className="mb-6">
+        <CardContent className="pt-6 flex flex-col items-center">
+          <ProfilePhotoUpload
+            currentAvatarUrl={avatarUrl}
+            userName={profile?.full_name}
+            onUploadComplete={(url) => setAvatarUrl(url)}
+          />
+          <div className="mt-4 text-center">
+            <p className="font-medium text-lg">{profile?.full_name || 'Traveler'}</p>
+            <p className="text-sm text-muted-foreground">{profile?.email}</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="personal" className="space-y-6">
         <TabsList className="grid grid-cols-4 w-full">
           <TabsTrigger value="personal" className="flex items-center gap-2">
@@ -401,14 +414,6 @@ export default function Profile() {
                       onChange={setAgeRange}
                     />
                     <EditSection
-                      label="Travel Group Type"
-                      options={PROFILE_OPTIONS.travelGroupTypes}
-                      value={travelGroupTypes}
-                      onChange={(val) => toggleMultiSelect(travelGroupTypes, setTravelGroupTypes, val, 4)}
-                      type="multi"
-                      maxSelect={4}
-                    />
-                    <EditSection
                       label="Fitness Level"
                       options={PROFILE_OPTIONS.fitnessLevel}
                       value={fitnessLevel}
@@ -436,9 +441,6 @@ export default function Profile() {
                   >
                     <PreferenceRow label="Age Range">
                       <SingleValueDisplay value={ageRange} prefKey="ageRange" />
-                    </PreferenceRow>
-                    <PreferenceRow label="Travel Group Type">
-                      <MultiValueDisplay values={travelGroupTypes} prefKey="travelGroupTypes" />
                     </PreferenceRow>
                     <PreferenceRow label="Fitness Level">
                       <SingleValueDisplay value={fitnessLevel} prefKey="fitnessLevel" />
@@ -517,9 +519,9 @@ export default function Profile() {
                       label="Interests"
                       options={PROFILE_OPTIONS.interests}
                       value={interests}
-                      onChange={(val) => toggleMultiSelect(interests, setInterests, val, 3)}
+                      onChange={(val) => toggleMultiSelect(interests, setInterests, val, 5)}
                       type="multi"
-                      maxSelect={3}
+                      maxSelect={5}
                     />
                   </motion.div>
                 ) : (
@@ -694,17 +696,17 @@ export default function Profile() {
                       label="Preferred Cuisines"
                       options={PROFILE_OPTIONS.preferredCuisines}
                       value={preferredCuisines}
-                      onChange={(val) => toggleMultiSelect(preferredCuisines, setPreferredCuisines, val, 4)}
+                      onChange={(val) => toggleMultiSelect(preferredCuisines, setPreferredCuisines, val, 5)}
                       type="multi"
-                      maxSelect={4}
+                      maxSelect={5}
                     />
                     <EditSection
                       label="Dietary Restrictions"
                       options={PROFILE_OPTIONS.dietaryRestrictions}
                       value={dietaryRestrictions}
-                      onChange={(val) => toggleMultiSelect(dietaryRestrictions, setDietaryRestrictions, val, 3)}
+                      onChange={(val) => toggleMultiSelect(dietaryRestrictions, setDietaryRestrictions, val, 5)}
                       type="multi"
-                      maxSelect={3}
+                      maxSelect={5}
                     />
                     <EditSection
                       label="Willingness to Try New Food"

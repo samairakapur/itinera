@@ -8,7 +8,6 @@ import { GuidedStepCard, GuidedProgressBar } from '@/components/trip/guided';
 
 interface ProfilePreferences {
   ageRange: string;
-  travelGroupTypes: string[];
   fitnessLevel: string;
   walkingTolerance: string;
   crowdComfort: string;
@@ -61,28 +60,19 @@ const STEPS: StepDefinition[] = [
     helper: 'This helps us suggest age-appropriate activities',
     type: 'single',
     options: [
-      { value: '13–17', label: '13–17', icon: '🎒' },
-      { value: '18–24', label: '18–24', icon: '🎓' },
-      { value: '25–34', label: '25–34', icon: '💼' },
-      { value: '35–44', label: '35–44', icon: '🏠' },
-      { value: '45–54', label: '45–54', icon: '🌟' },
-      { value: '55+', label: '55+', icon: '🌴' },
-    ],
-  },
-  {
-    id: 2,
-    key: 'travelGroupTypes',
-    question: 'Who do you usually travel with?',
-    helper: 'Select all that apply',
-    type: 'multi',
-    maxSelect: 4,
-    options: [
-      { value: 'Solo', label: 'Solo', icon: '🧍' },
-      { value: 'Couple', label: 'Couple', icon: '💑' },
-      { value: 'Family', label: 'Family', icon: '👨‍👩‍👧' },
-      { value: 'Friends', label: 'Friends', icon: '👯' },
-      { value: 'Kids', label: 'With Kids', icon: '👶' },
-      { value: 'Elderly', label: 'With Elderly', icon: '👴' },
+      { value: '13–15', label: '13–15', icon: '🎒' },
+      { value: '16–18', label: '16–18', icon: '🎓' },
+      { value: '19–21', label: '19–21', icon: '🎉' },
+      { value: '22–24', label: '22–24', icon: '🌟' },
+      { value: '25–29', label: '25–29', icon: '💼' },
+      { value: '30–34', label: '30–34', icon: '🏠' },
+      { value: '35–39', label: '35–39', icon: '✨' },
+      { value: '40–44', label: '40–44', icon: '🌿' },
+      { value: '45–49', label: '45–49', icon: '🍷' },
+      { value: '50–54', label: '50–54', icon: '🌅' },
+      { value: '55–59', label: '55–59', icon: '🌴' },
+      { value: '60–64', label: '60–64', icon: '🎭' },
+      { value: '65+', label: '65+', icon: '🏆' },
     ],
   },
   {
@@ -244,7 +234,6 @@ export const GuidedProfileForm = ({
 
   const [preferences, setPreferences] = useState<ProfilePreferences>({
     ageRange: '',
-    travelGroupTypes: [],
     fitnessLevel: '',
     walkingTolerance: '',
     crowdComfort: '',

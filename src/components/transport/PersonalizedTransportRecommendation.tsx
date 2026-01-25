@@ -44,16 +44,8 @@ const PersonalizedTransportRecommendation = ({
       walkingTolerance,
       fitnessLevel,
       pacePreference,
-      travelGroupTypes,
       valuePremiumSlider = 50,
     } = preferences;
-
-    // Determine group size/type
-    const hasKids = travelGroupTypes?.includes('family_with_kids');
-    const isLargeGroup = travelGroupTypes?.some(t => 
-      t === 'large_group' || t === 'family_with_kids' || t === 'extended_family'
-    );
-    const isSolo = travelGroupTypes?.includes('solo') || travelGroupTypes?.length === 0;
 
     // Budget preference (1-100, lower = more budget-conscious)
     const isBudgetConscious = valuePremiumSlider < 40 || dailyBudget === 'budget' || dailyBudget === 'backpacker';
@@ -82,14 +74,8 @@ const PersonalizedTransportRecommendation = ({
         metroScore += 15;
         metroReasons.push('Fastest way to cover long distances');
       }
-      if (!hasKids && !isLargeGroup) {
-        metroScore += 10;
-        metroReasons.push('Easy to navigate for small groups');
-      }
-      if (hasKids) {
-        metroScore -= 10;
-        metroReasons.push('May be challenging with strollers during rush hour');
-      }
+      metroScore += 10;
+      metroReasons.push('Easy to navigate');
 
       allModes.push({
         mode: 'Metro/Subway',
@@ -115,10 +101,6 @@ const PersonalizedTransportRecommendation = ({
         busScore += 10;
         busReasons.push('Scenic routes to see the city');
       }
-      if (hasKids) {
-        busScore += 5;
-        busReasons.push('Easier with strollers than metro');
-      }
 
       allModes.push({
         mode: 'Bus',
@@ -138,10 +120,6 @@ const PersonalizedTransportRecommendation = ({
     if (isLuxury) {
       taxiScore += 30;
       taxiReasons.push('Maximum convenience and comfort');
-    }
-    if (hasKids || isLargeGroup) {
-      taxiScore += 20;
-      taxiReasons.push('Door-to-door service, no transfers');
     }
     if (prefersMinimalWalking) {
       taxiScore += 15;
@@ -182,9 +160,6 @@ const PersonalizedTransportRecommendation = ({
       walkScore -= 30;
       walkReasons.push('Consider for short distances only');
     }
-    if (hasKids) {
-      walkScore -= 10;
-    }
 
     allModes.push({
       mode: 'Walking',
@@ -200,7 +175,7 @@ const PersonalizedTransportRecommendation = ({
     const bikeReasons: string[] = [];
     let bikeScore = 35;
 
-    if ((fitnessLevel === 'high' || fitnessLevel === 'moderate') && !hasKids) {
+    if (fitnessLevel === 'high' || fitnessLevel === 'moderate') {
       bikeScore += 25;
       bikeReasons.push('Active and eco-friendly option');
     }
@@ -211,9 +186,6 @@ const PersonalizedTransportRecommendation = ({
     if (isFast && canWalkLong) {
       bikeScore += 15;
       bikeReasons.push('Faster than walking, more flexible than metro');
-    }
-    if (hasKids || isLargeGroup) {
-      bikeScore -= 30;
     }
 
     allModes.push({

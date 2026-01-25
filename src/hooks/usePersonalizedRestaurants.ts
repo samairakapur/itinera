@@ -58,13 +58,6 @@ const scoreRestaurant = (restaurant: Restaurant, prefs: TravelPreferences | null
     }
   }
   
-  // Family-friendly matching
-  if (prefs.travelGroupTypes?.includes('family') || prefs.travelGroupTypes?.includes('kids')) {
-    if (restaurant.is_family_friendly) score += 10;
-    if (restaurant.has_kids_menu) score += 10;
-    else if (!restaurant.is_family_friendly) score -= 15;
-  }
-  
   // Dining style matching
   if (prefs.diningStyle) {
     const cuisineLower = (restaurant.cuisine || '').toLowerCase();
