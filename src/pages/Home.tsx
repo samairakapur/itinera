@@ -34,18 +34,18 @@ const Home = () => {
           <div className="max-w-3xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
               <Sparkles className="w-4 h-4" />
-              AI-Powered Family Travel Planning
+              Smart, Personalized Trip Planning
             </div>
             
             <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
               Plan Your Perfect{' '}
               <span className="text-transparent bg-clip-text bg-gradient-primary">
-                Family Adventure
+                Trip, Your Way
               </span>
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Discover family-friendly destinations, create personalized itineraries, and get AI-powered recommendations for unforgettable trips with your loved ones.
+              Discover amazing destinations, create personalized itineraries, and get AI-powered recommendations tailored to how you love to travel.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -108,7 +108,7 @@ const Home = () => {
                 Popular Destinations
               </h2>
               <p className="text-muted-foreground">
-                Family-friendly cities handpicked for your next adventure
+                Handpicked cities ready for your next adventure
               </p>
             </div>
             <Button variant="ghost" asChild className="hidden sm:flex">
@@ -155,10 +155,10 @@ const Home = () => {
         <div className="container px-4">
           <div className="text-center mb-12">
             <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-4">
-              Everything You Need for Family Travel
+              Everything You Need to Travel Smarter
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              From planning to exploring, we've got your family covered
+              From planning to exploring, we've got you covered
             </p>
           </div>
           
@@ -179,7 +179,7 @@ const Home = () => {
               </div>
               <h3 className="font-display text-lg font-semibold mb-2">Smart Itineraries</h3>
               <p className="text-sm text-muted-foreground">
-                Create day-by-day travel plans tailored to your family's preferences, pace, and budget.
+                Create day-by-day travel plans tailored to your preferences, pace, and budget.
               </p>
             </Card>
             
@@ -187,9 +187,9 @@ const Home = () => {
               <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-accent/30 flex items-center justify-center">
                 <Users className="w-7 h-7 text-accent-foreground" />
               </div>
-              <h3 className="font-display text-lg font-semibold mb-2">Family-First Content</h3>
+              <h3 className="font-display text-lg font-semibold mb-2">Curated for You</h3>
               <p className="text-sm text-muted-foreground">
-                Every attraction and restaurant is rated for family-friendliness with kids' menu info.
+                Every attraction and restaurant is rated and filtered based on your travel style.
               </p>
             </Card>
           </div>
@@ -203,10 +203,10 @@ const Home = () => {
             <Card className="overflow-hidden bg-gradient-to-r from-primary/10 via-background to-secondary/10 border-primary/20">
               <CardContent className="p-8 md:p-12 text-center">
                 <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-4">
-                  Ready to Plan Your Next Family Trip?
+                  Ready to Plan Your Next Adventure?
                 </h2>
                 <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
-                  Join thousands of families who trust TravelBuddy for their vacation planning. It's free to get started!
+                  Join thousands of travelers who trust TravelBuddy for smarter trip planning. It's free to get started!
                 </p>
                 <Button size="lg" asChild>
                   <Link to="/auth">
@@ -231,7 +231,7 @@ const Home = () => {
               <span className="font-display font-semibold text-foreground">TravelBuddy</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2024 TravelBuddy. Made with ❤️ for families.
+              © 2024 TravelBuddy. Made with ❤️ for travelers everywhere.
             </p>
           </div>
         </div>
