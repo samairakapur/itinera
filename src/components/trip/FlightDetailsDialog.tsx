@@ -18,6 +18,8 @@ import {
 interface FlightDetailsDialogProps {
   itineraryId: string;
   tripName?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 interface FlightFormData {
@@ -44,8 +46,18 @@ const emptyForm: FlightFormData = {
   notes: '',
 };
 
-export const FlightDetailsDialog = ({ itineraryId, tripName }: FlightDetailsDialogProps) => {
-  const [open, setOpen] = useState(false);
+export const FlightDetailsDialog = ({ 
+  itineraryId, 
+  tripName, 
+  open: controlledOpen, 
+  onOpenChange: controlledOnOpenChange 
+}: FlightDetailsDialogProps) => {
+  const [internalOpen, setInternalOpen] = useState(false);
+  
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (controlledOnOpenChange || (() => {})) : setInternalOpen;
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FlightFormData>(emptyForm);

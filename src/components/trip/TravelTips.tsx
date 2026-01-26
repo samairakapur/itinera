@@ -8,6 +8,10 @@ interface TravelTipsProps {
   packingTips?: string[];
   transportTips?: string[];
   weatherNotes?: string;
+  dateRange?: {
+    startDate: Date;
+    endDate: Date;
+  };
 }
 
 export const TravelTips = ({ packingTips, transportTips, weatherNotes }: TravelTipsProps) => {

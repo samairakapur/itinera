@@ -751,6 +751,47 @@ export type Database = {
           },
         ]
       }
+      trip_collaborators: {
+        Row: {
+          accepted_at: string | null
+          email: string
+          id: string
+          invited_at: string
+          invited_by: string
+          itinerary_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          email: string
+          id?: string
+          invited_at?: string
+          invited_by: string
+          itinerary_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          email?: string
+          id?: string
+          invited_at?: string
+          invited_by?: string
+          itinerary_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_collaborators_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "itineraries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_legs: {
         Row: {
           city_id: string
@@ -804,6 +845,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_itinerary: {
+        Args: { itinerary_uuid: string }
+        Returns: boolean
+      }
       owns_itinerary: { Args: { itinerary_uuid: string }; Returns: boolean }
     }
     Enums: {
