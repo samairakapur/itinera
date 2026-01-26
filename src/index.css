@@ -65,6 +65,10 @@
     --mint: 150 50% 50%;
     --mint-light: 150 50% 80%;
 
+    /* Warning - Amber */
+    --warning: 38 92% 50%;
+    --warning-foreground: 240 15% 15%;
+
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(16 85% 58%), hsl(35 90% 55%));
     --gradient-secondary: linear-gradient(135deg, hsl(174 60% 45%), hsl(190 70% 50%));
