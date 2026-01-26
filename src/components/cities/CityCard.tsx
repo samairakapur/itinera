@@ -3,21 +3,22 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin } from 'lucide-react';
+import { getCityImage } from '@/lib/imageUtils';
 import type { City } from '@/hooks/useCities';
 
 interface CityCardProps {
   city: City;
 }
 
-// Default fallback image for cities
-const DEFAULT_CITY_IMAGE = 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&h=600&fit=crop';
-
 const CityCard = ({ city }: CityCardProps) => {
   const tags = city.tags?.slice(0, 3) || [];
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   
-  const imageUrl = imageError || !city.image_url ? DEFAULT_CITY_IMAGE : city.image_url;
+  // Use the image utility for accurate, place-matched images
+  const imageUrl = imageError || !city.image_url 
+    ? getCityImage(city.name, city.country) 
+    : city.image_url;
   
   return (
     <Link to={`/city/${city.id}`}>
