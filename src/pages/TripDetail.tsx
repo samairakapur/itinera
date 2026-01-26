@@ -2,8 +2,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useItinerary, useUpdateItinerary, useDeleteItinerary } from '@/hooks/useItineraries';
 import { useDayPreferences, getStartTimeForDay } from '@/hooks/useDayPreferences';
 import { useFlightDetails } from '@/hooks/useFlightDetails';
+import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
 import { format, addDays, isSameDay } from 'date-fns';
-import { ArrowLeft, Calendar, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DayCard, DayData } from '@/components/trip/DayCard';
@@ -11,8 +12,12 @@ import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { FlightDetailsDialog } from '@/components/trip/FlightDetailsDialog';
 import { FlightCard } from '@/components/trip/FlightCard';
+import { FlightPromptBanner } from '@/components/trip/FlightPromptBanner';
+import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDialog';
+import { CityDayBadge } from '@/components/trip/CityDayBadge';
+import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
@@ -22,10 +27,12 @@ const TripDetail = () => {
   const { data: itinerary, isLoading } = useItinerary(tripId);
   const { data: dayPreferences = [] } = useDayPreferences(tripId);
   const { data: flights = [] } = useFlightDetails(tripId);
+  const { data: tripLegs = [] } = useTripLegs(tripId);
   const updateItinerary = useUpdateItinerary();
   const deleteItinerary = useDeleteItinerary();
 
   const [days, setDays] = useState<DayData[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogDay, setAddDialogDay] = useState(1);
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
@@ -82,15 +89,25 @@ const TripDetail = () => {
     setDays(Object.values(daysMap).sort((a, b) => a.dayNumber - b.dayNumber));
   }, [itinerary, dayPreferences]);
 
-  const saveChanges = useCallback((newDays: DayData[]) => {
+  const saveChanges = useCallback((newDays: DayData[], showToast = true) => {
     if (!tripId) return;
-    updateItinerary.mutate({ itineraryId: tripId, days: newDays });
+    updateItinerary.mutate({ itineraryId: tripId, days: newDays }, {
+      onSuccess: () => {
+        setHasUnsavedChanges(false);
+        if (showToast) toast.success('Changes saved!');
+      }
+    });
   }, [tripId, updateItinerary]);
+
+  const handleManualSave = useCallback(() => {
+    saveChanges(days);
+  }, [days, saveChanges]);
 
   const handleActivityRemove = useCallback((dayNumber: number, activityId: string) => {
     const newDays = days.map(day => day.dayNumber !== dayNumber ? day : { ...day, morning: day.morning.filter(a => a.id !== activityId), afternoon: day.afternoon.filter(a => a.id !== activityId), evening: day.evening.filter(a => a.id !== activityId) });
     setDays(newDays);
-    saveChanges(newDays);
+    setHasUnsavedChanges(true);
+    saveChanges(newDays, false);
   }, [days, saveChanges]);
 
   const handleAddActivity = useCallback((dayNumber: number, timeSlot: 'morning' | 'afternoon' | 'evening') => {
@@ -231,6 +248,29 @@ const TripDetail = () => {
     deleteItinerary.mutate(tripId, { onSuccess: () => navigate('/trips') });
   };
 
+  // Generate engaging day titles based on activities - must be before early returns
+  const getDayTitle = useCallback((day: DayData): string => {
+    const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
+    if (allActivities.length === 0) return 'Free Day';
+    
+    // Find highlights by type
+    const attractions = allActivities.filter(a => a.type === 'attraction');
+    const restaurants = allActivities.filter(a => a.type === 'restaurant');
+    
+    if (attractions.length >= 2) return 'Cultural Discovery';
+    if (restaurants.length >= 2) return 'Culinary Journey';
+    if (attractions.length >= 1 && restaurants.length >= 1) return 'City Highlights';
+    if (allActivities.length >= 4) return 'Full Day Adventure';
+    
+    // Use first activity as inspiration
+    const mainActivity = allActivities[0];
+    if (mainActivity.type === 'attraction') return 'Sightseeing';
+    if (mainActivity.type === 'restaurant') return 'Local Flavors';
+    if (mainActivity.type === 'prebooked') return 'Special Experience';
+    
+    return 'Exploring';
+  }, []);
+
   if (isLoading) return <div className="min-h-screen py-8"><div className="container px-4 max-w-2xl mx-auto"><Card><CardContent className="py-12 text-center"><Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" /></CardContent></Card></div></div>;
   if (!itinerary) return <div className="min-h-screen py-8"><div className="container px-4"><p>Trip not found</p></div></div>;
 
@@ -246,17 +286,96 @@ const TripDetail = () => {
       <div className="container px-4 max-w-2xl mx-auto">
         <div className="py-6 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
           <div className="flex items-center justify-between mb-2">
-            <Button variant="ghost" onClick={() => navigate('/trips')} className="-ml-2" size="sm"><ArrowLeft className="w-4 h-4 mr-2" />Back</Button>
+            <Button variant="ghost" onClick={() => navigate('/trips')} className="-ml-2" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to My Trips
+            </Button>
             <div className="flex items-center gap-2">
+              {hasUnsavedChanges && (
+                <Button 
+                  size="sm" 
+                  onClick={handleManualSave} 
+                  disabled={updateItinerary.isPending}
+                  className="gap-2"
+                >
+                  {updateItinerary.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  Save
+                </Button>
+              )}
+              {tripId && <InviteCollaboratorDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
               {tripId && <FlightDetailsDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
-              <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="sm"><Trash2 className="w-4 h-4 text-destructive" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this trip?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this trip?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
           <h1 className="font-display text-2xl font-bold">{itinerary.cities?.name || 'Your Trip'}</h1>
-          {startDate && endDate && <p className="text-sm text-muted-foreground flex items-center gap-1"><Calendar className="w-4 h-4" />{format(startDate, 'MMM d')} – {format(endDate, 'MMM d, yyyy')}</p>}
+          {startDate && endDate && (
+            <p className="text-sm text-muted-foreground flex items-center gap-1">
+              <Calendar className="w-4 h-4" />
+              {format(startDate, 'MMM d')} – {format(endDate, 'MMM d, yyyy')}
+            </p>
+          )}
         </div>
+        
         <div className="space-y-6">
-          <TripOverviewCard cityName={itinerary.cities?.name || ''} countryName={itinerary.cities?.country || ''} numDays={itinerary.num_days} travelStyle={itinerary.travel_style || ''} pace={itinerary.pace || ''} budgetLevel={itinerary.budget_level || ''} summary="" />
+          <TripOverviewCard 
+            cityName={itinerary.cities?.name || ''} 
+            countryName={itinerary.cities?.country || ''} 
+            numDays={itinerary.num_days} 
+            travelStyle={itinerary.travel_style || ''} 
+            pace={itinerary.pace || ''} 
+            budgetLevel={itinerary.budget_level || ''} 
+            summary="" 
+          />
+
+          {/* Flight Prompt Banner */}
+          {tripId && (
+            <FlightPromptBanner 
+              itineraryId={tripId} 
+              tripName={itinerary.cities?.name}
+              hasFlights={flights.length > 0}
+            />
+          )}
+          
+          {/* Travel Tips for all days */}
+          <TravelTips 
+            packingTips={[
+              'Check weather forecast for all trip days',
+              'Pack layers for variable conditions',
+              'Comfortable walking shoes recommended',
+            ]}
+            transportTips={[
+              'Consider getting a multi-day transit pass',
+              'Download offline maps for navigation',
+            ]}
+            weatherNotes={startDate && endDate 
+              ? `Weather guidance for ${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`
+              : undefined
+            }
+          />
           
           {days.map((day, index) => {
             const dayDate = startDate ? addDays(startDate, day.dayNumber - 1) : undefined;
@@ -268,17 +387,42 @@ const TripDetail = () => {
             const arrivalFlights = flights.filter(f => 
               dayDate && isSameDay(new Date(f.arrival_date), dayDate)
             );
+            
+            // Get city for this day (for multi-city trips)
+            const legForDay = getCityForDay(day.dayNumber, tripLegs);
+            const cityForDay = legForDay?.city?.name || itinerary.cities?.name;
+            const countryForDay = legForDay?.city?.country || itinerary.cities?.country;
+            const isFirstDayOfLeg = legForDay?.start_day === day.dayNumber;
+            const isLastDayOfLeg = legForDay?.end_day === day.dayNumber;
+            
+            // Generate engaging title
+            const engagingTitle = getDayTitle(day);
+            const dayWithTitle = { 
+              ...day, 
+              title: engagingTitle 
+            };
 
             return (
               <div key={day.dayNumber} className="space-y-3">
+                {/* City badge for multi-city trips */}
+                {tripLegs.length > 0 && isFirstDayOfLeg && (
+                  <CityDayBadge
+                    cityName={cityForDay || ''}
+                    countryName={countryForDay}
+                    legNumber={legForDay?.leg_number || 1}
+                    isFirstDayOfLeg={isFirstDayOfLeg}
+                    isLastDayOfLeg={isLastDayOfLeg}
+                  />
+                )}
+                
                 {/* Arrival flights at start of day */}
                 {arrivalFlights.map(flight => (
                   <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
                 ))}
                 
                 <DayCard 
-                  day={day} 
-                  cityName={itinerary.cities?.name}
+                  day={dayWithTitle} 
+                  cityName={cityForDay}
                   startDate={startDate || undefined}
                   showCheckIn={isOngoing}
                   completedActivityIds={completedActivityIds}

@@ -43,6 +43,8 @@ export interface DayData {
   startTime?: string;
   weather?: DayWeather;
   weatherNote?: string;
+  cityName?: string;
+  countryName?: string;
   morning: Activity[];
   afternoon: Activity[];
   evening: Activity[];
@@ -307,6 +309,11 @@ export const DayCard = ({
                       {formattedDate ? `${formattedDate} – ${cleanTitle}` : `Day ${day.dayNumber} – ${cleanTitle}`}
                     </h3>
                     <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      {day.cityName && (
+                        <span className="flex items-center gap-1 text-primary font-medium">
+                          📍 {day.cityName}
+                        </span>
+                      )}
                       <span>{totalActivities} {totalActivities === 1 ? 'activity' : 'activities'}</span>
                       {showCheckIn && completedCount > 0 && (
                         <Badge variant="secondary" className="gap-1">
