@@ -16,10 +16,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToggleFavorite, useIsFavorite } from '@/hooks/useFavorites';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getAttractionImage } from '@/lib/imageUtils';
 import type { Attraction } from '@/hooks/useAttractions';
-
-// Default fallback image for attractions
-const DEFAULT_ATTRACTION_IMAGE = 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=600';
 
 interface AttractionCardProps {
   attraction: Attraction;
@@ -54,7 +52,10 @@ const AttractionCard = ({ attraction }: AttractionCardProps) => {
     return `$${price}`;
   };
 
-  const imageUrl = imageError || !attraction.image_url ? DEFAULT_ATTRACTION_IMAGE : attraction.image_url;
+  // Use the image utility for accurate, place-matched images
+  const imageUrl = imageError || !attraction.image_url 
+    ? getAttractionImage(attraction.name, undefined, attraction.category || undefined) 
+    : attraction.image_url;
 
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">

@@ -8,7 +8,6 @@ const corsHeaders = {
 
 interface TravelPreferences {
   ageRange?: string;
-  travelGroupTypes?: string[];
   fitnessLevel?: string;
   walkingTolerance?: string;
   crowdComfort?: string;
@@ -25,7 +24,18 @@ interface TravelPreferences {
   diningStyle?: string;
 }
 
+interface CityLeg {
+  cityId: string;
+  cityName: string;
+  countryName: string;
+  daysToSpend: number;
+  cityDescription?: string;
+}
+
 interface ItineraryRequest {
+  // Multi-city support
+  cities?: CityLeg[];
+  // Legacy single-city support
   cityName: string;
   countryName: string;
   numDays: number;
@@ -48,7 +58,6 @@ interface DayWeather {
 
 async function fetchWeather(cityName: string, numDays: number): Promise<DayWeather[]> {
   try {
-    // Using Open-Meteo (free, no API key required)
     const geoResponse = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1`
     );
@@ -60,7 +69,6 @@ async function fetchWeather(cityName: string, numDays: number): Promise<DayWeath
     
     const { latitude, longitude } = geoData.results[0];
     
-    // Get forecast for requested days (max 7 from free API)
     const forecastDays = Math.min(numDays, 7);
     const weatherResponse = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&forecast_days=${forecastDays}`
@@ -106,7 +114,6 @@ async function fetchWeather(cityName: string, numDays: number): Promise<DayWeath
   }
 }
 
-// Calculate activities per time slot based on pace
 function getActivitiesPerSlot(pace: string): number {
   switch (pace) {
     case 'light': return 1;
@@ -116,7 +123,6 @@ function getActivitiesPerSlot(pace: string): number {
   }
 }
 
-// Determine default start time based on pace
 function getDefaultStartTime(pace: string): string {
   switch (pace) {
     case 'light': return '10:00 AM';
@@ -132,7 +138,6 @@ serve(async (req) => {
   }
 
   try {
-    // Validate authentication
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
@@ -161,7 +166,9 @@ serve(async (req) => {
     const userId = data.claims.sub;
     console.log("Authenticated user:", userId);
 
+    const requestBody: ItineraryRequest = await req.json();
     const {
+      cities,
       cityName,
       countryName,
       numDays,
@@ -172,15 +179,21 @@ serve(async (req) => {
       userPreferences,
       cityDescription,
       preferredStartTime,
-    }: ItineraryRequest = await req.json();
+    } = requestBody;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Fetch per-day weather for the city
-    const weatherByDay = await fetchWeather(cityName, numDays);
+    // Determine if multi-city or single-city trip
+    const isMultiCity = cities && cities.length > 1;
+    const cityLegs: CityLeg[] = cities && cities.length > 0 
+      ? cities 
+      : [{ cityId: '', cityName, countryName, daysToSpend: numDays, cityDescription }];
+
+    // Fetch weather for the first city (primary destination)
+    const weatherByDay = await fetchWeather(cityLegs[0].cityName, numDays);
     console.log('Weather by day:', JSON.stringify(weatherByDay));
 
     // Build weather context for prompt
@@ -196,7 +209,6 @@ serve(async (req) => {
       const parts = [];
       
       if (userPreferences.ageRange) parts.push(`Age range: ${userPreferences.ageRange}`);
-      if (userPreferences.travelGroupTypes?.length) parts.push(`Travel group: ${userPreferences.travelGroupTypes.join(', ')}`);
       if (userPreferences.fitnessLevel) parts.push(`Fitness level: ${userPreferences.fitnessLevel}`);
       if (userPreferences.walkingTolerance) parts.push(`Walking tolerance: ${userPreferences.walkingTolerance}`);
       if (userPreferences.crowdComfort) parts.push(`Crowd comfort: ${userPreferences.crowdComfort}`);
@@ -215,40 +227,76 @@ serve(async (req) => {
     }
 
     const activitiesPerSlot = getActivitiesPerSlot(pace);
-    const totalActivitiesPerDay = activitiesPerSlot * 3; // morning, afternoon, evening
+    const totalActivitiesPerDay = activitiesPerSlot * 3;
     const startTime = preferredStartTime || getDefaultStartTime(pace);
 
     const cuisineContext = userPreferences?.preferredCuisines?.length 
       ? `Focus restaurant suggestions on these cuisine types: ${userPreferences.preferredCuisines.join(', ')}. `
       : '';
 
-    const systemPrompt = `You are an expert travel planner for ${cityName}, ${countryName}. Generate a detailed, personalized itinerary with reasoning for each recommendation.
+    // Build leg-specific context for multi-city trips
+    let legContext = "";
+    if (isMultiCity) {
+      let currentDay = 1;
+      legContext = "\n\nTRIP LEGS (MULTI-CITY STRUCTURE):\n";
+      cityLegs.forEach((leg, index) => {
+        const endDay = currentDay + leg.daysToSpend - 1;
+        legContext += `Leg ${index + 1}: ${leg.cityName}, ${leg.countryName} (Days ${currentDay}-${endDay}, ${leg.daysToSpend} days)\n`;
+        currentDay = endDay + 1;
+      });
+      legContext += "\nIMPORTANT: Structure the itinerary with clear LEG headers before each city section!";
+    }
 
-CRITICAL FORMAT REQUIREMENTS - Follow this EXACT structure:
+    const destinationsList = isMultiCity 
+      ? cityLegs.map(l => `${l.cityName}, ${l.countryName}`).join(' → ')
+      : `${cityName}, ${countryName}`;
+
+    const systemPrompt = `You are an expert travel planner for ${destinationsList}. Generate a detailed, personalized itinerary with reasoning for each recommendation.
+${isMultiCity ? `
+MULTI-CITY TRIP FORMAT - Follow this EXACT structure:
+
+## Summary
+[2-3 sentence overview of the multi-city adventure]
+
+## Leg 1: ${cityLegs[0].cityName}
+### Day 1: [Thematic title]
+...activities...
+
+### Day 2: [Thematic title]  
+...activities...
+
+## Leg 2: ${cityLegs[1]?.cityName || 'Next City'}
+### Day ${cityLegs[0].daysToSpend + 1}: [Thematic title]
+...activities...
+
+(Continue for all legs)
+` : `
+SINGLE-CITY FORMAT - Follow this EXACT structure:
 
 ## Summary
 [2-3 sentence overview of the trip]
 
 ## Day 1: [Thematic title - e.g., "Historic City Center"]
+`}
 ### Start Time: ${startTime}
 ### Weather
 Condition: [e.g., "Partly cloudy"]
 Temperature: [e.g., "12°C - 18°C"]
 Rain: [e.g., "20%"]
-Note: [One sentence recommendation based on weather, e.g., "Great day for outdoor sightseeing, but bring a light jacket for the evening."]
+Note: [One sentence recommendation based on weather]
 
 ### Morning
 - **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration: e.g., "1.5 hours"] | [Time: e.g., "9:00 AM"]
-  [1-2 sentence description with specific location/address in ${cityName}]
-  Why: [1 sentence explaining why this is recommended at this time - consider proximity, crowds, weather, energy levels, user preferences]
+  [1-2 sentence description with specific location]
+  Why: [1 sentence explaining why this is recommended]
 
 ### Afternoon
-- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration] | [Time]
+- **[Activity Name]** | [Type] | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
-- **[Lunch: Restaurant Name]** | restaurant | [Duration: e.g., "1 hour"] | [Time]
-  [Description mentioning cuisine type and why it matches preferences]
-  Why: [Reasoning based on cuisine preferences, location, timing]
+- **[Lunch: Restaurant Name]** | restaurant | [Duration] | [Time]
+  [Description]
+  Why: [Reasoning]
 
 ### Evening
 - **[Activity Name]** | [Type] | [Duration] | [Time]
@@ -258,64 +306,56 @@ Note: [One sentence recommendation based on weather, e.g., "Great day for outdoo
   [Description]
   Why: [Reasoning]
 
-[Repeat for each day with ## Day 2, ## Day 3, etc.]
-
 ## Packing Tips
 - [Tip 1]
 - [Tip 2]
-- [Tip 3]
 
 ## Transport Tips
 - [Tip 1]
 - [Tip 2]
 
 STRICT RULES:
-1. Each time slot (Morning/Afternoon/Evening) MUST have exactly ${activitiesPerSlot} activities
-2. Include at least one restaurant per day matching user's cuisine preferences
-3. Use REAL places and attractions that exist in ${cityName} - no made up names
-4. Day titles must be thematic (e.g., "Art & Culture", "Royal Heritage") - NOT "Day 1" or the city name
-5. Each activity must include: **Name** | type | duration | time
-6. MUST include "Why:" reasoning for EVERY activity explaining the recommendation
-7. Weather notes should recommend indoor activities on rainy days (>50% rain chance)
-8. ${cuisineContext}Respect all dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
+1. Each time slot MUST have exactly ${activitiesPerSlot} activities
+2. Include at least one restaurant per day
+3. Use REAL places that exist - no made up names
+4. Day titles must be thematic (NOT "Day 1" or the city name)
+5. Each activity: **Name** | type | duration | time
+6. MUST include "Why:" reasoning for EVERY activity
+7. Weather notes should recommend indoor activities on rainy days
+8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
 9. Consider walking distances and group nearby attractions
-10. Account for the user's pace preference: ${pace} (${totalActivitiesPerDay} activities per day)
-11. Morning activities should start at ${startTime}
-12. Consider crowd timing (e.g., "visit early to avoid crowds", "best at sunset")
-13. Match activities to energy levels (lighter activities after meals, energetic ones in morning)`;
+10. Account for pace: ${pace} (${totalActivitiesPerDay} activities per day)
+11. Morning activities start at ${startTime}
+${isMultiCity ? `12. MUST clearly label each LEG with "## Leg N: CityName" headers
+13. Include travel/transition notes between cities at the start of new legs` : ''}`;
 
-    const userPrompt = `Create a ${numDays}-day itinerary for ${cityName}, ${countryName}.
+    const userPrompt = `Create a ${numDays}-day itinerary for ${destinationsList}.
+${legContext}
 
 Trip Parameters:
 - Travel style: ${travelStyle}
 - Budget level: ${budgetLevel}
-- Daily pace: ${pace} (${totalActivitiesPerDay} activities per day total)
+- Daily pace: ${pace} (${totalActivitiesPerDay} activities per day)
 - Preferred start time: ${startTime}
 - Dietary preferences: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None specified'}
 ${userProfileContext}
 
 ${cityDescription ? `\nAbout the destination:\n${cityDescription}` : ''}
 
-Weather Forecast by Day:
+Weather Forecast:
 ${weatherContext}
 
-Generate exactly ${numDays} days. Each day must have:
-- A unique thematic title (NOT "Day X" or the city name)
-- Start Time section showing when the day begins
+Generate exactly ${numDays} days${isMultiCity ? ` across ${cityLegs.length} city legs` : ''}. Each day must have:
+- A unique thematic title
+- Start Time section
 - Weather section with condition, temperature, rain chance, and planning note
 - Morning: ${activitiesPerSlot} activities with time and reasoning
-- Afternoon: ${activitiesPerSlot} activities (including lunch) with time and reasoning
+- Afternoon: ${activitiesPerSlot} activities (including lunch) with time and reasoning  
 - Evening: ${activitiesPerSlot} activities (including dinner) with time and reasoning
+${isMultiCity ? `
+CRITICAL: Start each city section with "## Leg N: CityName" header!` : ''}
 
-IMPORTANT: Every activity MUST include a "Why:" line explaining why it's recommended at that specific time, considering:
-- Proximity to previous/next activity
-- Crowd timing (avoiding peak hours where relevant)
-- Weather suitability for that day
-- User's energy levels (e.g., lighter activities after lunch)
-- Cuisine preferences for restaurant recommendations
-- User's stated interests and travel style
-
-Use the EXACT format specified with pipe-separated metadata and "Why:" reasoning lines.`;
+IMPORTANT: Every activity MUST include a "Why:" line explaining why it's recommended.`;
 
     console.log('Sending request to Lovable AI...');
     
@@ -356,11 +396,12 @@ Use the EXACT format specified with pipe-separated metadata and "Why:" reasoning
       });
     }
 
-    // Include weather data in metadata header for client parsing
+    // Include weather and leg data in metadata header
     const responseHeaders = {
       ...corsHeaders,
       "Content-Type": "text/event-stream",
       "X-Weather-Data": JSON.stringify(weatherByDay),
+      "X-Trip-Legs": JSON.stringify(cityLegs),
     };
 
     return new Response(response.body, { headers: responseHeaders });

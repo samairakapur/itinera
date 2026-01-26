@@ -381,6 +381,10 @@ const NewTrip = () => {
     tripVibe: '',
     specialOccasion: 'none',
   });
+  
+  // Multi-city selection state
+  const [selectedCities, setSelectedCities] = useState<{ cityId: string; daysToSpend: number }[]>([]);
+  
   const [isGenerating, setIsGenerating] = useState(false);
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
@@ -412,7 +416,8 @@ const NewTrip = () => {
     }
   }, [profile]);
 
-  const numDays = tripLengthToNumDays(preferences.tripLength);
+  // Calculate total days from selected cities
+  const numDays = selectedCities.reduce((sum, sc) => sum + sc.daysToSpend, 0) || tripLengthToNumDays(preferences.tripLength);
 
   // Parse itinerary when raw text changes
   useEffect(() => {
@@ -430,13 +435,18 @@ const NewTrip = () => {
       return;
     }
 
-    if (!preferences.destination) {
-      toast.error('Please select a destination');
+    if (selectedCities.length === 0) {
+      toast.error('Please select at least one city');
       return;
     }
 
-    const city = cities?.find(c => c.id === preferences.destination);
-    if (!city) {
+    // Get city data for all selected cities
+    const cityData = selectedCities.map(sc => ({
+      ...sc,
+      city: cities?.find(c => c.id === sc.cityId),
+    })).filter(cd => cd.city);
+
+    if (cityData.length === 0) {
       toast.error('City not found');
       return;
     }
@@ -458,6 +468,15 @@ const NewTrip = () => {
         return;
       }
 
+      // Build multi-city request
+      const citiesForRequest = cityData.map(cd => ({
+        cityId: cd.cityId,
+        cityName: cd.city!.name,
+        countryName: cd.city!.country,
+        daysToSpend: cd.daysToSpend,
+        cityDescription: cd.city!.description,
+      }));
+
       const response = await fetch(ITINERARY_URL, {
         method: 'POST',
         headers: {
@@ -465,8 +484,11 @@ const NewTrip = () => {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          cityName: city.name,
-          countryName: city.country,
+          // For multi-city trips, send array of cities
+          cities: citiesForRequest,
+          // Legacy single-city support (use first city)
+          cityName: citiesForRequest[0].cityName,
+          countryName: citiesForRequest[0].countryName,
           numDays,
           travelStyle: mapTravelGroup(preferences.travelGroup),
           budgetLevel: mapBudgetStyle(preferences.budgetStyle),
@@ -479,7 +501,7 @@ const NewTrip = () => {
             tripVibe: preferences.tripVibe,
             specialOccasion: preferences.specialOccasion,
           },
-          cityDescription: city.description,
+          cityDescription: citiesForRequest[0].cityDescription,
         }),
       });
 
@@ -665,14 +687,23 @@ const NewTrip = () => {
   };
 
   const handleSaveTrip = async (startDate: Date, endDate: Date) => {
-    if (!parsedItinerary || !preferences.destination) return;
+    if (!parsedItinerary || selectedCities.length === 0) return;
 
-    const city = cities?.find(c => c.id === preferences.destination);
-    if (!city) return;
+    // Use first city as primary for the itinerary
+    const primaryCity = cities?.find(c => c.id === selectedCities[0].cityId);
+    if (!primaryCity) return;
+
+    // Create trip name based on cities
+    const cityNames = selectedCities
+      .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
+      .filter(Boolean);
+    const tripName = cityNames.length > 1 
+      ? `${cityNames.join(' → ')} Adventure`
+      : `${cityNames[0]} Adventure`;
 
     await createItinerary.mutateAsync({
-      cityId: preferences.destination,
-      name: `${city.name} Adventure`,
+      cityId: selectedCities[0].cityId,
+      name: tripName,
       numDays,
       startDate,
       endDate,
@@ -687,7 +718,10 @@ const NewTrip = () => {
     navigate('/trips');
   };
 
-  const selectedCityData = cities?.find(c => c.id === preferences.destination);
+  // Get data for display
+  const primaryCityData = selectedCities.length > 0 
+    ? cities?.find(c => c.id === selectedCities[0].cityId) 
+    : null;
 
   if (!user) {
     return (
@@ -735,6 +769,8 @@ const NewTrip = () => {
           preferences={preferences}
           userTravelPreferences={profile?.travel_preferences as any}
           onPreferencesChange={setPreferences}
+          selectedCities={selectedCities}
+          onSelectedCitiesChange={setSelectedCities}
           onSubmit={handleGenerate}
         />
       </div>
@@ -742,12 +778,20 @@ const NewTrip = () => {
   }
 
   // Date selection view
-  if (viewMode === 'dates' && selectedCityData) {
+  if (viewMode === 'dates' && primaryCityData) {
+    // Build display name for multi-city trips
+    const cityNames = selectedCities
+      .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
+      .filter(Boolean);
+    const displayName = cityNames.length > 1 
+      ? cityNames.join(' → ')
+      : primaryCityData.name;
+      
     return (
       <div className="min-h-screen py-8" ref={contentRef}>
         <div className="container px-4 max-w-lg mx-auto">
           <DateSelectionStep
-            cityName={selectedCityData.name}
+            cityName={displayName}
             numDays={numDays}
             onBack={() => setViewMode('itinerary')}
             onSave={handleSaveTrip}
@@ -773,8 +817,15 @@ const NewTrip = () => {
             Back to Trips
           </Button>
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
-            Your Trip to {selectedCityData?.name}
+            {selectedCities.length > 1 
+              ? `Your Multi-City Trip`
+              : `Your Trip to ${primaryCityData?.name}`}
           </h1>
+          {selectedCities.length > 1 && (
+            <p className="text-muted-foreground text-sm">
+              {selectedCities.map(sc => cities?.find(c => c.id === sc.cityId)?.name).filter(Boolean).join(' → ')}
+            </p>
+          )}
           {profile?.travel_preferences && (
             <p className="text-sm text-primary mt-1 flex items-center gap-1">
               <Sparkles className="w-4 h-4" />
@@ -802,12 +853,16 @@ const NewTrip = () => {
           )}
 
           {/* Generated Itinerary */}
-          {parsedItinerary && selectedCityData && (
+          {parsedItinerary && primaryCityData && (
             <>
               {/* Overview Card */}
               <TripOverviewCard
-                cityName={selectedCityData.name}
-                countryName={selectedCityData.country}
+                cityName={selectedCities.length > 1 
+                  ? selectedCities.map(sc => cities?.find(c => c.id === sc.cityId)?.name).filter(Boolean).join(' → ')
+                  : primaryCityData.name}
+                countryName={selectedCities.length > 1 
+                  ? [...new Set(selectedCities.map(sc => cities?.find(c => c.id === sc.cityId)?.country).filter(Boolean))].join(', ')
+                  : primaryCityData.country}
                 numDays={numDays}
                 travelStyle={mapTravelGroup(preferences.travelGroup)}
                 pace={mapDailyPace(preferences.dailyPace)}

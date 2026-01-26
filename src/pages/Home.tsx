@@ -64,7 +64,7 @@ const Home = () => {
                 </Button>
               ) : (
                 <Button size="lg" variant="outline" asChild className="text-base">
-                  <Link to="/planner">
+                  <Link to="/planner/new">
                     <Calendar className="w-5 h-5 mr-2" />
                     Create Itinerary
                   </Link>

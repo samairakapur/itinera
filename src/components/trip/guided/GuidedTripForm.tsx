@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { TripPreferences } from '../TripPreferencesForm';
 import { GuidedStepCard } from './GuidedStepCard';
 import { GuidedProgressBar } from './GuidedProgressBar';
-import { CitySearchStep } from '../CitySearchStep';
+import { MultiCitySelector } from '../MultiCitySelector';
 
 interface City {
   id: string;
@@ -14,6 +14,11 @@ interface City {
   country: string;
   tags?: string[] | null;
   image_url?: string | null;
+}
+
+interface SelectedCity {
+  cityId: string;
+  daysToSpend: number;
 }
 
 interface TravelPreferences {
@@ -27,6 +32,8 @@ interface GuidedTripFormProps {
   preferences: TripPreferences;
   userTravelPreferences?: TravelPreferences | null;
   onPreferencesChange: (prefs: TripPreferences) => void;
+  onSelectedCitiesChange: (cities: SelectedCity[]) => void;
+  selectedCities: SelectedCity[];
   onSubmit: () => void;
 }
 
@@ -42,32 +49,17 @@ interface StepDefinition {
   key: string;
   question: string;
   helper: string;
-  type: 'single' | 'multi' | 'search';
+  type: 'single' | 'multi' | 'search' | 'multi-city';
   options?: StepOption[];
 }
 
 const STEPS: StepDefinition[] = [
   {
     id: 1,
-    key: 'destination',
+    key: 'destinations',
     question: 'Where would you like to go?',
-    helper: 'Search or pick from recommendations',
-    type: 'search',
-  },
-  {
-    id: 2,
-    key: 'tripLength',
-    question: 'How long is your trip?',
-    helper: 'This helps us plan the perfect amount of activities',
-    type: 'single',
-    options: [
-      { value: '1', label: '1 day', icon: '📅' },
-      { value: '2-3', label: '2–3 days', icon: '🗓️' },
-      { value: '4-5', label: '4–5 days', icon: '📆' },
-      { value: '6-7', label: '6–7 days', icon: '🗓️' },
-      { value: '8-10', label: '8–10 days', icon: '📆' },
-      { value: '11+', label: '11+ days', icon: '🌍' },
-    ],
+    helper: 'Add one or more cities to your trip. Adjust days per city.',
+    type: 'multi-city',
   },
   {
     id: 3,
@@ -167,6 +159,8 @@ export const GuidedTripForm = ({
   preferences,
   userTravelPreferences,
   onPreferencesChange,
+  onSelectedCitiesChange,
+  selectedCities,
   onSubmit,
 }: GuidedTripFormProps) => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -200,10 +194,16 @@ export const GuidedTripForm = ({
 
   const getStepValue = (): string | string[] => {
     const key = currentStepData.key;
+    if (currentStepData.type === 'multi-city') {
+      return selectedCities.length > 0 ? 'has-cities' : '';
+    }
     return extendedPrefs[key] || (currentStepData.type === 'multi' ? [] : '');
   };
 
   const canProceed = (): boolean => {
+    if (currentStepData.type === 'multi-city') {
+      return selectedCities.length > 0;
+    }
     const value = getStepValue();
     if (currentStepData.type === 'multi') {
       return (value as string[]).length > 0;
@@ -286,12 +286,12 @@ export const GuidedTripForm = ({
             </div>
 
             {/* Step Content */}
-            {currentStepData.type === 'search' ? (
-              <CitySearchStep
+            {currentStepData.type === 'multi-city' ? (
+              <MultiCitySelector
                 cities={cities}
                 userPreferences={userTravelPreferences}
-                selectedCityId={extendedPrefs.destination as string}
-                onSelect={(cityId) => updatePreference('destination', cityId)}
+                selectedCities={selectedCities}
+                onSelectionChange={onSelectedCitiesChange}
               />
             ) : (
               <>

@@ -17,10 +17,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToggleFavorite, useIsFavorite } from '@/hooks/useFavorites';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getRestaurantImage } from '@/lib/imageUtils';
 import type { Restaurant } from '@/hooks/useRestaurants';
-
-// Default fallback image for restaurants
-const DEFAULT_RESTAURANT_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600';
 
 interface RestaurantCardProps {
   restaurant: Restaurant;
@@ -55,7 +53,10 @@ const RestaurantCard = ({ restaurant }: RestaurantCardProps) => {
     return '$'.repeat(level);
   };
 
-  const imageUrl = imageError || !restaurant.image_url ? DEFAULT_RESTAURANT_IMAGE : restaurant.image_url;
+  // Use the image utility for accurate, cuisine-matched images
+  const imageUrl = imageError || !restaurant.image_url 
+    ? getRestaurantImage(restaurant.name, restaurant.cuisine) 
+    : restaurant.image_url;
 
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
