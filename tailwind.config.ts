@@ -92,6 +92,10 @@ export default {
           DEFAULT: "hsl(var(--mint))",
           light: "hsl(var(--mint-light))",
         },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -222,6 +222,44 @@ export type Database = {
           },
         ]
       }
+      day_preferences: {
+        Row: {
+          created_at: string
+          day_number: number
+          id: string
+          itinerary_id: string
+          notes: string | null
+          start_time: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          day_number: number
+          id?: string
+          itinerary_id: string
+          notes?: string | null
+          start_time?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          day_number?: number
+          id?: string
+          itinerary_id?: string
+          notes?: string | null
+          start_time?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "day_preferences_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "itineraries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       favorites: {
         Row: {
           attraction_id: string | null
@@ -257,6 +295,62 @@ export type Database = {
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flight_details: {
+        Row: {
+          airline: string | null
+          arrival_city: string
+          arrival_date: string
+          arrival_time: string | null
+          created_at: string
+          departure_city: string
+          departure_date: string
+          departure_time: string | null
+          flight_number: string | null
+          id: string
+          itinerary_id: string
+          leg_number: number
+          notes: string | null
+        }
+        Insert: {
+          airline?: string | null
+          arrival_city: string
+          arrival_date: string
+          arrival_time?: string | null
+          created_at?: string
+          departure_city: string
+          departure_date: string
+          departure_time?: string | null
+          flight_number?: string | null
+          id?: string
+          itinerary_id: string
+          leg_number?: number
+          notes?: string | null
+        }
+        Update: {
+          airline?: string | null
+          arrival_city?: string
+          arrival_date?: string
+          arrival_time?: string | null
+          created_at?: string
+          departure_city?: string
+          departure_date?: string
+          departure_time?: string | null
+          flight_number?: string | null
+          id?: string
+          itinerary_id?: string
+          leg_number?: number
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_details_itinerary_id_fkey"
+            columns: ["itinerary_id"]
+            isOneToOne: false
+            referencedRelation: "itineraries"
             referencedColumns: ["id"]
           },
         ]

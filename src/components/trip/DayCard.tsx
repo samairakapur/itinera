@@ -14,7 +14,8 @@ import {
   Thermometer,
   Droplets,
   CheckCircle2,
-  Timer
+  Timer,
+  Edit3
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ActivityCard, Activity } from './ActivityCard';
 import { DayCheckInDialog } from './DayCheckInDialog';
+import { DayStartTimeSelector } from './DayStartTimeSelector';
 import { cn } from '@/lib/utils';
 
 export interface DayWeather {
@@ -53,6 +55,8 @@ interface DayCardProps {
   defaultOpen?: boolean;
   showCheckIn?: boolean;
   completedActivityIds?: Set<string>;
+  itineraryId?: string;
+  totalDays?: number;
   onActivityRemove?: (dayNumber: number, activityId: string) => void;
   onActivitySwap?: (dayNumber: number, activityId: string) => void;
   onActivityToggleMustDo?: (dayNumber: number, activityId: string) => void;
@@ -61,6 +65,7 @@ interface DayCardProps {
   onAddActivity?: (dayNumber: number, timeSlot: 'morning' | 'afternoon' | 'evening') => void;
   onToggleActivityComplete?: (dayNumber: number, activityId: string) => void;
   onCarryOverActivities?: (fromDay: number, activityIds: string[]) => void;
+  onStartTimeChange?: (dayNumber: number, newTime: string, affectedActivities: Activity[]) => void;
 }
 
 const getWeatherIcon = (condition: string) => {
@@ -202,6 +207,8 @@ export const DayCard = ({
   defaultOpen = false,
   showCheckIn = false,
   completedActivityIds = new Set(),
+  itineraryId,
+  totalDays = 1,
   onActivityRemove,
   onActivitySwap,
   onActivityToggleMustDo,
@@ -210,6 +217,7 @@ export const DayCard = ({
   onAddActivity,
   onToggleActivityComplete,
   onCarryOverActivities,
+  onStartTimeChange,
 }: DayCardProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [checkInOpen, setCheckInOpen] = useState(false);
@@ -263,6 +271,12 @@ export const DayCard = ({
     }
   };
 
+  const handleStartTimeChange = (newTime: string, affectedActivities: Activity[]) => {
+    if (onStartTimeChange) {
+      onStartTimeChange(day.dayNumber, newTime, affectedActivities);
+    }
+  };
+
   const WeatherIcon = day.weather ? getWeatherIcon(day.weather.condition) : Sun;
 
   // Clean title
@@ -300,15 +314,24 @@ export const DayCard = ({
                           {completedCount}/{totalActivities}
                         </Badge>
                       )}
-                      {day.startTime && (
+                      {(day.startTime || itineraryId) && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Starts {day.startTime}
+                          Starts {day.startTime || '09:00'}
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
+                {itineraryId && (
+                  <DayStartTimeSelector
+                    itineraryId={itineraryId}
+                    dayNumber={day.dayNumber}
+                    currentStartTime={day.startTime || '09:00'}
+                    activities={allActivities}
+                    onStartTimeChange={handleStartTimeChange}
+                  />
+                )}
                 <div className="flex items-center gap-3">
                   {day.weather && (
                     <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm">

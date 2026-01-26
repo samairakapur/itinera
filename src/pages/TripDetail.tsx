@@ -1,12 +1,16 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useItinerary, useUpdateItinerary, useDeleteItinerary } from '@/hooks/useItineraries';
-import { format, addDays } from 'date-fns';
+import { useDayPreferences, getStartTimeForDay } from '@/hooks/useDayPreferences';
+import { useFlightDetails } from '@/hooks/useFlightDetails';
+import { format, addDays, isSameDay } from 'date-fns';
 import { ArrowLeft, Calendar, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
+import { FlightDetailsDialog } from '@/components/trip/FlightDetailsDialog';
+import { FlightCard } from '@/components/trip/FlightCard';
 import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -16,6 +20,8 @@ const TripDetail = () => {
   const { tripId } = useParams();
   const navigate = useNavigate();
   const { data: itinerary, isLoading } = useItinerary(tripId);
+  const { data: dayPreferences = [] } = useDayPreferences(tripId);
+  const { data: flights = [] } = useFlightDetails(tripId);
   const updateItinerary = useUpdateItinerary();
   const deleteItinerary = useDeleteItinerary();
 
@@ -34,11 +40,13 @@ const TripDetail = () => {
     
     for (let i = 1; i <= itinerary.num_days; i++) {
       const dayDate = startDate ? addDays(startDate, i - 1) : undefined;
+      const dayStartTime = getStartTimeForDay(i, dayPreferences);
       daysMap[i] = { 
         dayNumber: i, 
         title: `Day ${i}`, 
         date: dayDate ? format(dayDate, 'MMM d') : undefined,
         actualDate: dayDate,
+        startTime: dayStartTime.slice(0, 5),
         morning: [], 
         afternoon: [], 
         evening: [] 
@@ -72,7 +80,7 @@ const TripDetail = () => {
       day.evening.sort((a, b) => a.id.localeCompare(b.id));
     });
     setDays(Object.values(daysMap).sort((a, b) => a.dayNumber - b.dayNumber));
-  }, [itinerary]);
+  }, [itinerary, dayPreferences]);
 
   const saveChanges = useCallback((newDays: DayData[]) => {
     if (!tripId) return;
@@ -134,6 +142,47 @@ const TripDetail = () => {
     });
     toast.success('Activity updated');
   }, []);
+
+  const handleStartTimeChange = useCallback((dayNumber: number, newTime: string, affectedActivities: Activity[]) => {
+    // If activities need to be moved to next day
+    if (affectedActivities.length > 0) {
+      const activityIds = affectedActivities.map(a => a.id);
+      const nextDayNumber = dayNumber + 1;
+      
+      if (nextDayNumber <= days.length) {
+        const newDays = days.map(day => {
+          if (day.dayNumber === dayNumber) {
+            return {
+              ...day,
+              startTime: newTime.slice(0, 5),
+              morning: day.morning.filter(a => !activityIds.includes(a.id)),
+              afternoon: day.afternoon.filter(a => !activityIds.includes(a.id)),
+              evening: day.evening.filter(a => !activityIds.includes(a.id)),
+            };
+          }
+          if (day.dayNumber === nextDayNumber) {
+            return {
+              ...day,
+              morning: [...affectedActivities.map(a => ({ ...a, id: `moved-${a.id}` })), ...day.morning],
+            };
+          }
+          return day;
+        });
+        setDays(newDays);
+        saveChanges(newDays);
+        toast.success(`Start time updated. ${affectedActivities.length} activities moved to Day ${nextDayNumber}`);
+      }
+    } else {
+      // Just update the start time display
+      const newDays = days.map(day => 
+        day.dayNumber === dayNumber 
+          ? { ...day, startTime: newTime.slice(0, 5) }
+          : day
+      );
+      setDays(newDays);
+      toast.success('Start time updated');
+    }
+  }, [days, saveChanges]);
 
   const handleCarryOverActivities = useCallback((fromDay: number, activityIds: string[]) => {
     const nextDayNumber = fromDay + 1;
@@ -198,28 +247,58 @@ const TripDetail = () => {
         <div className="py-6 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
           <div className="flex items-center justify-between mb-2">
             <Button variant="ghost" onClick={() => navigate('/trips')} className="-ml-2" size="sm"><ArrowLeft className="w-4 h-4 mr-2" />Back</Button>
-            <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="sm"><Trash2 className="w-4 h-4 text-destructive" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this trip?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+            <div className="flex items-center gap-2">
+              {tripId && <FlightDetailsDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
+              <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" size="sm"><Trash2 className="w-4 h-4 text-destructive" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this trip?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+            </div>
           </div>
           <h1 className="font-display text-2xl font-bold">{itinerary.cities?.name || 'Your Trip'}</h1>
           {startDate && endDate && <p className="text-sm text-muted-foreground flex items-center gap-1"><Calendar className="w-4 h-4" />{format(startDate, 'MMM d')} – {format(endDate, 'MMM d, yyyy')}</p>}
         </div>
         <div className="space-y-6">
           <TripOverviewCard cityName={itinerary.cities?.name || ''} countryName={itinerary.cities?.country || ''} numDays={itinerary.num_days} travelStyle={itinerary.travel_style || ''} pace={itinerary.pace || ''} budgetLevel={itinerary.budget_level || ''} summary="" />
-          {days.map(day => (
-            <DayCard 
-              key={day.dayNumber} 
-              day={day} 
-              cityName={itinerary.cities?.name}
-              startDate={startDate || undefined}
-              showCheckIn={isOngoing}
-              completedActivityIds={completedActivityIds}
-              onActivityRemove={handleActivityRemove} 
-              onActivityEdit={handleActivityEdit}
-              onAddActivity={handleAddActivity}
-              onToggleActivityComplete={handleToggleActivityComplete}
-              onCarryOverActivities={handleCarryOverActivities}
-            />
-          ))}
+          
+          {days.map((day, index) => {
+            const dayDate = startDate ? addDays(startDate, day.dayNumber - 1) : undefined;
+            
+            // Check for flights on this day
+            const departureFlights = flights.filter(f => 
+              dayDate && isSameDay(new Date(f.departure_date), dayDate)
+            );
+            const arrivalFlights = flights.filter(f => 
+              dayDate && isSameDay(new Date(f.arrival_date), dayDate)
+            );
+
+            return (
+              <div key={day.dayNumber} className="space-y-3">
+                {/* Arrival flights at start of day */}
+                {arrivalFlights.map(flight => (
+                  <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
+                ))}
+                
+                <DayCard 
+                  day={day} 
+                  cityName={itinerary.cities?.name}
+                  startDate={startDate || undefined}
+                  showCheckIn={isOngoing}
+                  completedActivityIds={completedActivityIds}
+                  itineraryId={tripId}
+                  totalDays={itinerary.num_days}
+                  onActivityRemove={handleActivityRemove} 
+                  onActivityEdit={handleActivityEdit}
+                  onAddActivity={handleAddActivity}
+                  onToggleActivityComplete={handleToggleActivityComplete}
+                  onCarryOverActivities={handleCarryOverActivities}
+                  onStartTimeChange={handleStartTimeChange}
+                />
+
+                {/* Departure flights at end of day */}
+                {departureFlights.map(flight => (
+                  <FlightCard key={`departure-${flight.id}`} flight={flight} type="departure" />
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
       <AddActivityDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onSave={handleSaveActivity} dayNumber={addDialogDay} timeSlot={addDialogTimeSlot} editActivity={editActivity} />
