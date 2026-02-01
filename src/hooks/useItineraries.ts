@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import type { DayData } from '@/components/trip/DayCard';
+import { addDays, format } from 'date-fns';
 
 export interface SavedItinerary {
   id: string;
@@ -41,7 +42,14 @@ export interface SavedItineraryItem {
   restaurant_id: string | null;
 }
 
+export interface CitySelection {
+  cityId: string;
+  cityName?: string;
+  daysToSpend: number;
+}
+
 export interface CreateItineraryInput {
+  /** First city id for backwards compat – used as primary city_id on itinerary */
   cityId: string;
   name: string;
   numDays: number;
@@ -53,6 +61,8 @@ export interface CreateItineraryInput {
   dietaryPreferences?: string[];
   days: DayData[];
   summary?: string;
+  /** For multi-city trips, array of city selections in order */
+  selectedCities?: CitySelection[];
 }
 
 export const useItineraries = () => {
@@ -121,29 +131,117 @@ export const useCreateItinerary = () => {
     mutationFn: async (input: CreateItineraryInput) => {
       if (!user) throw new Error('Must be logged in');
 
-      // 1. Create the itinerary
+      // ---- DEBUG START ----
+      console.log('[useCreateItinerary] user.id:', user.id);
+      console.log('[useCreateItinerary] input:', JSON.stringify(input, null, 2));
+      // ---- DEBUG END ----
+
+      // 1. Create the itinerary row
+      const itineraryPayload = {
+        user_id: user.id,
+        city_id: input.cityId,
+        name: input.name,
+        num_days: input.numDays,
+        start_date: format(input.startDate, 'yyyy-MM-dd'),
+        end_date: format(input.endDate, 'yyyy-MM-dd'),
+        budget_level: input.budgetLevel ?? null,
+        pace: input.pace ?? null,
+        travel_style: input.travelStyle ?? null,
+        dietary_preferences: input.dietaryPreferences ?? null,
+      };
+
+      console.log('[useCreateItinerary] itineraryPayload:', itineraryPayload);
+
       const { data: itinerary, error: itineraryError } = await supabase
         .from('itineraries')
-        .insert({
-          user_id: user.id,
-          city_id: input.cityId,
-          name: input.name,
-          num_days: input.numDays,
-          start_date: input.startDate.toISOString().split('T')[0],
-          end_date: input.endDate.toISOString().split('T')[0],
-          budget_level: input.budgetLevel,
-          pace: input.pace,
-          travel_style: input.travelStyle,
-          dietary_preferences: input.dietaryPreferences,
-        })
+        .insert(itineraryPayload)
         .select()
         .single();
 
-      if (itineraryError) throw itineraryError;
+      if (itineraryError) {
+        console.error('[useCreateItinerary] itineraryError:', itineraryError);
+        throw itineraryError;
+      }
 
-      // 2. Create itinerary items from days
+      console.log('[useCreateItinerary] created itinerary:', itinerary);
+
+      // 2. Create trip_legs (multi-city support)
+      const selectedCities = input.selectedCities ?? [{ cityId: input.cityId, daysToSpend: input.numDays }];
+      let runningStartDay = 1;
+      const legInserts: {
+        itinerary_id: string;
+        city_id: string;
+        leg_number: number;
+        start_day: number;
+        end_day: number;
+      }[] = [];
+
+      selectedCities.forEach((sc, idx) => {
+        const endDay = runningStartDay + sc.daysToSpend - 1;
+        legInserts.push({
+          itinerary_id: itinerary.id,
+          city_id: sc.cityId,
+          leg_number: idx + 1,
+          start_day: runningStartDay,
+          end_day: endDay,
+        });
+        runningStartDay = endDay + 1;
+      });
+
+      console.log('[useCreateItinerary] legInserts:', legInserts);
+
+      const { data: legs, error: legsError } = await supabase
+        .from('trip_legs')
+        .insert(legInserts)
+        .select();
+
+      if (legsError) {
+        console.error('[useCreateItinerary] legsError:', legsError);
+        throw legsError;
+      }
+
+      console.log('[useCreateItinerary] created legs:', legs);
+
+      // 3. Create trip_days binding each day to its leg
+      const tripDaysInserts: {
+        itinerary_id: string;
+        trip_leg_id: string;
+        day_index: number;
+        day_date: string;
+        title: string;
+      }[] = [];
+
+      input.days.forEach((day) => {
+        const legForDay = legs?.find(
+          (l) => day.dayNumber >= l.start_day && day.dayNumber <= l.end_day
+        );
+        if (!legForDay) return;
+        const dayDate = addDays(input.startDate, day.dayNumber - 1);
+        tripDaysInserts.push({
+          itinerary_id: itinerary.id,
+          trip_leg_id: legForDay.id,
+          day_index: day.dayNumber,
+          day_date: format(dayDate, 'yyyy-MM-dd'),
+          title: day.title || `Day ${day.dayNumber}`,
+        });
+      });
+
+      console.log('[useCreateItinerary] tripDaysInserts:', tripDaysInserts);
+
+      if (tripDaysInserts.length > 0) {
+        const { error: daysError } = await supabase
+          .from('trip_days')
+          .insert(tripDaysInserts);
+
+        if (daysError) {
+          console.error('[useCreateItinerary] daysError:', daysError);
+          throw daysError;
+        }
+      }
+
+      // 4. Create itinerary_items from days
       const items: Omit<SavedItineraryItem, 'id'>[] = [];
-      
+
       input.days.forEach((day) => {
         const addItems = (activities: typeof day.morning, timeSlot: string) => {
           activities.forEach((activity, index) => {
@@ -167,12 +265,17 @@ export const useCreateItinerary = () => {
         addItems(day.evening, 'evening');
       });
 
+      console.log('[useCreateItinerary] itinerary_items count:', items.length);
+
       if (items.length > 0) {
         const { error: itemsError } = await supabase
           .from('itinerary_items')
           .insert(items);
 
-        if (itemsError) throw itemsError;
+        if (itemsError) {
+          console.error('[useCreateItinerary] itemsError:', itemsError);
+          throw itemsError;
+        }
       }
 
       return itinerary;
@@ -181,9 +284,10 @@ export const useCreateItinerary = () => {
       queryClient.invalidateQueries({ queryKey: ['itineraries'] });
       toast.success('Trip saved successfully!');
     },
-    onError: (error) => {
-      console.error('Error saving itinerary:', error);
-      toast.error('Failed to save trip');
+    onError: (error: any) => {
+      console.error('[useCreateItinerary] mutation error:', error);
+      const message = error?.message || error?.details || 'Unknown error';
+      toast.error(`Failed to save trip: ${message}`);
     },
   });
 };

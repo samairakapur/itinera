@@ -308,12 +308,7 @@ export const DayCard = ({
                     <h3 className="font-display text-lg font-bold text-foreground">
                       {formattedDate ? `${formattedDate} – ${cleanTitle}` : `Day ${day.dayNumber} – ${cleanTitle}`}
                     </h3>
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                      {day.cityName && (
-                        <span className="flex items-center gap-1 text-primary font-medium">
-                          📍 {day.cityName}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                       <span>{totalActivities} {totalActivities === 1 ? 'activity' : 'activities'}</span>
                       {showCheckIn && completedCount > 0 && (
                         <Badge variant="secondary" className="gap-1">
@@ -328,6 +323,12 @@ export const DayCard = ({
                         </span>
                       )}
                     </div>
+                    {/* City Tag – always visible */}
+                    {(day.cityName || cityName) && (
+                      <Badge variant="outline" className="mt-1.5 text-xs bg-primary/10 text-primary border-primary/30 gap-1">
+                        📍 {day.cityName || cityName}
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 {itineraryId && (
