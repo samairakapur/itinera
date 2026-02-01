@@ -33,33 +33,38 @@ const Home = () => {
 
   const featuredCities = cities?.slice(0, 4) || [];
 
-  // Render selected variation for testing
-  if (activeVariation === 'v1') return <HomeVariation1 />;
-  if (activeVariation === 'v2') return <HomeVariation2 />;
-  if (activeVariation === 'v3') return <HomeVariation3 />;
-  if (activeVariation === 'v4') return <HomeVariation4 />;
-  if (activeVariation === 'v5') return <HomeVariation5 />;
+  // Variation Switcher component (persistent across all variations)
+  const VariationSwitcher = () => (
+    <div className="bg-muted/50 border-b border-border py-2 sticky top-0 z-50">
+      <div className="container px-4">
+        <div className="flex items-center gap-4 overflow-x-auto">
+          <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Test Variations:</span>
+          <Tabs value={activeVariation} onValueChange={setActiveVariation}>
+            <TabsList className="h-8">
+              <TabsTrigger value="default" className="text-xs h-7 px-3">Default</TabsTrigger>
+              <TabsTrigger value="v1" className="text-xs h-7 px-3">Minimal</TabsTrigger>
+              <TabsTrigger value="v2" className="text-xs h-7 px-3">Bold</TabsTrigger>
+              <TabsTrigger value="v3" className="text-xs h-7 px-3">Playful</TabsTrigger>
+              <TabsTrigger value="v4" className="text-xs h-7 px-3">Editorial</TabsTrigger>
+              <TabsTrigger value="v5" className="text-xs h-7 px-3">App-Style</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render selected variation with persistent switcher
+  if (activeVariation === 'v1') return <><VariationSwitcher /><HomeVariation1 /></>;
+  if (activeVariation === 'v2') return <><VariationSwitcher /><HomeVariation2 /></>;
+  if (activeVariation === 'v3') return <><VariationSwitcher /><HomeVariation3 /></>;
+  if (activeVariation === 'v4') return <><VariationSwitcher /><HomeVariation4 /></>;
+  if (activeVariation === 'v5') return <><VariationSwitcher /><HomeVariation5 /></>;
 
   return (
     <div className="min-h-screen">
       {/* A/B Test Switcher - For development/testing only */}
-      <div className="bg-muted/50 border-b border-border py-2">
-        <div className="container px-4">
-          <div className="flex items-center gap-4 overflow-x-auto">
-            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Test Variations:</span>
-            <Tabs value={activeVariation} onValueChange={setActiveVariation}>
-              <TabsList className="h-8">
-                <TabsTrigger value="default" className="text-xs h-7 px-3">Default</TabsTrigger>
-                <TabsTrigger value="v1" className="text-xs h-7 px-3">Minimal</TabsTrigger>
-                <TabsTrigger value="v2" className="text-xs h-7 px-3">Bold</TabsTrigger>
-                <TabsTrigger value="v3" className="text-xs h-7 px-3">Playful</TabsTrigger>
-                <TabsTrigger value="v4" className="text-xs h-7 px-3">Editorial</TabsTrigger>
-                <TabsTrigger value="v5" className="text-xs h-7 px-3">App-Style</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
-      </div>
+      <VariationSwitcher />
 
       {/* Hero Section - Redesigned with dominant CTA */}
       <section className="relative overflow-hidden py-20 lg:py-32">
