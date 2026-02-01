@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CityCard from '@/components/cities/CityCard';
 import { 
   Plane, 
@@ -12,65 +14,114 @@ import {
   ChevronRight,
   Sparkles,
   Users,
-  Star
+  ArrowRight
 } from 'lucide-react';
+
+// Import variations for A/B testing
+import { 
+  HomeVariation1, 
+  HomeVariation2, 
+  HomeVariation3, 
+  HomeVariation4, 
+  HomeVariation5 
+} from '@/components/home';
 
 const Home = () => {
   const { user } = useAuth();
   const { data: cities, isLoading } = useCities();
+  const [activeVariation, setActiveVariation] = useState<string>('default');
 
   const featuredCities = cities?.slice(0, 4) || [];
 
+  // Render selected variation for testing
+  if (activeVariation === 'v1') return <HomeVariation1 />;
+  if (activeVariation === 'v2') return <HomeVariation2 />;
+  if (activeVariation === 'v3') return <HomeVariation3 />;
+  if (activeVariation === 'v4') return <HomeVariation4 />;
+  if (activeVariation === 'v5') return <HomeVariation5 />;
+
   return (
     <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-secondary/5 py-20 lg:py-32">
+      {/* A/B Test Switcher - For development/testing only */}
+      <div className="bg-muted/50 border-b border-border py-2">
+        <div className="container px-4">
+          <div className="flex items-center gap-4 overflow-x-auto">
+            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Test Variations:</span>
+            <Tabs value={activeVariation} onValueChange={setActiveVariation}>
+              <TabsList className="h-8">
+                <TabsTrigger value="default" className="text-xs h-7 px-3">Default</TabsTrigger>
+                <TabsTrigger value="v1" className="text-xs h-7 px-3">Minimal</TabsTrigger>
+                <TabsTrigger value="v2" className="text-xs h-7 px-3">Bold</TabsTrigger>
+                <TabsTrigger value="v3" className="text-xs h-7 px-3">Playful</TabsTrigger>
+                <TabsTrigger value="v4" className="text-xs h-7 px-3">Editorial</TabsTrigger>
+                <TabsTrigger value="v5" className="text-xs h-7 px-3">App-Style</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
+      </div>
+
+      {/* Hero Section - Redesigned with dominant CTA */}
+      <section className="relative overflow-hidden py-20 lg:py-32">
+        {/* Background effects */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-secondary/5" />
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-1/2 -right-1/4 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
-          <div className="absolute -bottom-1/4 -left-1/4 w-96 h-96 rounded-full bg-secondary/10 blur-3xl" />
+          <div className="absolute -top-1/2 -right-1/4 w-[600px] h-[600px] rounded-full bg-primary/10 blur-[120px]" />
+          <div className="absolute -bottom-1/4 -left-1/4 w-[500px] h-[500px] rounded-full bg-secondary/10 blur-[100px]" />
         </div>
         
         <div className="container relative px-4">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
+          <div className="max-w-4xl mx-auto text-center">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 border border-primary/20">
               <Sparkles className="w-4 h-4" />
-              Smart, Personalized Trip Planning
+              AI-Powered Trip Planning
             </div>
             
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight">
-              Plan Your Perfect{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-primary">
-                Trip, Your Way
+            {/* Headline */}
+            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-foreground mb-6 leading-[1.1]">
+              Plan Your Perfect Trip
+              <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary to-primary/60">
+                In Minutes, Not Hours
               </span>
             </h1>
             
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Discover amazing destinations, create personalized itineraries, and get AI-powered recommendations tailored to how you love to travel.
+            {/* Subheadline */}
+            <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
+              Tell us how you like to travel. Our AI creates personalized itineraries 
+              with attractions, restaurants, and timing—all matched to your unique style.
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" asChild className="text-base">
-                <Link to="/destinations">
-                  <MapPin className="w-5 h-5 mr-2" />
-                  Explore Destinations
+            {/* Primary CTA - Large and prominent */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
+              <Button 
+                size="lg" 
+                asChild 
+                className="h-16 px-10 text-lg font-bold rounded-2xl shadow-xl shadow-primary/30 hover:shadow-primary/50 transition-all hover:scale-[1.02] group"
+              >
+                <Link to={user ? "/planner/new" : "/auth"}>
+                  <Calendar className="w-6 h-6 mr-3 group-hover:rotate-12 transition-transform" />
+                  Plan My Trip Now
+                  <ArrowRight className="w-5 h-5 ml-3 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </Button>
-              {!user ? (
-                <Button size="lg" variant="outline" asChild className="text-base">
-                  <Link to="/auth">
-                    Get Started Free
-                    <ChevronRight className="w-5 h-5 ml-2" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button size="lg" variant="outline" asChild className="text-base">
-                  <Link to="/planner/new">
-                    <Calendar className="w-5 h-5 mr-2" />
-                    Create Itinerary
-                  </Link>
-                </Button>
-              )}
             </div>
+
+            {/* Secondary CTA */}
+            <Button variant="ghost" size="lg" asChild className="text-base">
+              <Link to="/destinations">
+                <MapPin className="w-5 h-5 mr-2" />
+                Or browse destinations first
+              </Link>
+            </Button>
+
+            {/* Trust indicators */}
+            {!user && (
+              <p className="mt-8 text-sm text-muted-foreground">
+                ✓ Free to use  •  ✓ No credit card  •  ✓ Ready in 2 minutes
+              </p>
+            )}
           </div>
         </div>
       </section>
@@ -80,15 +131,15 @@ const Home = () => {
         <div className="container px-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div className="text-center">
-              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">8+</div>
+              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">50+</div>
               <div className="text-sm text-muted-foreground">Cities</div>
             </div>
             <div className="text-center">
-              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">100+</div>
+              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">500+</div>
               <div className="text-sm text-muted-foreground">Attractions</div>
             </div>
             <div className="text-center">
-              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">200+</div>
+              <div className="font-display text-3xl md:text-4xl font-bold text-primary mb-1">1000+</div>
               <div className="text-sm text-muted-foreground">Restaurants</div>
             </div>
             <div className="text-center">
@@ -205,13 +256,13 @@ const Home = () => {
                 <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-4">
                   Ready to Plan Your Next Adventure?
                 </h2>
-                <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
+                <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
                   Join thousands of travelers who trust Itinera for smarter trip planning. It's free to get started!
                 </p>
-                <Button size="lg" asChild>
+                <Button size="lg" asChild className="h-14 px-8 text-lg font-bold rounded-xl">
                   <Link to="/auth">
-                    Create Free Account
-                    <ChevronRight className="w-5 h-5 ml-2" />
+                    Build My Perfect Trip
+                    <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
               </CardContent>
@@ -225,13 +276,13 @@ const Home = () => {
         <div className="container px-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
                 <Plane className="w-4 h-4 text-primary-foreground" />
               </div>
               <span className="font-display font-semibold text-foreground">Itinera</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2024 Itinera. Made with ❤️ for travelers everywhere.
+              © 2025 Itinera. Made with ❤️ for travelers everywhere.
             </p>
           </div>
         </div>
