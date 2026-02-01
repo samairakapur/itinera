@@ -792,6 +792,39 @@ export type Database = {
           },
         ]
       }
+      trip_days: {
+        Row: {
+          created_at: string
+          day_date: string
+          day_index: number
+          id: string
+          itinerary_id: string
+          title: string
+          trip_leg_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          day_date: string
+          day_index: number
+          id?: string
+          itinerary_id: string
+          title: string
+          trip_leg_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          day_date?: string
+          day_index?: number
+          id?: string
+          itinerary_id?: string
+          title?: string
+          trip_leg_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       trip_legs: {
         Row: {
           city_id: string

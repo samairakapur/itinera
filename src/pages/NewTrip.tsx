@@ -701,21 +701,33 @@ const NewTrip = () => {
       ? `${cityNames.join(' → ')} Adventure`
       : `${cityNames[0]} Adventure`;
 
-    await createItinerary.mutateAsync({
-      cityId: selectedCities[0].cityId,
-      name: tripName,
-      numDays,
-      startDate,
-      endDate,
-      budgetLevel: mapBudgetStyle(preferences.budgetStyle),
-      pace: mapDailyPace(preferences.dailyPace),
-      travelStyle: mapTravelGroup(preferences.travelGroup),
-      dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
-      days: parsedItinerary.days,
-      summary: parsedItinerary.summary,
-    });
+    // Build enriched selectedCities for multi-city leg creation
+    const enrichedCities = selectedCities.map(sc => ({
+      cityId: sc.cityId,
+      cityName: cities?.find(c => c.id === sc.cityId)?.name,
+      daysToSpend: sc.daysToSpend,
+    }));
 
-    navigate('/trips');
+    try {
+      await createItinerary.mutateAsync({
+        cityId: selectedCities[0].cityId,
+        name: tripName,
+        numDays,
+        startDate,
+        endDate,
+        budgetLevel: mapBudgetStyle(preferences.budgetStyle),
+        pace: mapDailyPace(preferences.dailyPace),
+        travelStyle: mapTravelGroup(preferences.travelGroup),
+        dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
+        days: parsedItinerary.days,
+        summary: parsedItinerary.summary,
+        selectedCities: enrichedCities,
+      });
+      navigate('/trips');
+    } catch (err) {
+      // Error toast already shown in mutation onError
+      console.error('[handleSaveTrip] failed', err);
+    }
   };
 
   // Get data for display
@@ -870,7 +882,7 @@ const NewTrip = () => {
                 summary={parsedItinerary.summary}
               />
 
-              {/* Action Buttons */}
+              {/* Action Buttons – No duplicate "Next" button here */}
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -896,26 +908,34 @@ const NewTrip = () => {
                     <RefreshCw className="w-4 h-4" />
                   )}
                 </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleProceedToDates}
-                >
-                  Next
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
               </div>
 
-              {/* Day Cards */}
-              {parsedItinerary.days.map((day) => (
-                <DayCard
-                  key={day.dayNumber}
-                  day={day}
-                  onActivityRemove={handleActivityRemove}
-                  onActivityToggleMustDo={handleActivityToggleMustDo}
-                  onActivityEdit={handleActivityEdit}
-                  onAddActivity={handleAddActivity}
-                />
-              ))}
+              {/* Day Cards with city tags for multi-city trips */}
+              {parsedItinerary.days.map((day) => {
+                // Derive cityName for this day based on selectedCities leg ranges
+                let cityNameForDay: string | undefined;
+                let runningDay = 1;
+                for (const sc of selectedCities) {
+                  const cityEndDay = runningDay + sc.daysToSpend - 1;
+                  if (day.dayNumber >= runningDay && day.dayNumber <= cityEndDay) {
+                    cityNameForDay = cities?.find(c => c.id === sc.cityId)?.name;
+                    break;
+                  }
+                  runningDay = cityEndDay + 1;
+                }
+                const dayWithCity = { ...day, cityName: cityNameForDay };
+                return (
+                  <DayCard
+                    key={day.dayNumber}
+                    day={dayWithCity}
+                    cityName={cityNameForDay}
+                    onActivityRemove={handleActivityRemove}
+                    onActivityToggleMustDo={handleActivityToggleMustDo}
+                    onActivityEdit={handleActivityEdit}
+                    onAddActivity={handleAddActivity}
+                  />
+                );
+              })}
 
               {/* Travel Tips */}
               <TravelTips
