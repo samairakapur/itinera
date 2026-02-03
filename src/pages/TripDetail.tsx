@@ -1,8 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useItinerary, useUpdateItinerary, useDeleteItinerary } from '@/hooks/useItineraries';
-import { useDayPreferences, getStartTimeForDay } from '@/hooks/useDayPreferences';
+import { useDayPreferences, getStartTimeForDay, useUpsertDayPreference } from '@/hooks/useDayPreferences';
 import { useFlightDetails } from '@/hooks/useFlightDetails';
 import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
+import { useDayConstraints, calculateDayConstraints } from '@/hooks/useSmartScheduling';
 import { format, addDays, isSameDay } from 'date-fns';
 import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { FlightDetailsDialog } from '@/components/trip/FlightDetailsDialog';
 import { FlightCard } from '@/components/trip/FlightCard';
 import { FlightPromptBanner } from '@/components/trip/FlightPromptBanner';
+import { FlightConstraintBanner } from '@/components/trip/FlightConstraintBanner';
 import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDialog';
 import { CityDayBadge } from '@/components/trip/CityDayBadge';
 import { TravelTips } from '@/components/trip/TravelTips';
@@ -30,6 +32,7 @@ const TripDetail = () => {
   const { data: tripLegs = [] } = useTripLegs(tripId);
   const updateItinerary = useUpdateItinerary();
   const deleteItinerary = useDeleteItinerary();
+  const upsertDayPreference = useUpsertDayPreference();
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -39,14 +42,23 @@ const TripDetail = () => {
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
   const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
 
+  // Calculate flight-aware constraints for each day
+  const startDate = itinerary?.start_date ? new Date(itinerary.start_date) : undefined;
+  const dayConstraints = useDayConstraints(
+    itinerary?.num_days || 0,
+    startDate,
+    flights,
+    dayPreferences
+  );
+
   // Convert itinerary items to DayData format with actual dates
   useEffect(() => {
     if (!itinerary) return;
     const daysMap: Record<number, DayData> = {};
-    const startDate = itinerary.start_date ? new Date(itinerary.start_date) : undefined;
+    const itineraryStartDate = itinerary.start_date ? new Date(itinerary.start_date) : undefined;
     
     for (let i = 1; i <= itinerary.num_days; i++) {
-      const dayDate = startDate ? addDays(startDate, i - 1) : undefined;
+      const dayDate = itineraryStartDate ? addDays(itineraryStartDate, i - 1) : undefined;
       const dayStartTime = getStartTimeForDay(i, dayPreferences);
       daysMap[i] = { 
         dayNumber: i, 
@@ -243,6 +255,68 @@ const TripDetail = () => {
     toast.success(`${activityIds.length} activities carried to Day ${nextDayNumber}`);
   }, [days, saveChanges]);
 
+  // Handle Day Editor save (unified start time + activity move)
+  const handleDayEditorSave = useCallback((
+    dayNumber: number,
+    config: { startTime: string; pace: string; activitiesToMove: string[]; targetDay: number }
+  ) => {
+    // Update start time in day preferences
+    if (tripId) {
+      upsertDayPreference.mutate({
+        itinerary_id: tripId,
+        day_number: dayNumber,
+        start_time: config.startTime,
+      });
+    }
+
+    // Move selected activities to target day
+    if (config.activitiesToMove.length > 0) {
+      const activityIds = config.activitiesToMove;
+      const targetDayNumber = config.targetDay;
+
+      const newDays = days.map(day => {
+        if (day.dayNumber === dayNumber) {
+          return {
+            ...day,
+            startTime: config.startTime.slice(0, 5),
+            morning: day.morning.filter(a => !activityIds.includes(a.id)),
+            afternoon: day.afternoon.filter(a => !activityIds.includes(a.id)),
+            evening: day.evening.filter(a => !activityIds.includes(a.id)),
+          };
+        }
+        if (day.dayNumber === targetDayNumber) {
+          const sourceDayData = days.find(d => d.dayNumber === dayNumber);
+          if (!sourceDayData) return day;
+
+          const activitiesToMove = [
+            ...sourceDayData.morning,
+            ...sourceDayData.afternoon,
+            ...sourceDayData.evening,
+          ].filter(a => activityIds.includes(a.id));
+
+          return {
+            ...day,
+            morning: [...activitiesToMove.map(a => ({ ...a, id: `moved-${a.id}` })), ...day.morning],
+          };
+        }
+        return day;
+      });
+
+      setDays(newDays);
+      saveChanges(newDays);
+      toast.success(`Day ${dayNumber} updated. ${activityIds.length} activities moved to Day ${targetDayNumber}`);
+    } else {
+      // Just update start time
+      const newDays = days.map(day => 
+        day.dayNumber === dayNumber 
+          ? { ...day, startTime: config.startTime.slice(0, 5) }
+          : day
+      );
+      setDays(newDays);
+      toast.success(`Day ${dayNumber} start time updated to ${config.startTime.slice(0, 5)}`);
+    }
+  }, [tripId, days, saveChanges, upsertDayPreference]);
+
   const handleDelete = () => {
     if (!tripId) return;
     deleteItinerary.mutate(tripId, { onSuccess: () => navigate('/trips') });
@@ -274,12 +348,12 @@ const TripDetail = () => {
   if (isLoading) return <div className="min-h-screen py-8"><div className="container px-4 max-w-2xl mx-auto"><Card><CardContent className="py-12 text-center"><Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" /></CardContent></Card></div></div>;
   if (!itinerary) return <div className="min-h-screen py-8"><div className="container px-4"><p>Trip not found</p></div></div>;
 
-  const startDate = itinerary.start_date ? new Date(itinerary.start_date) : null;
+  const tripStartDate = itinerary.start_date ? new Date(itinerary.start_date) : null;
   const endDate = itinerary.end_date ? new Date(itinerary.end_date) : null;
   
   // Check if trip is ongoing (for showing check-in buttons)
   const now = new Date();
-  const isOngoing = startDate && endDate && startDate <= now && endDate >= now;
+  const isOngoing = tripStartDate && endDate && tripStartDate <= now && endDate >= now;
 
   return (
     <div className="min-h-screen pb-12">
@@ -332,10 +406,10 @@ const TripDetail = () => {
             </div>
           </div>
           <h1 className="font-display text-2xl font-bold">{itinerary.cities?.name || 'Your Trip'}</h1>
-          {startDate && endDate && (
+          {tripStartDate && endDate && (
             <p className="text-sm text-muted-foreground flex items-center gap-1">
               <Calendar className="w-4 h-4" />
-              {format(startDate, 'MMM d')} – {format(endDate, 'MMM d, yyyy')}
+              {format(tripStartDate, 'MMM d')} – {format(endDate, 'MMM d, yyyy')}
             </p>
           )}
         </div>
@@ -371,14 +445,15 @@ const TripDetail = () => {
               'Consider getting a multi-day transit pass',
               'Download offline maps for navigation',
             ]}
-            weatherNotes={startDate && endDate 
-              ? `Weather guidance for ${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`
+            weatherNotes={tripStartDate && endDate 
+              ? `Weather guidance for ${format(tripStartDate, 'MMM d')} - ${format(endDate, 'MMM d')}`
               : undefined
             }
           />
           
           {days.map((day, index) => {
             const dayDate = startDate ? addDays(startDate, day.dayNumber - 1) : undefined;
+            const dayConstraint = dayConstraints[index];
             
             // Check for flights on this day
             const departureFlights = flights.filter(f => 
@@ -415,6 +490,11 @@ const TripDetail = () => {
                   />
                 )}
                 
+                {/* Flight Constraint Banner for arrival/departure days */}
+                {dayConstraint && (dayConstraint.isArrivalDay || dayConstraint.isDepartureDay) && (
+                  <FlightConstraintBanner constraints={dayConstraint} />
+                )}
+                
                 {/* Arrival flights at start of day */}
                 {arrivalFlights.map(flight => (
                   <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
@@ -428,12 +508,14 @@ const TripDetail = () => {
                   completedActivityIds={completedActivityIds}
                   itineraryId={tripId}
                   totalDays={itinerary.num_days}
+                  constraints={dayConstraint}
                   onActivityRemove={handleActivityRemove} 
                   onActivityEdit={handleActivityEdit}
                   onAddActivity={handleAddActivity}
                   onToggleActivityComplete={handleToggleActivityComplete}
                   onCarryOverActivities={handleCarryOverActivities}
                   onStartTimeChange={handleStartTimeChange}
+                  onDayEditorSave={handleDayEditorSave}
                 />
 
                 {/* Departure flights at end of day */}
