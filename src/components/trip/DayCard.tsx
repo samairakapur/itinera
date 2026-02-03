@@ -15,7 +15,8 @@ import {
   Droplets,
   CheckCircle2,
   Timer,
-  Edit3
+  Edit3,
+  Settings2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,10 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ActivityCard, Activity } from './ActivityCard';
 import { DayCheckInDialog } from './DayCheckInDialog';
-import { DayStartTimeSelector } from './DayStartTimeSelector';
+import { TravelTimeCard } from './TravelTimeCard';
+import { FlightConstraintBanner } from './FlightConstraintBanner';
+import { DayEditorDialog } from './DayEditorDialog';
+import { DayConstraints, estimateTravelTime, formatAvailableTime } from '@/hooks/useSmartScheduling';
 import { cn } from '@/lib/utils';
 
 export interface DayWeather {
@@ -59,6 +63,7 @@ interface DayCardProps {
   completedActivityIds?: Set<string>;
   itineraryId?: string;
   totalDays?: number;
+  constraints?: DayConstraints;
   onActivityRemove?: (dayNumber: number, activityId: string) => void;
   onActivitySwap?: (dayNumber: number, activityId: string) => void;
   onActivityToggleMustDo?: (dayNumber: number, activityId: string) => void;
@@ -68,6 +73,7 @@ interface DayCardProps {
   onToggleActivityComplete?: (dayNumber: number, activityId: string) => void;
   onCarryOverActivities?: (fromDay: number, activityIds: string[]) => void;
   onStartTimeChange?: (dayNumber: number, newTime: string, affectedActivities: Activity[]) => void;
+  onDayEditorSave?: (dayNumber: number, config: { startTime: string; pace: string; activitiesToMove: string[]; targetDay: number }) => void;
 }
 
 const getWeatherIcon = (condition: string) => {
@@ -120,16 +126,19 @@ const TimeSlot = ({
   onAdd?: () => void;
   onToggleComplete?: (id: string) => void;
 }) => {
-  // Calculate travel time display (placeholder - would use real data)
-  const getTravelTime = (index: number): string | null => {
+  // Calculate travel time between consecutive activities
+  const getTravelInfo = (index: number): { minutes: number; mode: 'walk' | 'metro' | 'taxi' | 'bus'; fromTitle: string; toTitle: string } | null => {
     if (index === 0) return null;
     const prev = activities[index - 1];
     const curr = activities[index];
-    // Check if travel_time_from_previous exists on the activity
-    if ((curr as any).travelTimeMinutes) {
-      return `${(curr as any).travelTimeMinutes} min travel`;
-    }
-    return null;
+    
+    // Use estimateTravelTime from useSmartScheduling
+    const travelInfo = estimateTravelTime(prev, curr);
+    return {
+      ...travelInfo,
+      fromTitle: prev.title,
+      toTitle: curr.title,
+    };
   };
 
   return (
@@ -156,32 +165,37 @@ const TimeSlot = ({
       </div>
       <div className="space-y-2 pl-6">
         {activities.length > 0 ? (
-          activities.map((activity, index) => (
-            <div key={activity.id} className="space-y-2">
-              {/* Travel time indicator */}
-              {getTravelTime(index) && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-                  <Timer className="w-3 h-3" />
-                  <span>{getTravelTime(index)}</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-              )}
-              <ActivityCard
-                activity={activity}
-                cityName={cityName}
+          activities.map((activity, index) => {
+            const travelInfo = getTravelInfo(index);
+            return (
+              <div key={activity.id} className="space-y-0">
+                {/* Travel time card between activities */}
+                {travelInfo && (
+                  <TravelTimeCard
+                    fromTitle={travelInfo.fromTitle}
+                    toTitle={travelInfo.toTitle}
+                    minutes={travelInfo.minutes}
+                    mode={travelInfo.mode}
+                    compact
+                  />
+                )}
+                <ActivityCard
+                  activity={activity}
+                  cityName={cityName}
                 isCompleted={completedIds?.has(activity.id)}
                 onRemove={onRemove}
                 onSwap={onSwap}
                 onToggleMustDo={onToggleMustDo}
                 onMoveUp={onMoveUp}
                 onMoveDown={onMoveDown}
-                onEdit={onEdit}
-                onToggleComplete={onToggleComplete}
-                isFirst={index === 0}
-                isLast={index === activities.length - 1}
-              />
-            </div>
-          ))
+                  onEdit={onEdit}
+                  onToggleComplete={onToggleComplete}
+                  isFirst={index === 0}
+                  isLast={index === activities.length - 1}
+                />
+              </div>
+            );
+          })
         ) : (
           <div className="py-4 px-3 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
             No activities planned
@@ -211,6 +225,7 @@ export const DayCard = ({
   completedActivityIds = new Set(),
   itineraryId,
   totalDays = 1,
+  constraints,
   onActivityRemove,
   onActivitySwap,
   onActivityToggleMustDo,
@@ -220,9 +235,11 @@ export const DayCard = ({
   onToggleActivityComplete,
   onCarryOverActivities,
   onStartTimeChange,
+  onDayEditorSave,
 }: DayCardProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const [dayEditorOpen, setDayEditorOpen] = useState(false);
 
   const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
   const totalActivities = allActivities.length;
@@ -331,14 +348,20 @@ export const DayCard = ({
                     )}
                   </div>
                 </div>
-                {itineraryId && (
-                  <DayStartTimeSelector
-                    itineraryId={itineraryId}
-                    dayNumber={day.dayNumber}
-                    currentStartTime={day.startTime || '09:00'}
-                    activities={allActivities}
-                    onStartTimeChange={handleStartTimeChange}
-                  />
+                {/* Edit Day Button - replaces DayStartTimeSelector */}
+                {itineraryId && onDayEditorSave && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 h-8 px-3 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDayEditorOpen(true);
+                    }}
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    Edit Day
+                  </Button>
                 )}
                 <div className="flex items-center gap-3">
                   {day.weather && (
@@ -485,6 +508,21 @@ export const DayCard = ({
         onCarryOver={handleCarryOver}
         onComplete={() => setCheckInOpen(false)}
       />
+
+      {/* Day Editor Dialog */}
+      {constraints && onDayEditorSave && (
+        <DayEditorDialog
+          open={dayEditorOpen}
+          onOpenChange={setDayEditorOpen}
+          dayNumber={day.dayNumber}
+          dayLabel={cleanTitle}
+          currentStartTime={day.startTime || '09:00'}
+          constraints={constraints}
+          activities={allActivities}
+          totalDays={totalDays}
+          onSave={(config) => onDayEditorSave(day.dayNumber, config)}
+        />
+      )}
     </>
   );
 };
