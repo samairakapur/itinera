@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plane, Plus, Trash2, Edit2 } from 'lucide-react';
+import { Plane, Plus, Trash2, Edit2, Upload, Loader2, Camera } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   useFlightDetails, 
   useCreateFlightDetail, 
@@ -53,14 +55,14 @@ export const FlightDetailsDialog = ({
   onOpenChange: controlledOnOpenChange 
 }: FlightDetailsDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
-  
-  // Support both controlled and uncontrolled modes
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? (controlledOnOpenChange || (() => {})) : setInternalOpen;
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FlightFormData>(emptyForm);
+  const [isParsing, setIsParsing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: flights = [], isLoading } = useFlightDetails(itineraryId);
   const createFlight = useCreateFlightDetail();
@@ -124,12 +126,86 @@ export const FlightDetailsDialog = ({
     setEditingId(null);
   };
 
+  const handleUploadScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image must be under 10MB');
+      return;
+    }
+
+    setIsParsing(true);
+    
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const { data, error } = await supabase.functions.invoke('parse-flight', {
+        body: { imageBase64: base64 },
+      });
+
+      if (error) throw error;
+
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      if (!data.flights || data.flights.length === 0) {
+        toast.error('No flight details found in the image. Try a clearer screenshot.');
+        return;
+      }
+
+      // Add all parsed flights
+      let addedCount = 0;
+      for (const flight of data.flights) {
+        if (!flight.departure_city || !flight.arrival_city || !flight.departure_date || !flight.arrival_date) {
+          continue;
+        }
+
+        await createFlight.mutateAsync({
+          itinerary_id: itineraryId,
+          leg_number: flights.length + addedCount + 1,
+          airline: flight.airline || undefined,
+          flight_number: flight.flight_number || undefined,
+          departure_city: flight.departure_city,
+          arrival_city: flight.arrival_city,
+          departure_date: flight.departure_date,
+          departure_time: flight.departure_time || undefined,
+          arrival_date: flight.arrival_date,
+          arrival_time: flight.arrival_time || undefined,
+          notes: flight.notes || undefined,
+        });
+        addedCount++;
+      }
+
+      toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+    } catch (err) {
+      console.error('Error parsing flight:', err);
+      toast.error('Failed to parse flight details. Try entering manually.');
+    } finally {
+      setIsParsing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           <Plane className="w-4 h-4" />
-          Flight Details
+          Flights
           {flights.length > 0 && (
             <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-xs">
               {flights.length}
@@ -146,6 +222,43 @@ export const FlightDetailsDialog = ({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Upload Screenshot */}
+          <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
+            <CardContent className="p-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleUploadScreenshot}
+                className="hidden"
+              />
+              <Button
+                variant="ghost"
+                className="w-full gap-3 h-auto py-4 flex-col"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isParsing}
+              >
+                {isParsing ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <span className="text-sm font-medium">Parsing flight details...</span>
+                    <span className="text-xs text-muted-foreground">AI is reading your confirmation</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Camera className="w-5 h-5 text-primary" />
+                      <Upload className="w-5 h-5 text-primary" />
+                    </div>
+                    <span className="text-sm font-medium">Upload Flight Confirmation</span>
+                    <span className="text-xs text-muted-foreground">Take a photo or upload a screenshot — AI will extract all details</span>
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Existing flights */}
           {flights.map((flight, index) => (
             <Card key={flight.id} className="relative">
@@ -162,20 +275,10 @@ export const FlightDetailsDialog = ({
                     )}
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => handleEdit(flight)}
-                    >
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(flight)}>
                       <Edit2 className="w-3.5 h-3.5" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => handleDelete(flight.id)}
-                    >
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(flight.id)}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
@@ -200,9 +303,7 @@ export const FlightDetailsDialog = ({
                 </div>
 
                 {flight.notes && (
-                  <p className="text-xs text-muted-foreground mt-2 border-t pt-2">
-                    {flight.notes}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-2 border-t pt-2">{flight.notes}</p>
                 )}
               </CardContent>
             </Card>
@@ -219,121 +320,70 @@ export const FlightDetailsDialog = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Airline</Label>
-                    <Input
-                      placeholder="e.g., Delta"
-                      value={formData.airline}
-                      onChange={(e) => handleInputChange('airline', e.target.value)}
-                    />
+                    <Input placeholder="e.g., Delta" value={formData.airline} onChange={(e) => handleInputChange('airline', e.target.value)} />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Flight Number</Label>
-                    <Input
-                      placeholder="e.g., DL123"
-                      value={formData.flight_number}
-                      onChange={(e) => handleInputChange('flight_number', e.target.value)}
-                    />
+                    <Input placeholder="e.g., DL123" value={formData.flight_number} onChange={(e) => handleInputChange('flight_number', e.target.value)} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">From City *</Label>
-                    <Input
-                      placeholder="Departure city"
-                      value={formData.departure_city}
-                      onChange={(e) => handleInputChange('departure_city', e.target.value)}
-                      required
-                    />
+                    <Input placeholder="Departure city" value={formData.departure_city} onChange={(e) => handleInputChange('departure_city', e.target.value)} required />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">To City *</Label>
-                    <Input
-                      placeholder="Arrival city"
-                      value={formData.arrival_city}
-                      onChange={(e) => handleInputChange('arrival_city', e.target.value)}
-                      required
-                    />
+                    <Input placeholder="Arrival city" value={formData.arrival_city} onChange={(e) => handleInputChange('arrival_city', e.target.value)} required />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Departure Date *</Label>
-                    <Input
-                      type="date"
-                      value={formData.departure_date}
-                      onChange={(e) => handleInputChange('departure_date', e.target.value)}
-                      required
-                    />
+                    <Input type="date" value={formData.departure_date} onChange={(e) => handleInputChange('departure_date', e.target.value)} required />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Departure Time</Label>
-                    <Input
-                      type="time"
-                      value={formData.departure_time}
-                      onChange={(e) => handleInputChange('departure_time', e.target.value)}
-                    />
+                    <Input type="time" value={formData.departure_time} onChange={(e) => handleInputChange('departure_time', e.target.value)} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Arrival Date *</Label>
-                    <Input
-                      type="date"
-                      value={formData.arrival_date}
-                      onChange={(e) => handleInputChange('arrival_date', e.target.value)}
-                      required
-                    />
+                    <Input type="date" value={formData.arrival_date} onChange={(e) => handleInputChange('arrival_date', e.target.value)} required />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Arrival Time</Label>
-                    <Input
-                      type="time"
-                      value={formData.arrival_time}
-                      onChange={(e) => handleInputChange('arrival_time', e.target.value)}
-                    />
+                    <Input type="time" value={formData.arrival_time} onChange={(e) => handleInputChange('arrival_time', e.target.value)} />
                   </div>
                 </div>
 
                 <div className="space-y-1">
                   <Label className="text-xs">Notes</Label>
-                  <Textarea
-                    placeholder="Terminal, gate, confirmation number..."
-                    value={formData.notes}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    rows={2}
-                  />
+                  <Textarea placeholder="Terminal, gate, confirmation number..." value={formData.notes} onChange={(e) => handleInputChange('notes', e.target.value)} rows={2} />
                 </div>
 
                 <div className="flex gap-2 justify-end">
-                  <Button variant="outline" size="sm" onClick={handleCancel}>
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={!formData.departure_city || !formData.arrival_city || !formData.departure_date || !formData.arrival_date}
-                  >
+                  <Button variant="outline" size="sm" onClick={handleCancel}>Cancel</Button>
+                  <Button size="sm" onClick={handleSave} disabled={!formData.departure_city || !formData.arrival_city || !formData.departure_date || !formData.arrival_date}>
                     {editingId ? 'Update' : 'Add Flight'}
                   </Button>
                 </div>
               </CardContent>
             </Card>
           ) : (
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={() => setIsAdding(true)}
-            >
+            <Button variant="outline" className="w-full gap-2" onClick={() => setIsAdding(true)}>
               <Plus className="w-4 h-4" />
-              Add Flight
+              Add Flight Manually
             </Button>
           )}
 
           {flights.length > 0 && (
             <p className="text-xs text-muted-foreground text-center">
-              Flight times will be used to adjust your itinerary for arrival and departure days.
+              ✈️ Flight times automatically adjust your itinerary — arrival/departure days show available time and constraints.
             </p>
           )}
         </div>
