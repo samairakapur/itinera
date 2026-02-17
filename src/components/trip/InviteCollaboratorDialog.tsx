@@ -28,18 +28,30 @@ interface InviteCollaboratorDialogProps {
   tripName?: string;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollaboratorDialogProps) => {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
   const [role, setRole] = useState<'viewer' | 'editor'>('viewer');
   
   const { data: collaborators = [] } = useTripCollaborators(itineraryId);
   const inviteCollaborator = useInviteCollaborator();
   const removeCollaborator = useRemoveCollaborator();
 
+  const emailError = emailTouched && email.trim() !== '' && !EMAIL_REGEX.test(email.trim())
+    ? 'Please enter a valid email address'
+    : emailTouched && email.trim() === ''
+    ? 'Email is required'
+    : null;
+
+  const isEmailValid = EMAIL_REGEX.test(email.trim());
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    setEmailTouched(true);
+    if (!isEmailValid) return;
 
     await inviteCollaborator.mutateAsync({
       itineraryId,
@@ -48,6 +60,7 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
     });
     
     setEmail('');
+    setEmailTouched(false);
     setRole('viewer');
   };
 
@@ -82,7 +95,7 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleInvite} className="space-y-4">
+        <form onSubmit={handleInvite} className="space-y-2">
           <div className="flex gap-2">
             <div className="flex-1">
               <Label htmlFor="email" className="sr-only">Email</Label>
@@ -92,7 +105,9 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
                 placeholder="Enter email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-10"
+                onBlur={() => setEmailTouched(true)}
+                className={`h-10 ${emailError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                aria-invalid={!!emailError}
               />
             </div>
             <Select value={role} onValueChange={(v) => setRole(v as 'viewer' | 'editor')}>
@@ -106,11 +121,14 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
             </Select>
             <Button 
               type="submit" 
-              disabled={!email.trim() || inviteCollaborator.isPending}
+              disabled={!isEmailValid || inviteCollaborator.isPending}
             >
               Invite
             </Button>
           </div>
+          {emailError && (
+            <p className="text-xs text-destructive pl-1">{emailError}</p>
+          )}
         </form>
 
         {(acceptedCollaborators.length > 0 || pendingInvitations.length > 0) && (
