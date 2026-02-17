@@ -68,6 +68,12 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
       });
 
       if (!resp.ok || !resp.body) {
+        if (resp.status === 402) {
+          throw new Error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
+        }
+        if (resp.status === 429) {
+          throw new Error('Too many requests. Please wait a moment and try again.');
+        }
         throw new Error('Failed to start stream');
       }
 

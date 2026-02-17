@@ -125,7 +125,16 @@ Output format (return exactly 9 places - 3 attractions, 3 cafes, 3 restaurants):
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        // Check for credit exhaustion (402) from the edge function
+        if (error.message?.includes('non-2xx') || error.context?.status === 402) {
+          toast.error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
+          setPlaces([]);
+          setLoading(false);
+          return;
+        }
+        throw error;
+      }
 
       const content = data.choices?.[0]?.message?.content || '';
       const jsonMatch = content.match(/\{[\s\S]*\}/);
