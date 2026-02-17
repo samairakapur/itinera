@@ -336,7 +336,13 @@ export const DayCard = ({
                       {(day.startTime || itineraryId) && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Starts {day.startTime || '09:00'}
+                          Starts {constraints?.isArrivalDay ? constraints.earliestStart : (day.startTime || '09:00')}
+                        </span>
+                      )}
+                      {constraints?.isDepartureDay && (
+                        <span className="flex items-center gap-1">
+                          <Timer className="w-3 h-3" />
+                          Until {constraints.latestEnd}
                         </span>
                       )}
                     </div>
@@ -419,11 +425,19 @@ export const DayCard = ({
                 </div>
               )}
 
-              {/* Start Time */}
-              {day.startTime && (
+              {/* Start Time - flight-aware */}
+              {(day.startTime || constraints) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground pb-2 border-b">
                   <Clock className="w-4 h-4" />
-                  <span>Day starts at <strong className="text-foreground">{day.startTime}</strong></span>
+                  <span>Day starts at <strong className="text-foreground">
+                    {constraints?.isArrivalDay ? constraints.earliestStart : (day.startTime || '09:00')}
+                  </strong></span>
+                  {constraints?.isArrivalDay && (
+                    <Badge variant="outline" className="text-xs ml-auto">Flight adjusted</Badge>
+                  )}
+                  {constraints?.isDepartureDay && (
+                    <span className="ml-auto text-xs">Activities until <strong>{constraints.latestEnd}</strong></span>
+                  )}
                 </div>
               )}
 
