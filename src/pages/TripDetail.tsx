@@ -3,7 +3,7 @@ import { useItinerary, useUpdateItinerary, useDeleteItinerary } from '@/hooks/us
 import { useDayPreferences, getStartTimeForDay, useUpsertDayPreference } from '@/hooks/useDayPreferences';
 import { useFlightDetails } from '@/hooks/useFlightDetails';
 import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
-import { useDayConstraints, calculateDayConstraints } from '@/hooks/useSmartScheduling';
+import { useDayConstraints, calculateDayConstraints, timeToMinutes } from '@/hooks/useSmartScheduling';
 import { format, addDays, isSameDay } from 'date-fns';
 import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,7 @@ const TripDetail = () => {
   );
 
   // Convert itinerary items to DayData format with actual dates
+  // Flight constraints override default start times
   useEffect(() => {
     if (!itinerary) return;
     const daysMap: Record<number, DayData> = {};
@@ -59,13 +60,31 @@ const TripDetail = () => {
     
     for (let i = 1; i <= itinerary.num_days; i++) {
       const dayDate = itineraryStartDate ? addDays(itineraryStartDate, i - 1) : undefined;
-      const dayStartTime = getStartTimeForDay(i, dayPreferences);
+      const userStartTime = getStartTimeForDay(i, dayPreferences);
+      
+      // Use flight constraint to override start time on arrival/departure days
+      const constraint = dayConstraints[i - 1];
+      let effectiveStartTime = userStartTime.slice(0, 5);
+      
+      if (constraint) {
+        // On arrival days, flight constraint's earliestStart takes priority
+        // unless user explicitly set a later time
+        if (constraint.isArrivalDay) {
+          const constraintMinutes = timeToMinutes(constraint.earliestStart);
+          const userMinutes = timeToMinutes(effectiveStartTime);
+          // Flight constraint always wins if it's later than user preference
+          if (constraintMinutes > userMinutes) {
+            effectiveStartTime = constraint.earliestStart;
+          }
+        }
+      }
+      
       daysMap[i] = { 
         dayNumber: i, 
         title: `Day ${i}`, 
         date: dayDate ? format(dayDate, 'MMM d') : undefined,
         actualDate: dayDate,
-        startTime: dayStartTime.slice(0, 5),
+        startTime: effectiveStartTime,
         morning: [], 
         afternoon: [], 
         evening: [] 
@@ -99,7 +118,7 @@ const TripDetail = () => {
       day.evening.sort((a, b) => a.id.localeCompare(b.id));
     });
     setDays(Object.values(daysMap).sort((a, b) => a.dayNumber - b.dayNumber));
-  }, [itinerary, dayPreferences]);
+  }, [itinerary, dayPreferences, dayConstraints]);
 
   const saveChanges = useCallback((newDays: DayData[], showToast = true) => {
     if (!tripId) return;
