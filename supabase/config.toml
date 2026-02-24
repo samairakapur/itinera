@@ -15,3 +15,15 @@ verify_jwt = false
 [functions.get-weather]
 enabled = true
 verify_jwt = false
+
+[functions.nearby-places]
+enabled = true
+verify_jwt = true
+
+[functions.get-place-image]
+enabled = true
+verify_jwt = false
+
+[functions.parse-flight]
+enabled = true
+verify_jwt = true

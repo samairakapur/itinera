@@ -1,145 +1,143 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// ---------------------------------------------------------------------------
+// get-weather — Supabase Edge Function
+//
+// Uses Open-Meteo (https://open-meteo.com) — completely free, no API key.
+// Falls back to the Open-Meteo geocoding API when only a city name is given.
+// ---------------------------------------------------------------------------
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-interface WeatherData {
-  current: {
-    temp: number;
-    feels_like: number;
-    humidity: number;
-    weather: { main: string; description: string; icon: string }[];
-  };
-  daily: {
-    dt: number;
-    temp: { min: number; max: number };
-    weather: { main: string; description: string; icon: string }[];
-    pop: number;
-  }[];
+// WMO Weather interpretation codes → human-readable + icon slug
+function describeWeatherCode(code: number): {
+  main: string;
+  description: string;
+  icon: string;
+} {
+  if (code === 0)  return { main: "Clear",        description: "Clear sky",          icon: "01d" };
+  if (code <= 2)   return { main: "Partly Cloudy", description: "Partly cloudy",      icon: "02d" };
+  if (code === 3)  return { main: "Cloudy",        description: "Overcast",            icon: "04d" };
+  if (code <= 48)  return { main: "Fog",           description: "Foggy",               icon: "50d" };
+  if (code <= 57)  return { main: "Drizzle",       description: "Light drizzle",       icon: "09d" };
+  if (code <= 67)  return { main: "Rain",          description: "Rain",                icon: "10d" };
+  if (code <= 77)  return { main: "Snow",          description: "Snowfall",            icon: "13d" };
+  if (code <= 82)  return { main: "Showers",       description: "Rain showers",        icon: "09d" };
+  if (code <= 86)  return { main: "Snow Showers",  description: "Snow showers",        icon: "13d" };
+  if (code <= 99)  return { main: "Thunderstorm",  description: "Thunderstorm",        icon: "11d" };
+  return                  { main: "Unknown",       description: "Unknown conditions",  icon: "01d" };
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { lat, lon, city } = await req.json();
-    
-    const apiKey = Deno.env.get('OPENWEATHERMAP_API_KEY');
-    if (!apiKey) {
-      console.error('OPENWEATHERMAP_API_KEY not configured');
-      throw new Error('Weather API not configured');
-    }
+    const body = await req.json();
+    let { lat, lon, city } = body as {
+      lat?: number;
+      lon?: number;
+      city?: string;
+    };
 
-    let latitude = lat;
-    let longitude = lon;
+    // ── Geocode city name if coordinates not provided ──────────────────────
+    if (city && (lat == null || lon == null)) {
+      const geoUrl =
+        `https://geocoding-api.open-meteo.com/v1/search` +
+        `?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
 
-    // If city name provided instead of coordinates, geocode it first
-    if (city && (!lat || !lon)) {
-      console.log(`Geocoding city: ${city}`);
-      const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(city)}&limit=1&appid=${apiKey}`;
-      const geoResponse = await fetch(geoUrl);
-      
-      if (!geoResponse.ok) {
-        throw new Error(`Geocoding failed: ${geoResponse.status}`);
-      }
-      
-      const geoData = await geoResponse.json();
-      if (!geoData || geoData.length === 0) {
+      const geoRes = await fetch(geoUrl);
+      if (!geoRes.ok) throw new Error(`Geocoding failed: ${geoRes.status}`);
+
+      const geoData = await geoRes.json();
+      if (!geoData.results || geoData.results.length === 0) {
         throw new Error(`City not found: ${city}`);
       }
-      
-      latitude = geoData[0].lat;
-      longitude = geoData[0].lon;
-      console.log(`Geocoded ${city} to lat: ${latitude}, lon: ${longitude}`);
+
+      lat = geoData.results[0].latitude;
+      lon = geoData.results[0].longitude;
     }
 
-    if (!latitude || !longitude) {
-      throw new Error('Location coordinates required');
-    }
-
-    // Fetch 7-day forecast using One Call API 3.0
-    console.log(`Fetching weather for lat: ${latitude}, lon: ${longitude}`);
-    const weatherUrl = `https://api.openweathermap.org/data/3.0/onecall?lat=${latitude}&lon=${longitude}&exclude=minutely,hourly,alerts&units=metric&appid=${apiKey}`;
-    
-    const weatherResponse = await fetch(weatherUrl);
-    
-    if (!weatherResponse.ok) {
-      const errorText = await weatherResponse.text();
-      console.error(`Weather API error: ${weatherResponse.status} - ${errorText}`);
-      
-      // Fallback to free API if One Call fails
-      console.log('Falling back to free weather API');
-      const fallbackUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${latitude}&lon=${longitude}&units=metric&appid=${apiKey}`;
-      const fallbackResponse = await fetch(fallbackUrl);
-      
-      if (!fallbackResponse.ok) {
-        throw new Error(`Weather API fallback failed: ${fallbackResponse.status}`);
-      }
-      
-      const fallbackData = await fallbackResponse.json();
-      
-      // Transform 5-day/3-hour forecast to daily format
-      const dailyMap = new Map();
-      fallbackData.list.forEach((item: any) => {
-        const date = new Date(item.dt * 1000).toDateString();
-        if (!dailyMap.has(date)) {
-          dailyMap.set(date, {
-            dt: item.dt,
-            temp: { min: item.main.temp_min, max: item.main.temp_max },
-            weather: item.weather,
-            pop: item.pop || 0,
-          });
-        } else {
-          const existing = dailyMap.get(date);
-          existing.temp.min = Math.min(existing.temp.min, item.main.temp_min);
-          existing.temp.max = Math.max(existing.temp.max, item.main.temp_max);
-        }
-      });
-      
-      const daily = Array.from(dailyMap.values()).slice(0, 7);
-      
+    if (lat == null || lon == null) {
       return new Response(
         JSON.stringify({
-          current: {
-            temp: fallbackData.list[0].main.temp,
-            feels_like: fallbackData.list[0].main.feels_like,
-            humidity: fallbackData.list[0].main.humidity,
-            weather: fallbackData.list[0].weather,
-          },
-          daily,
-          source: 'openweathermap-fallback',
+          error: "Provide lat/lon coordinates or a city name",
+          current: null,
+          daily: [],
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
-    const weatherData: WeatherData = await weatherResponse.json();
-    console.log('Weather data fetched successfully');
+    // ── Fetch 7-day forecast from Open-Meteo (no key required) ────────────
+    const forecastUrl =
+      `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,` +
+      `precipitation_probability_max,wind_speed_10m_max,sunrise,sunset` +
+      `&timezone=auto&forecast_days=7`;
+
+    const weatherRes = await fetch(forecastUrl);
+    if (!weatherRes.ok) {
+      throw new Error(`Open-Meteo error: ${weatherRes.status}`);
+    }
+
+    const weatherData = await weatherRes.json();
+
+    // ── Current conditions ─────────────────────────────────────────────────
+    const curr = weatherData.current ?? {};
+    const currCode: number = curr.weather_code ?? 0;
+
+    const current = {
+      temp: Math.round(curr.temperature_2m ?? 0),
+      feels_like: Math.round(curr.apparent_temperature ?? curr.temperature_2m ?? 0),
+      humidity: Math.round(curr.relative_humidity_2m ?? 0),
+      weather: [describeWeatherCode(currCode)],
+    };
+
+    // ── 7-day daily forecast ───────────────────────────────────────────────
+    const daily = (weatherData.daily?.time ?? []).map(
+      (date: string, i: number) => {
+        const code: number = weatherData.daily.weather_code[i] ?? 0;
+        return {
+          dt: Math.floor(new Date(date).getTime() / 1000), // unix timestamp
+          temp: {
+            min: Math.round(weatherData.daily.temperature_2m_min[i] ?? 0),
+            max: Math.round(weatherData.daily.temperature_2m_max[i] ?? 0),
+          },
+          weather: [describeWeatherCode(code)],
+          pop: (weatherData.daily.precipitation_probability_max[i] ?? 0) / 100,
+          wind_speed: Math.round(weatherData.daily.wind_speed_10m_max[i] ?? 0),
+          sunrise: weatherData.daily.sunrise?.[i] ?? null,
+          sunset: weatherData.daily.sunset?.[i] ?? null,
+        };
+      }
+    );
 
     return new Response(
-      JSON.stringify({
-        current: weatherData.current,
-        daily: weatherData.daily.slice(0, 7),
-        source: 'openweathermap',
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ current, daily, source: "open-meteo" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error('Error in get-weather function:', error);
+  } catch (err) {
+    console.error("get-weather error:", err);
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Failed to fetch weather',
+      JSON.stringify({
+        error: err instanceof Error ? err.message : "Failed to fetch weather",
         current: null,
         daily: [],
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }

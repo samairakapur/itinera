@@ -219,6 +219,11 @@
     box-shadow: var(--shadow-card);
   }
 
+  /* iOS safe-area bottom padding (for home indicator) */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   /* Animation utilities */
   .animate-float {
     animation: float 3s ease-in-out infinite;
