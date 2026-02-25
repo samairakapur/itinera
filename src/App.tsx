@@ -16,6 +16,7 @@ import TripDetail from "@/pages/TripDetail";
 import NewTrip from "@/pages/NewTrip";
 import Nearby from "@/pages/Nearby";
 import Profile from "@/pages/Profile";
+import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/reset-password" element={<ResetPassword />} />
             <Route path="/profile-setup" element={<ProfileSetup />} />
             <Route element={<Layout />}>
               <Route path="/" element={<RequireProfile><Home /></RequireProfile>} />
