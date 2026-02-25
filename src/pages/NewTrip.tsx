@@ -477,6 +477,11 @@ const NewTrip = () => {
         cityDescription: cd.city!.description,
       }));
 
+      // Use today as a provisional start date so Claude can use real calendar
+      // dates in day headings. The user will confirm (or change) the actual
+      // start date in the DateSelectionStep before saving the trip.
+      const provisionalStartDate = new Date().toISOString().split('T')[0];
+
       const response = await fetch(ITINERARY_URL, {
         method: 'POST',
         headers: {
@@ -484,9 +489,9 @@ const NewTrip = () => {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          // For multi-city trips, send array of cities
+          // Multi-city array (primary)
           cities: citiesForRequest,
-          // Legacy single-city support (use first city)
+          // Legacy single-city fields (fallback)
           cityName: citiesForRequest[0].cityName,
           countryName: citiesForRequest[0].countryName,
           numDays,
@@ -502,12 +507,26 @@ const NewTrip = () => {
             specialOccasion: preferences.specialOccasion,
           },
           cityDescription: citiesForRequest[0].cityDescription,
+          // Provisional start date — Claude uses this for real calendar dates.
+          // The user will confirm / adjust in the date-selection step.
+          startDate: provisionalStartDate,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate itinerary');
+        const msg = errorData.error || '';
+        // Provide helpful, specific messages for known error cases
+        if (response.status === 429) {
+          throw new Error('The AI is a little busy right now. Please wait a few seconds and try again.');
+        }
+        if (response.status === 503) {
+          throw new Error('The AI service is temporarily overloaded. Please try again in a moment.');
+        }
+        if (response.status === 401) {
+          throw new Error('Unable to authenticate with the AI service. Please sign out and back in.');
+        }
+        throw new Error(msg || 'Failed to generate itinerary. Please try again.');
       }
 
       // Extract weather data from header if present
@@ -549,7 +568,17 @@ const NewTrip = () => {
 
           try {
             const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
+            // Anthropic streaming format: content_block_delta events carry text
+            let content: string | undefined;
+            if (
+              parsed.type === 'content_block_delta' &&
+              parsed.delta?.type === 'text_delta'
+            ) {
+              content = parsed.delta.text;
+            } else if (parsed.choices?.[0]?.delta?.content) {
+              // Legacy OpenAI / Lovable gateway format (kept for backward compat)
+              content = parsed.choices[0].delta.content;
+            }
             if (content) {
               setRawItinerary(prev => prev + content);
             }

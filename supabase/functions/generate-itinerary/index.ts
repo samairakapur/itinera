@@ -6,6 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface TravelPreferences {
   ageRange?: string;
   fitnessLevel?: string;
@@ -32,10 +36,20 @@ interface CityLeg {
   cityDescription?: string;
 }
 
+interface FlightConstraint {
+  type: 'arrival' | 'departure';
+  dayNumber: number;
+  time: string;           // HH:mm (local)
+  city: string;
+  iata?: string;
+  isInternational?: boolean;
+  delayMinutes?: number;
+}
+
 interface ItineraryRequest {
-  // Multi-city support
+  // Multi-city
   cities?: CityLeg[];
-  // Legacy single-city support
+  // Legacy single-city
   cityName: string;
   countryName: string;
   numDays: number;
@@ -46,6 +60,9 @@ interface ItineraryRequest {
   userPreferences: TravelPreferences | null;
   cityDescription?: string;
   preferredStartTime?: string;
+  // New fields
+  startDate?: string;             // YYYY-MM-DD — provisional trip start date
+  flightDetails?: FlightConstraint[];
 }
 
 interface DayWeather {
@@ -56,81 +73,87 @@ interface DayWeather {
   precipChance: number;
 }
 
+// ---------------------------------------------------------------------------
+// Weather (Open-Meteo — free, no key)
+// ---------------------------------------------------------------------------
+
 async function fetchWeather(cityName: string, numDays: number): Promise<DayWeather[]> {
   try {
     const geoResponse = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1`
     );
     const geoData = await geoResponse.json();
-    
-    if (!geoData.results || geoData.results.length === 0) {
-      return [];
-    }
-    
+    if (!geoData.results?.length) return [];
+
     const { latitude, longitude } = geoData.results[0];
-    
     const forecastDays = Math.min(numDays, 7);
+
     const weatherResponse = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=auto&forecast_days=${forecastDays}`
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode` +
+      `&timezone=auto&forecast_days=${forecastDays}`
     );
     const weatherData = await weatherResponse.json();
-    
-    if (!weatherData.daily) {
-      return [];
-    }
-    
+    if (!weatherData.daily) return [];
+
     const weatherCodes: Record<number, string> = {
-      0: "Clear sky",
-      1: "Mainly clear",
-      2: "Partly cloudy",
-      3: "Overcast",
-      45: "Foggy",
-      48: "Depositing rime fog",
-      51: "Light drizzle",
-      53: "Moderate drizzle",
-      55: "Dense drizzle",
-      61: "Slight rain",
-      63: "Moderate rain",
-      65: "Heavy rain",
-      71: "Slight snow",
-      73: "Moderate snow",
-      75: "Heavy snow",
-      80: "Slight rain showers",
-      81: "Moderate rain showers",
-      82: "Violent rain showers",
+      0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+      45: "Foggy", 48: "Rime fog",
+      51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+      61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+      71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+      80: "Showers", 81: "Moderate showers", 82: "Heavy showers",
       95: "Thunderstorm",
     };
-    
+
     return weatherData.daily.time.map((date: string, i: number) => ({
       date,
-      condition: weatherCodes[weatherData.daily.weathercode[i]] || "Variable",
+      condition: weatherCodes[weatherData.daily.weathercode[i]] ?? "Variable",
       tempMin: Math.round(weatherData.daily.temperature_2m_min[i]),
       tempMax: Math.round(weatherData.daily.temperature_2m_max[i]),
       precipChance: weatherData.daily.precipitation_probability_max[i],
     }));
-  } catch (error) {
-    console.error('Weather fetch error:', error);
+  } catch (err) {
+    console.error('Weather fetch error:', err);
     return [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pace helpers
+// ---------------------------------------------------------------------------
+
 function getActivitiesPerSlot(pace: string): number {
-  switch (pace) {
-    case 'light': return 1;
-    case 'medium': return 2;
-    case 'full': return 2;
-    default: return 2;
-  }
+  return pace === 'light' ? 1 : 2;
 }
 
 function getDefaultStartTime(pace: string): string {
   switch (pace) {
-    case 'light': return '10:00 AM';
-    case 'medium': return '9:00 AM';
-    case 'full': return '8:30 AM';
-    default: return '9:00 AM';
+    case 'light':  return '10:00 AM';
+    case 'full':   return '8:30 AM';
+    default:       return '9:00 AM';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Calendar date helpers
+// ---------------------------------------------------------------------------
+
+function buildCalendarDates(startDate: string, numDays: number): string {
+  const lines: string[] = [];
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(startDate + 'T12:00:00Z'); // noon UTC avoids DST edge cases
+    d.setUTCDate(d.getUTCDate() + i);
+    const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+    const monthDay = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' });
+    lines.push(`Day ${i + 1} = ${weekday}, ${monthDay}`);
+  }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Main handler
+// ---------------------------------------------------------------------------
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -138,6 +161,7 @@ serve(async (req) => {
   }
 
   try {
+    // ── Auth ────────────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
@@ -154,19 +178,17 @@ serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     const { data, error: authError } = await supabase.auth.getClaims(token);
-    
     if (authError || !data?.claims) {
-      console.error("Auth error:", authError);
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
     const userId = data.claims.sub;
     console.log("Authenticated user:", userId);
 
-    const requestBody: ItineraryRequest = await req.json();
+    // ── Parse request ───────────────────────────────────────────────────────
+    const body: ItineraryRequest = await req.json();
     const {
       cities,
       cityName,
@@ -179,128 +201,151 @@ serve(async (req) => {
       userPreferences,
       cityDescription,
       preferredStartTime,
-    } = requestBody;
+      startDate,
+      flightDetails = [],
+    } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    // ── API key ─────────────────────────────────────────────────────────────
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
+      console.error("ANTHROPIC_API_KEY is not set");
+      return new Response(
+        JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Determine if multi-city or single-city trip
-    const isMultiCity = cities && cities.length > 1;
-    const cityLegs: CityLeg[] = cities && cities.length > 0 
-      ? cities 
+    // ── Build city legs ─────────────────────────────────────────────────────
+    const isMultiCity = (cities?.length ?? 0) > 1;
+    const cityLegs: CityLeg[] = cities?.length
+      ? cities
       : [{ cityId: '', cityName, countryName, daysToSpend: numDays, cityDescription }];
 
-    // Fetch weather for the first city (primary destination)
+    // ── Weather ─────────────────────────────────────────────────────────────
     const weatherByDay = await fetchWeather(cityLegs[0].cityName, numDays);
-    console.log('Weather by day:', JSON.stringify(weatherByDay));
 
-    // Build weather context for prompt
     const weatherContext = weatherByDay.length > 0
-      ? weatherByDay.map((w, i) => 
-          `Day ${i + 1} (${w.date}): ${w.condition}, ${w.tempMin}°C - ${w.tempMax}°C, ${w.precipChance}% rain chance`
+      ? weatherByDay.map((w, i) =>
+          `Day ${i + 1} (${w.date}): ${w.condition}, ${w.tempMin}°C–${w.tempMax}°C, ${w.precipChance}% rain`
         ).join('\n')
-      : 'Weather data unavailable - assume typical conditions for the season';
+      : 'Weather data unavailable — assume typical seasonal conditions';
 
-    // Build user profile context
-    let userProfileContext = "";
+    // ── Calendar dates ──────────────────────────────────────────────────────
+    const calendarContext = startDate
+      ? `CALENDAR DATES (use these exact dates in day headings):\n${buildCalendarDates(startDate, numDays)}`
+      : `No specific start date provided. Label days as "Day 1 — [suggested weekday]", e.g. "Day 1 — Saturday".`;
+
+    // ── User profile ────────────────────────────────────────────────────────
+    let userProfileContext = '';
     if (userPreferences) {
-      const parts = [];
-      
-      if (userPreferences.ageRange) parts.push(`Age range: ${userPreferences.ageRange}`);
-      if (userPreferences.fitnessLevel) parts.push(`Fitness level: ${userPreferences.fitnessLevel}`);
-      if (userPreferences.walkingTolerance) parts.push(`Walking tolerance: ${userPreferences.walkingTolerance}`);
-      if (userPreferences.crowdComfort) parts.push(`Crowd comfort: ${userPreferences.crowdComfort}`);
-      if (userPreferences.pacePreference) parts.push(`Pace preference: ${userPreferences.pacePreference}`);
-      if (userPreferences.indoorOutdoor) parts.push(`Indoor/Outdoor: ${userPreferences.indoorOutdoor}`);
-      if (userPreferences.interests?.length) parts.push(`Interests: ${userPreferences.interests.join(', ')}`);
-      if (userPreferences.scheduleFlexibility) parts.push(`Schedule flexibility: ${userPreferences.scheduleFlexibility}`);
-      if (userPreferences.dailyBudget) parts.push(`Daily budget: ${userPreferences.dailyBudget}`);
-      if (userPreferences.diningSpendLevel) parts.push(`Dining spend: ${userPreferences.diningSpendLevel}`);
-      if (userPreferences.preferredCuisines?.length) parts.push(`Preferred cuisines: ${userPreferences.preferredCuisines.join(', ')}`);
+      const parts: string[] = [];
+      if (userPreferences.ageRange)              parts.push(`Age range: ${userPreferences.ageRange}`);
+      if (userPreferences.fitnessLevel)          parts.push(`Fitness level: ${userPreferences.fitnessLevel}`);
+      if (userPreferences.walkingTolerance)      parts.push(`Walking tolerance: ${userPreferences.walkingTolerance}`);
+      if (userPreferences.crowdComfort)          parts.push(`Crowd comfort: ${userPreferences.crowdComfort}`);
+      if (userPreferences.pacePreference)        parts.push(`Pace preference: ${userPreferences.pacePreference}`);
+      if (userPreferences.indoorOutdoor)         parts.push(`Indoor/Outdoor: ${userPreferences.indoorOutdoor}`);
+      if (userPreferences.interests?.length)     parts.push(`Interests: ${userPreferences.interests.join(', ')}`);
+      if (userPreferences.scheduleFlexibility)   parts.push(`Schedule flexibility: ${userPreferences.scheduleFlexibility}`);
+      if (userPreferences.dailyBudget)           parts.push(`Daily budget: ${userPreferences.dailyBudget}`);
+      if (userPreferences.diningSpendLevel)      parts.push(`Dining spend: ${userPreferences.diningSpendLevel}`);
+      if (userPreferences.preferredCuisines?.length)   parts.push(`Preferred cuisines: ${userPreferences.preferredCuisines.join(', ')}`);
       if (userPreferences.dietaryRestrictions?.length) parts.push(`Dietary restrictions: ${userPreferences.dietaryRestrictions.join(', ')}`);
-      if (userPreferences.willingnessToTryNew) parts.push(`Try new foods: ${userPreferences.willingnessToTryNew}`);
-      if (userPreferences.diningStyle) parts.push(`Dining style: ${userPreferences.diningStyle}`);
-      
-      userProfileContext = parts.length > 0 ? `\n\nUser Profile & Preferences:\n${parts.join('\n')}` : "";
+      if (userPreferences.willingnessToTryNew)   parts.push(`Try new foods: ${userPreferences.willingnessToTryNew}`);
+      if (userPreferences.diningStyle)           parts.push(`Dining style: ${userPreferences.diningStyle}`);
+      if (parts.length) userProfileContext = `\n\nUser Profile:\n${parts.join('\n')}`;
     }
 
+    // ── Flight constraints ──────────────────────────────────────────────────
+    let flightConstraintContext = '';
+    if (flightDetails.length > 0) {
+      const lines = flightDetails.map(f => {
+        if (f.type === 'arrival') {
+          const delayNote  = f.delayMinutes ? ` (+${f.delayMinutes} min delay)` : '';
+          const intlNote   = f.isInternational
+            ? ' Allow 45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in after landing.'
+            : ' Allow 20 min baggage + transit + 30 min hotel check-in.';
+          return `⚠ ARRIVAL DAY ${f.dayNumber} — Flight lands ${f.city} at ${f.time}${delayNote}.${intlNote} Do NOT schedule activities before these buffers are accounted for.`;
+        } else {
+          const buffer = f.isInternational ? '2 h 30 min' : '1 h 30 min';
+          return `⚠ DEPARTURE DAY ${f.dayNumber} — Flight departs ${f.city} at ${f.time}. Last activity must end ≥ ${buffer} before departure to allow airport travel and check-in.`;
+        }
+      });
+      flightConstraintContext = `\n\nFLIGHT CONSTRAINTS — MUST BE RESPECTED:\n${lines.join('\n')}`;
+    }
+
+    // ── Pace / slot settings ────────────────────────────────────────────────
     const activitiesPerSlot = getActivitiesPerSlot(pace);
     const totalActivitiesPerDay = activitiesPerSlot * 3;
     const startTime = preferredStartTime || getDefaultStartTime(pace);
 
-    const cuisineContext = userPreferences?.preferredCuisines?.length 
-      ? `Focus restaurant suggestions on these cuisine types: ${userPreferences.preferredCuisines.join(', ')}. `
+    const cuisineContext = userPreferences?.preferredCuisines?.length
+      ? `Preferred cuisines: ${userPreferences.preferredCuisines.join(', ')}. `
       : '';
 
-    // Build leg-specific context for multi-city trips
-    let legContext = "";
+    // ── Multi-city leg context ─────────────────────────────────────────────
+    let legContext = '';
     if (isMultiCity) {
       let currentDay = 1;
-      legContext = "\n\nTRIP LEGS (MULTI-CITY STRUCTURE):\n";
-      cityLegs.forEach((leg, index) => {
+      legContext = '\n\nTRIP LEGS (MULTI-CITY):\n';
+      cityLegs.forEach((leg, idx) => {
         const endDay = currentDay + leg.daysToSpend - 1;
-        legContext += `Leg ${index + 1}: ${leg.cityName}, ${leg.countryName} (Days ${currentDay}-${endDay}, ${leg.daysToSpend} days)\n`;
+        legContext += `Leg ${idx + 1}: ${leg.cityName}, ${leg.countryName} — Days ${currentDay}–${endDay}\n`;
         currentDay = endDay + 1;
       });
-      legContext += "\nIMPORTANT: Structure the itinerary with clear LEG headers before each city section!";
     }
 
-    const destinationsList = isMultiCity 
+    const destinationsList = isMultiCity
       ? cityLegs.map(l => `${l.cityName}, ${l.countryName}`).join(' → ')
       : `${cityName}, ${countryName}`;
 
-    const systemPrompt = `You are an expert travel planner for ${destinationsList}. Generate a detailed, personalized itinerary with reasoning for each recommendation.
-${isMultiCity ? `
-MULTI-CITY TRIP FORMAT - Follow this EXACT structure:
+    // ── Prompts ─────────────────────────────────────────────────────────────
+    const systemPrompt = `You are an expert travel planner specialising in ${destinationsList}. Generate a detailed, practical, and personalised day-by-day itinerary.
 
-## Summary
-[2-3 sentence overview of the multi-city adventure]
+${calendarContext}
+${flightConstraintContext}
 
-## Leg 1: ${cityLegs[0].cityName}
-### Day 1: [Thematic title]
-...activities...
+OUTPUT FORMAT — follow this structure EXACTLY for every day:
 
-### Day 2: [Thematic title]  
-...activities...
+${isMultiCity ? `## Leg N: CityName, Country
+` : ''}## Day N — [Weekday, Month Day] (or "Day N" if no date given): [Thematic title]
 
-## Leg 2: ${cityLegs[1]?.cityName || 'Next City'}
-### Day ${cityLegs[0].daysToSpend + 1}: [Thematic title]
-...activities...
-
-(Continue for all legs)
-` : `
-SINGLE-CITY FORMAT - Follow this EXACT structure:
-
-## Summary
-[2-3 sentence overview of the trip]
-
-## Day 1: [Thematic title - e.g., "Historic City Center"]
-`}
 ### Start Time: ${startTime}
+
 ### Weather
-Condition: [e.g., "Partly cloudy"]
-Temperature: [e.g., "12°C - 18°C"]
-Rain: [e.g., "20%"]
-Note: [One sentence recommendation based on weather]
+Condition: [e.g., Partly cloudy]
+Temperature: [e.g., 14°C – 22°C]
+Rain: [e.g., 15%]
+Note: [One practical sentence — recommend indoor alternatives on rainy days]
 
 ### Morning
-- **[Activity Name]** | [Type: attraction/restaurant/activity] | [Duration: e.g., "1.5 hours"] | [Time: e.g., "9:00 AM"]
-  [1-2 sentence description with specific location]
-  Why: [1 sentence explaining why this is recommended]
+- **[Breakfast: Café/Restaurant Name]** | restaurant | [Duration, e.g., 45 min] | [Time, e.g., 8:30 AM]
+  [1-2 sentence description. Specific neighbourhood/address hint.]
+  Why: [Why this breakfast spot suits today's itinerary and traveller profile]
+- **[Activity Name]** | attraction | [Duration] | [Time]
+  [Description]
+  Why: [Reasoning — crowds, lighting, proximity to next stop, etc.]
+- **🚶 Travel to [Next Place]** | transport | [N min] | [Time]
+  [Walk/Metro/Bus/Taxi — specific line or route if known]
+  Why: [Most efficient or scenic route]
 
 ### Afternoon
-- **[Activity Name]** | [Type] | [Duration] | [Time]
+- **[Activity Name]** | attraction | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
+- **🚶 Travel to [Next Place]** | transport | [N min] | [Time]
+  [Route description]
+  Why: [Why this mode]
 - **[Lunch: Restaurant Name]** | restaurant | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
 
 ### Evening
-- **[Activity Name]** | [Type] | [Duration] | [Time]
+- **[Activity Name]** | attraction | [Duration] | [Time]
   [Description]
+  Why: [Reasoning]
+- **🚶 Travel to [Restaurant]** | transport | [N min] | [Time]
+  [Route]
   Why: [Reasoning]
 - **[Dinner: Restaurant Name]** | restaurant | [Duration] | [Time]
   [Description]
@@ -315,101 +360,118 @@ Note: [One sentence recommendation based on weather]
 - [Tip 2]
 
 STRICT RULES:
-1. Each time slot MUST have exactly ${activitiesPerSlot} activities
-2. Include at least one restaurant per day
-3. Use REAL places that exist - no made up names
-4. Day titles must be thematic (NOT "Day 1" or the city name)
-5. Each activity: **Name** | type | duration | time
-6. MUST include "Why:" reasoning for EVERY activity
-7. Weather notes should recommend indoor activities on rainy days
-8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None'}
-9. Consider walking distances and group nearby attractions
-10. Account for pace: ${pace} (${totalActivitiesPerDay} activities per day)
-11. Morning activities start at ${startTime}
-${isMultiCity ? `12. MUST clearly label each LEG with "## Leg N: CityName" headers
-13. Include travel/transition notes between cities at the start of new legs` : ''}`;
+1. Every day MUST include: breakfast (morning), lunch (afternoon), dinner (evening) — real, named restaurants only
+2. Every sightseeing activity MUST be followed by a 🚶 Travel block showing time and transport mode to the next stop
+3. Travel blocks use format: **🚶 Travel to [Destination]** | transport | [N min] | [Time]
+4. ${calendarContext.startsWith('CALENDAR') ? 'Use the exact calendar dates in each ## Day heading' : 'Label days as "Day N — [Weekday]"'}
+5. Day titles must be thematic (NOT "Day 1" or just the city name)
+6. Each activity: **Name** | type | duration | time
+7. MUST include "Why:" reasoning for EVERY item including travel blocks
+8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
+9. Group nearby attractions — minimise unnecessary travel
+10. Account for pace: ${pace} (~${totalActivitiesPerDay} main activities/day, plus meals and travel blocks)
+11. Use REAL places that exist — no invented names
+${isMultiCity ? `12. Use "## Leg N: CityName" header before each city section
+13. Start each new city leg with transit/arrival logistics` : ''}
+${flightConstraintContext ? '14. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
 
     const userPrompt = `Create a ${numDays}-day itinerary for ${destinationsList}.
 ${legContext}
 
-Trip Parameters:
+Trip parameters:
 - Travel style: ${travelStyle}
 - Budget level: ${budgetLevel}
-- Daily pace: ${pace} (${totalActivitiesPerDay} activities per day)
+- Pace: ${pace} (${totalActivitiesPerDay} main activities/day)
 - Preferred start time: ${startTime}
-- Dietary preferences: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'None specified'}
+- Dietary preferences: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
 ${userProfileContext}
 
 ${cityDescription ? `\nAbout the destination:\n${cityDescription}` : ''}
 
-Weather Forecast:
+Weather forecast:
 ${weatherContext}
 
-Generate exactly ${numDays} days${isMultiCity ? ` across ${cityLegs.length} city legs` : ''}. Each day must have:
-- A unique thematic title
-- Start Time section
-- Weather section with condition, temperature, rain chance, and planning note
-- Morning: ${activitiesPerSlot} activities with time and reasoning
-- Afternoon: ${activitiesPerSlot} activities (including lunch) with time and reasoning  
-- Evening: ${activitiesPerSlot} activities (including dinner) with time and reasoning
-${isMultiCity ? `
-CRITICAL: Start each city section with "## Leg N: CityName" header!` : ''}
+Generate exactly ${numDays} days${isMultiCity ? ` across ${cityLegs.length} city legs` : ''}.
+Every day requires breakfast (morning), a 🚶 travel block between every sightseeing activity, lunch (afternoon), and dinner (evening).
+Every item — including travel blocks — must have a "Why:" line.
+${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
+${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
-IMPORTANT: Every activity MUST include a "Why:" line explaining why it's recommended.`;
+    // ── Call Anthropic Claude ───────────────────────────────────────────────
+    console.log(`Calling Anthropic claude-sonnet-4-20250514 for ${destinationsList} (${numDays} days)`);
 
-    console.log('Sending request to Lovable AI...');
-    
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
         stream: true,
       }),
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+    // ── Error handling ──────────────────────────────────────────────────────
+    if (!aiResponse.ok) {
+      const status = aiResponse.status;
+      let errorText = '';
+      try { errorText = await aiResponse.text(); } catch { /* ignore */ }
+      console.error(`Anthropic API error ${status}:`, errorText);
+
+      if (status === 401) {
+        return new Response(
+          JSON.stringify({ error: "The AI service key is invalid. Please contact support." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please try again later." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (status === 429) {
+        return new Response(
+          JSON.stringify({ error: "The AI service is temporarily busy. Please wait a moment and try again." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "Failed to generate itinerary" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (status === 529) {
+        return new Response(
+          JSON.stringify({ error: "The AI service is overloaded right now. Please try again in a few seconds." }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // Try to extract a meaningful message from Anthropic's error body
+      let userMessage = "Failed to generate itinerary. Please try again.";
+      try {
+        const errJson = JSON.parse(errorText);
+        if (errJson?.error?.message) userMessage = errJson.error.message;
+      } catch { /* use default */ }
+
+      return new Response(
+        JSON.stringify({ error: userMessage }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Include weather and leg data in metadata header
+    // ── Stream back to client ───────────────────────────────────────────────
+    // Attach metadata in response headers so the frontend can read them
+    // without waiting for the stream to finish.
     const responseHeaders = {
       ...corsHeaders,
       "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
       "X-Weather-Data": JSON.stringify(weatherByDay),
       "X-Trip-Legs": JSON.stringify(cityLegs),
     };
 
-    return new Response(response.body, { headers: responseHeaders });
+    return new Response(aiResponse.body, { headers: responseHeaders });
+
   } catch (error) {
-    console.error("Error in generate-itinerary:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Unhandled error in generate-itinerary:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "An unexpected error occurred. Please try again." }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
