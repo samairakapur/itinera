@@ -66,116 +66,74 @@ const Nearby = () => {
 
   const fetchNearbyPlaces = useCallback(async () => {
     if (!latitude || !longitude) return;
-    
+
     setLoading(true);
     try {
-      const preferencesContext = preferences ? `
-User preferences:
-- Interests: ${preferences.interests?.join(', ') || 'General'}
-- Budget: ${preferences.dailyBudget || 'Moderate'}
-- Preferred cuisines: ${preferences.preferredCuisines?.join(', ') || 'Various'}
-- Dining style: ${preferences.diningStyle || 'Casual'}
-- Pace: ${preferences.pacePreference || 'Moderate'}
-- Indoor/Outdoor: ${preferences.indoorOutdoor || 'Both'}
-` : '';
-
-      const { data, error } = await supabase.functions.invoke('chat', {
+      const { data, error } = await supabase.functions.invoke('nearby-places', {
         body: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are a local recommendations expert. Generate nearby place recommendations that are ACTUALLY near the given GPS coordinates. Return ONLY valid JSON, no markdown.
-
-${preferencesContext}
-
-CRITICAL RULES:
-- Every place MUST be a REAL place that exists near these exact coordinates
-- Every place MUST include realistic latitude and longitude fields that are within ${radiusKm}km of the user
-- Do NOT invent places in other countries or far-away cities
-- Calculate realistic distances based on the coordinates
-- Include "typicalTimeSpent" for each place (e.g. "1.5 – 2 hrs", "30 – 45 min")
-
-Output format (return exactly 9 places - 3 attractions, 3 cafes, 3 restaurants):
-{
-  "places": [
-    {
-      "id": "unique-id",
-      "name": "Place Name",
-      "type": "attraction|cafe|restaurant",
-      "description": "Brief description (1-2 sentences)",
-      "latitude": 1.2345,
-      "longitude": 103.8765,
-      "rating": 4.5,
-      "priceLevel": 2,
-      "openNow": true,
-      "address": "Full address including city/country",
-      "imageUrl": "https://images.unsplash.com/photo-XXXXX?w=400&h=300&fit=crop",
-      "matchReason": "Why this matches user preferences",
-      "cuisine": "Italian",
-      "typicalTimeSpent": "1 – 1.5 hrs"
-    }
-  ]
-}`
-            },
-            {
-              role: 'user',
-              content: `Find nearby recommendations within ${radiusKm}km of: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            }
-          ]
-        }
+          lat: latitude,
+          lng: longitude,
+          radiusMeters: radiusKm * 1000,
+          category: activeTab === 'all' ? 'all' : activeTab,
+        },
       });
 
-      if (error) {
-        // Check for credit exhaustion (402) from the edge function
-        if (error.message?.includes('non-2xx') || error.context?.status === 402) {
-          toast.error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
-          setPlaces([]);
-          setLoading(false);
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
-      const content = data.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.places && parsed.places.length > 0) {
-          // Filter and compute real distances using haversine
-          const filteredPlaces: NearbyPlace[] = parsed.places
-            .map((p: any) => {
-              const dist = p.latitude && p.longitude
+      // Edge function returns { places, source, count } with real API coordinates.
+      // Re-verify distance client-side as a safety net.
+      if (data?.places && Array.isArray(data.places)) {
+        const verified: NearbyPlace[] = data.places
+          .map((p: any) => {
+            const distKm =
+              p.latitude && p.longitude
                 ? haversineDistance(latitude, longitude, p.latitude, p.longitude)
-                : null;
-              return {
-                ...p,
-                distanceKm: dist,
-                distance: dist !== null ? (dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)} km`) : p.distance || 'Unknown',
-              };
-            })
-            .filter((p: NearbyPlace) => {
-              // Only keep places within radius
-              if (p.distanceKm === undefined || p.distanceKm === null) return true; // keep if no coords
-              return p.distanceKm <= radiusKm;
-            })
-            .sort((a: NearbyPlace, b: NearbyPlace) => (a.distanceKm || 99) - (b.distanceKm || 99));
+                : (p.distanceKm ?? 99);
+            return {
+              ...p,
+              distanceKm: distKm,
+              distance:
+                distKm < 1
+                  ? `${Math.round(distKm * 1000)}m`
+                  : `${distKm.toFixed(1)} km`,
+            } as NearbyPlace;
+          })
+          .filter((p: NearbyPlace) => (p.distanceKm ?? 99) <= radiusKm)
+          .sort(
+            (a: NearbyPlace, b: NearbyPlace) =>
+              (a.distanceKm ?? 99) - (b.distanceKm ?? 99)
+          );
 
-          setPlaces(filteredPlaces);
-          if (filteredPlaces.length === 0) {
-            toast.info('No places found within radius. Try increasing the distance.');
-          }
-          return;
+        setPlaces(verified);
+
+        if (verified.length === 0) {
+          toast.info('No places found within your radius. Try increasing the distance.');
         }
+        return;
       }
-      throw new Error('No places in response');
-    } catch (err) {
+
+      // Edge function signalled a config issue
+      if (data?.error) {
+        if (data.error.includes('No Places API key')) {
+          toast.error(
+            'Nearby search needs a Places API key — add GOOGLE_PLACES_API_KEY to Supabase Edge Function secrets.'
+          );
+        } else {
+          toast.error(data.error);
+        }
+        setPlaces([]);
+        return;
+      }
+
+      throw new Error('Unexpected response from nearby-places');
+    } catch (err: any) {
       console.error('Error fetching nearby places:', err);
       setPlaces([]);
       toast.error('Could not load nearby recommendations. Try again.');
     } finally {
       setLoading(false);
     }
-  }, [latitude, longitude, preferences, radiusKm]);
+  }, [latitude, longitude, radiusKm, activeTab]);
 
   useEffect(() => {
     if (latitude && longitude && places.length === 0 && !loading) {
