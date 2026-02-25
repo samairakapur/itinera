@@ -74,110 +74,7 @@ function typicalTime(type: string, name?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Google Places Nearby Search (New API v1)
-// ---------------------------------------------------------------------------
-async function fetchGooglePlaces(
-  lat: number,
-  lng: number,
-  radiusMeters: number,
-  includedTypes: string[],
-  apiKey: string
-): Promise<NearbyPlace[]> {
-  const body = {
-    includedTypes,
-    maxResultCount: 20,
-    locationRestriction: {
-      circle: {
-        center: { latitude: lat, longitude: lng },
-        radius: radiusMeters,
-      },
-    },
-    rankPreference: "DISTANCE",
-  };
-
-  const res = await fetch(
-    "https://places.googleapis.com/v1/places:searchNearby",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.priceLevel,places.currentOpeningHours,places.types,places.photos,places.editorialSummary,places.primaryTypeDisplayName",
-      },
-      body: JSON.stringify(body),
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Google Places API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  const rawPlaces = data.places || [];
-
-  return rawPlaces.map((p: any): NearbyPlace => {
-    const pLat = p.location?.latitude ?? 0;
-    const pLng = p.location?.longitude ?? 0;
-    const distKm = haversine(lat, lng, pLat, pLng);
-    const types: string[] = p.types || [];
-
-    // Map Google type → our type
-    let placeType: NearbyPlace["type"] = "attraction";
-    if (types.some((t: string) => ["restaurant", "food", "meal_delivery", "meal_takeaway"].includes(t))) {
-      placeType = "restaurant";
-    } else if (types.some((t: string) => ["cafe", "coffee_shop", "bakery"].includes(t))) {
-      placeType = "cafe";
-    }
-
-    // Photo URL via Places API v1
-    let imageUrl: string | null = null;
-    if (p.photos && p.photos.length > 0 && apiKey) {
-      const photoName = p.photos[0].name;
-      imageUrl = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=400&maxWidthPx=600&key=${apiKey}`;
-    }
-
-    // Price level: Google returns PRICE_LEVEL_X enum
-    const priceLevelMap: Record<string, number> = {
-      PRICE_LEVEL_FREE: 0,
-      PRICE_LEVEL_INEXPENSIVE: 1,
-      PRICE_LEVEL_MODERATE: 2,
-      PRICE_LEVEL_EXPENSIVE: 3,
-      PRICE_LEVEL_VERY_EXPENSIVE: 4,
-    };
-    const priceLevel = p.priceLevel ? (priceLevelMap[p.priceLevel] ?? null) : null;
-
-    return {
-      id: p.id || `g-${Math.random()}`,
-      name: p.displayName?.text || "Unknown",
-      type: placeType,
-      description:
-        p.editorialSummary?.text ||
-        p.primaryTypeDisplayName?.text ||
-        "A local hotspot",
-      latitude: pLat,
-      longitude: pLng,
-      rating: p.rating ?? null,
-      priceLevel,
-      openNow: p.currentOpeningHours?.openNow ?? null,
-      address: p.formattedAddress || "",
-      imageUrl,
-      distanceKm: distKm,
-      distance: formatDistance(distKm),
-      typicalTimeSpent: typicalTime(placeType, p.displayName?.text),
-      matchReason: `Highly-rated ${placeType} near your location`,
-      cuisine: types.find((t: string) =>
-        ["italian_restaurant", "japanese_restaurant", "chinese_restaurant",
-          "mexican_restaurant", "indian_restaurant", "thai_restaurant",
-          "french_restaurant"].includes(t)
-      )?.replace("_restaurant", ""),
-    };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Foursquare Places API (fallback)
+// Foursquare Places API (free tier — 1,000 calls/day, no credit card needed)
 // ---------------------------------------------------------------------------
 async function fetchFoursquarePlaces(
   lat: number,
@@ -277,73 +174,53 @@ serve(async (req) => {
       );
     }
 
-    const googleKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
     const foursquareKey = Deno.env.get("FOURSQUARE_API_KEY");
+
+    // ---- Foursquare key not configured — return empty list gracefully ------
+    // Return HTTP 200 with an empty array so the frontend shows "no places
+    // found" rather than an error toast. The user can add a free Foursquare
+    // API key (developer.foursquare.com) to enable this feature.
+    if (!foursquareKey) {
+      console.warn("FOURSQUARE_API_KEY is not set — returning empty places list");
+      return new Response(
+        JSON.stringify({
+          places: [],
+          source: "none",
+          count: 0,
+          message: "Nearby places require a Foursquare API key. Add FOURSQUARE_API_KEY to your Supabase Edge Function secrets.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     let places: NearbyPlace[] = [];
     let source = "none";
 
-    // ---- Try Google Places first ----------------------------------------
-    if (googleKey) {
-      try {
-        // Map our category to Google included types
-        const typeMap: Record<string, string[]> = {
-          attraction: [
-            "tourist_attraction", "museum", "art_gallery", "park",
-            "amusement_park", "aquarium", "zoo", "cultural_landmark",
-            "historical_place",
-          ],
-          cafe: ["cafe", "coffee_shop", "bakery", "tea_house"],
-          restaurant: [
-            "restaurant", "fine_dining_restaurant", "fast_food_restaurant",
-            "food_court",
-          ],
-          all: [
-            "tourist_attraction", "museum", "art_gallery", "park",
-            "cultural_landmark", "cafe", "coffee_shop", "restaurant",
-          ],
-        };
+    // ---- Foursquare (primary and only provider) --------------------------
+    try {
+      // Foursquare category IDs
+      const fsqMap: Record<string, string> = {
+        attraction: "10000,16000,17000", // arts/outdoors/events
+        cafe: "13032,13033,13034",       // coffee/tea/bakery
+        restaurant: "13065",             // restaurant
+        all: "10000,13032,13033,13065,16000",
+      };
 
-        const includedTypes = typeMap[category] || typeMap.all;
-        places = await fetchGooglePlaces(lat, lng, radiusMeters, includedTypes, googleKey);
-        source = "google";
-      } catch (gErr) {
-        console.error("Google Places failed, trying Foursquare:", gErr);
-      }
-    }
-
-    // ---- Fallback: Foursquare -------------------------------------------
-    if (places.length === 0 && foursquareKey) {
-      try {
-        // Foursquare category IDs
-        const fsqMap: Record<string, string> = {
-          attraction: "10000,16000,17000", // arts/outdoors/events
-          cafe: "13032,13033,13034",       // coffee/tea/bakery
-          restaurant: "13065",             // restaurant
-          all: "10000,13032,13033,13065,16000",
-        };
-
-        const categoryIds = fsqMap[category] || fsqMap.all;
-        places = await fetchFoursquarePlaces(lat, lng, radiusMeters, categoryIds, foursquareKey);
-        source = "foursquare";
-      } catch (fsErr) {
-        console.error("Foursquare also failed:", fsErr);
-      }
-    }
-
-    // ---- No API keys configured ----------------------------------------
-    if (!googleKey && !foursquareKey) {
+      const categoryIds = fsqMap[category] || fsqMap.all;
+      places = await fetchFoursquarePlaces(lat, lng, radiusMeters, categoryIds, foursquareKey);
+      source = "foursquare";
+    } catch (fsErr) {
+      console.error("Foursquare request failed:", fsErr);
+      // Return empty array instead of 500 so the frontend shows a graceful
+      // "no places found" state rather than an error toast.
       return new Response(
         JSON.stringify({
-          error:
-            "No Places API key configured. Set GOOGLE_PLACES_API_KEY or FOURSQUARE_API_KEY in Supabase Edge Function secrets.",
           places: [],
-          source: "none",
+          source: "foursquare_error",
+          count: 0,
+          message: "Could not reach Foursquare — please try again later.",
         }),
-        {
-          status: 503,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

@@ -176,15 +176,16 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data, error: authError } = await supabase.auth.getClaims(token);
-    if (authError || !data?.claims) {
+    // Use the standard getUser() API — the client is initialized with the
+    // user's bearer token so no explicit jwt argument is needed.
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const userId = data.claims.sub;
+    const userId = user.id;
     console.log("Authenticated user:", userId);
 
     // ── Parse request ───────────────────────────────────────────────────────
@@ -206,9 +207,11 @@ serve(async (req) => {
     } = body;
 
     // ── API key ─────────────────────────────────────────────────────────────
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!ANTHROPIC_API_KEY) {
-      console.error("ANTHROPIC_API_KEY is not set");
+    // Google Gemini free tier: 1,500 requests/day, no credit card required.
+    // Get your key at: https://aistudio.google.com/apikey
+    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
+    if (!GOOGLE_AI_API_KEY) {
+      console.error("GOOGLE_AI_API_KEY is not set");
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -397,35 +400,42 @@ Every item — including travel blocks — must have a "Why:" line.
 ${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
-    // ── Call Anthropic Claude ───────────────────────────────────────────────
-    console.log(`Calling Anthropic claude-sonnet-4-20250514 for ${destinationsList} (${numDays} days)`);
+    // ── Call Google Gemini (OpenAI-compatible endpoint, free tier) ──────────
+    // Free tier: 1,500 requests/day, 1M tokens/min — no credit card needed.
+    // Uses OpenAI-compatible format so the SSE response streams as
+    // choices[0].delta.content — already handled by the frontend parser.
+    console.log(`Calling Gemini gemini-2.0-flash for ${destinationsList} (${numDays} days)`);
 
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 8000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-        stream: true,
-      }),
-    });
+    const aiResponse = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${GOOGLE_AI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gemini-2.0-flash",
+          max_tokens: 8192,
+          stream: true,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        }),
+      }
+    );
 
     // ── Error handling ──────────────────────────────────────────────────────
     if (!aiResponse.ok) {
       const status = aiResponse.status;
       let errorText = '';
       try { errorText = await aiResponse.text(); } catch { /* ignore */ }
-      console.error(`Anthropic API error ${status}:`, errorText);
+      console.error(`Gemini API error ${status}:`, errorText);
 
-      if (status === 401) {
+      if (status === 401 || status === 403) {
         return new Response(
-          JSON.stringify({ error: "The AI service key is invalid. Please contact support." }),
+          JSON.stringify({ error: "The AI service key is invalid or missing. Please contact support." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -435,13 +445,13 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (status === 529) {
+      if (status === 503 || status === 500) {
         return new Response(
           JSON.stringify({ error: "The AI service is overloaded right now. Please try again in a few seconds." }),
           { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      // Try to extract a meaningful message from Anthropic's error body
+      // Try to extract a meaningful message from the error body
       let userMessage = "Failed to generate itinerary. Please try again.";
       try {
         const errJson = JSON.parse(errorText);

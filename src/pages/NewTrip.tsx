@@ -568,16 +568,18 @@ const NewTrip = () => {
 
           try {
             const parsed = JSON.parse(jsonStr);
-            // Anthropic streaming format: content_block_delta events carry text
+            // Gemini uses the OpenAI-compatible SSE format: choices[0].delta.content
+            // Anthropic format (content_block_delta) kept as a fallback.
             let content: string | undefined;
-            if (
+            if (parsed.choices?.[0]?.delta?.content) {
+              // Google Gemini / OpenAI-compatible format (primary)
+              content = parsed.choices[0].delta.content;
+            } else if (
               parsed.type === 'content_block_delta' &&
               parsed.delta?.type === 'text_delta'
             ) {
+              // Anthropic format (fallback for compatibility)
               content = parsed.delta.text;
-            } else if (parsed.choices?.[0]?.delta?.content) {
-              // Legacy OpenAI / Lovable gateway format (kept for backward compat)
-              content = parsed.choices[0].delta.content;
             }
             if (content) {
               setRawItinerary(prev => prev + content);
