@@ -50,34 +50,42 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
       <div className="grid gap-2 text-sm">
         {arrivalFlight && (
           <div className="flex items-center gap-3 p-2 rounded-md bg-background/50">
-            <div className="flex items-center gap-2 flex-1">
-              <Plane className="w-4 h-4 rotate-90 text-teal" />
+            <div className="flex items-center gap-2 flex-1 flex-wrap">
+              <Plane className="w-4 h-4 rotate-90 text-teal shrink-0" />
               <span className="font-medium">Arrive {arrivalFlight.arrival_city}</span>
               {arrivalFlight.arrival_time && (
                 <span className="text-muted-foreground">
                   at {arrivalFlight.arrival_time.slice(0, 5)}
                 </span>
               )}
+              {(arrivalFlight.delay_minutes ?? 0) > 0 && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  +{arrivalFlight.delay_minutes}min delay
+                </span>
+              )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              → Start activities from {earliestStart}
+            <span className="text-xs text-muted-foreground shrink-0">
+              → activities from {earliestStart}
             </span>
           </div>
         )}
-        
+
         {departureFlight && (
           <div className="flex items-center gap-3 p-2 rounded-md bg-background/50">
-            <div className="flex items-center gap-2 flex-1">
-              <Plane className="w-4 h-4 -rotate-45 text-coral" />
+            <div className="flex items-center gap-2 flex-1 flex-wrap">
+              <Plane className="w-4 h-4 -rotate-45 text-coral shrink-0" />
               <span className="font-medium">Depart {departureFlight.departure_city}</span>
               {departureFlight.departure_time && (
                 <span className="text-muted-foreground">
                   at {departureFlight.departure_time.slice(0, 5)}
                 </span>
               )}
+              {departureFlight.is_international && (
+                <span className="text-xs text-muted-foreground">(international)</span>
+              )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              → Activities until {latestEnd}
+            <span className="text-xs text-muted-foreground shrink-0">
+              → activities until {latestEnd}
             </span>
           </div>
         )}
