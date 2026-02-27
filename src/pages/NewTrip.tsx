@@ -507,6 +507,18 @@ const NewTrip = () => {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (response.status === 402) {
+          toast.error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.', { duration: 8000 });
+          setViewMode('form');
+          setIsGenerating(false);
+          return;
+        }
+        if (response.status === 429) {
+          toast.error('Too many requests. Please wait a moment and try again.', { duration: 5000 });
+          setViewMode('form');
+          setIsGenerating(false);
+          return;
+        }
         throw new Error(errorData.error || 'Failed to generate itinerary');
       }
 
