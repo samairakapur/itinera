@@ -16,6 +16,14 @@ export interface FlightDetail {
   arrival_time: string | null;
   notes: string | null;
   created_at: string;
+  // Enriched fields (from migration 20260225092934)
+  origin_iata: string | null;
+  destination_iata: string | null;
+  is_international: boolean;
+  delay_minutes: number;
+  terminal: string | null;
+  booking_reference: string | null;
+  last_checked_at: string | null;
 }
 
 export interface CreateFlightInput {
@@ -26,10 +34,17 @@ export interface CreateFlightInput {
   departure_city: string;
   arrival_city: string;
   departure_date: string;
-  departure_time?: string;
+  departure_time?: string | null;
   arrival_date: string;
-  arrival_time?: string;
-  notes?: string;
+  arrival_time?: string | null;
+  notes?: string | null;
+  // Enriched fields
+  origin_iata?: string | null;
+  destination_iata?: string | null;
+  is_international?: boolean;
+  delay_minutes?: number;
+  terminal?: string | null;
+  booking_reference?: string | null;
 }
 
 export const useFlightDetails = (itineraryId: string | undefined) => {

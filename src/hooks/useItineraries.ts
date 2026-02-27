@@ -190,19 +190,22 @@ export const useCreateItinerary = () => {
 
       console.log('[useCreateItinerary] legInserts:', legInserts);
 
+      // trip_legs and trip_days are non-fatal — if the tables don't exist yet
+      // (migrations not yet applied to the Supabase project) we still want
+      // the core itinerary + items to be saved successfully.
       const { data: legs, error: legsError } = await supabase
         .from('trip_legs')
         .insert(legInserts)
         .select();
 
       if (legsError) {
-        console.error('[useCreateItinerary] legsError:', legsError);
-        throw legsError;
+        // Log but don't throw — itinerary_items save will still proceed.
+        console.warn('[useCreateItinerary] trip_legs insert failed (non-fatal):', legsError);
+      } else {
+        console.log('[useCreateItinerary] created legs:', legs);
       }
 
-      console.log('[useCreateItinerary] created legs:', legs);
-
-      // 3. Create trip_days binding each day to its leg
+      // 3. Create trip_days binding each day to its leg (only if legs exist)
       const tripDaysInserts: {
         itinerary_id: string;
         trip_leg_id: string;
@@ -211,31 +214,33 @@ export const useCreateItinerary = () => {
         title: string;
       }[] = [];
 
-      input.days.forEach((day) => {
-        const legForDay = legs?.find(
-          (l) => day.dayNumber >= l.start_day && day.dayNumber <= l.end_day
-        );
-        if (!legForDay) return;
-        const dayDate = addDays(input.startDate, day.dayNumber - 1);
-        tripDaysInserts.push({
-          itinerary_id: itinerary.id,
-          trip_leg_id: legForDay.id,
-          day_index: day.dayNumber,
-          day_date: format(dayDate, 'yyyy-MM-dd'),
-          title: day.title || `Day ${day.dayNumber}`,
+      if (legs && legs.length > 0) {
+        input.days.forEach((day) => {
+          const legForDay = legs.find(
+            (l) => day.dayNumber >= l.start_day && day.dayNumber <= l.end_day
+          );
+          if (!legForDay) return;
+          const dayDate = addDays(input.startDate, day.dayNumber - 1);
+          tripDaysInserts.push({
+            itinerary_id: itinerary.id,
+            trip_leg_id: legForDay.id,
+            day_index: day.dayNumber,
+            day_date: format(dayDate, 'yyyy-MM-dd'),
+            title: day.title || `Day ${day.dayNumber}`,
+          });
         });
-      });
 
-      console.log('[useCreateItinerary] tripDaysInserts:', tripDaysInserts);
+        console.log('[useCreateItinerary] tripDaysInserts:', tripDaysInserts);
 
-      if (tripDaysInserts.length > 0) {
-        const { error: daysError } = await supabase
-          .from('trip_days')
-          .insert(tripDaysInserts);
+        if (tripDaysInserts.length > 0) {
+          const { error: daysError } = await supabase
+            .from('trip_days')
+            .insert(tripDaysInserts);
 
-        if (daysError) {
-          console.error('[useCreateItinerary] daysError:', daysError);
-          throw daysError;
+          if (daysError) {
+            // Non-fatal — itinerary_items will still save.
+            console.warn('[useCreateItinerary] trip_days insert failed (non-fatal):', daysError);
+          }
         }
       }
 
