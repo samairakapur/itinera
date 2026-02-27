@@ -27,10 +27,10 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data, error: authError } = await supabase.auth.getClaims(token);
-    
-    if (authError || !data?.claims) {
+    // Use standard Supabase JS v2 auth (replaces non-standard getClaims)
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       console.error("Auth error:", authError);
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
@@ -38,14 +38,16 @@ serve(async (req) => {
       );
     }
 
-    const userId = data.claims.sub;
-    console.log("Authenticated user:", userId);
+    console.log("Authenticated user:", user.id);
 
     const { messages, cityContext } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+
+    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
+    if (!GOOGLE_AI_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Build system prompt based on context
@@ -75,56 +77,52 @@ Keep responses concise but helpful. If you don't know something specific, be hon
       systemPrompt += `
 
 The user is currently viewing information about ${cityContext.name}, ${cityContext.country}. Here's some context about this city:
-${cityContext.description ? `About: ${cityContext.description}` : ''}
-${cityContext.familyTips ? `Insider Tips: ${cityContext.familyTips}` : ''}
-${cityContext.bestTimeToVisit ? `Best Time to Visit: ${cityContext.bestTimeToVisit}` : ''}
+${cityContext.description ? `About: ${cityContext.description}` : ""}
+${cityContext.familyTips ? `Insider Tips: ${cityContext.familyTips}` : ""}
+${cityContext.bestTimeToVisit ? `Best Time to Visit: ${cityContext.bestTimeToVisit}` : ""}
 
 When answering, prioritize information relevant to ${cityContext.name}.`;
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-        stream: true,
-      }),
-    });
+    // Call Google Gemini via OpenAI-compatible endpoint (free tier: 1,500 req/day)
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GOOGLE_AI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gemini-2.0-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages,
+          ],
+          stream: true,
+        }),
+      }
+    );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Gemini API error:", response.status, errorText);
+
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limits exceeded, please try again later." }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "Rate limit reached. Please wait a moment and try again." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 401 || response.status === 403) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please try again later." }),
-          {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "The AI service key is invalid or missing. Please contact support." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
       return new Response(
-        JSON.stringify({ error: "AI gateway error" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: "AI service error. Please try again in a moment." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
