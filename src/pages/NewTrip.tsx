@@ -577,6 +577,12 @@ const NewTrip = () => {
         const errorData = await response.json().catch(() => ({}));
         const msg = errorData.error || '';
         // Provide helpful, specific messages for known error cases
+        if (response.status === 402) {
+          toast.error('AI credits exhausted. Please try again later.', { duration: 8000 });
+          setViewMode('form');
+          setIsGenerating(false);
+          return;
+        }
         if (response.status === 429) {
           throw new Error('The AI is a little busy right now. Please wait a few seconds and try again.');
         }
