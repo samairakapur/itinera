@@ -17,6 +17,7 @@ import NewTrip from "@/pages/NewTrip";
 import Nearby from "@/pages/Nearby";
 import Profile from "@/pages/Profile";
 import ResetPassword from "@/pages/ResetPassword";
+import PublicTripView from "@/pages/PublicTripView";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,8 @@ const App = () => (
               <Route path="/nearby" element={<RequireProfile><Nearby /></RequireProfile>} />
               <Route path="/profile" element={<RequireProfile><Profile /></RequireProfile>} />
             </Route>
+            {/* Public share link — no auth required */}
+            <Route path="/trip/share/:publicLinkId" element={<PublicTripView />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

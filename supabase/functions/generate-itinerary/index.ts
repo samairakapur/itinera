@@ -364,19 +364,22 @@ Note: [One practical sentence — recommend indoor alternatives on rainy days]
 
 STRICT RULES:
 1. Every day MUST include: breakfast (morning), lunch (afternoon), dinner (evening) — real, named restaurants only
-2. Every sightseeing activity MUST be followed by a 🚶 Travel block showing time and transport mode to the next stop
-3. Travel blocks use format: **🚶 Travel to [Destination]** | transport | [N min] | [Time]
-4. ${calendarContext.startsWith('CALENDAR') ? 'Use the exact calendar dates in each ## Day heading' : 'Label days as "Day N — [Weekday]"'}
-5. Day titles must be thematic (NOT "Day 1" or just the city name)
-6. Each activity: **Name** | type | duration | time
-7. MUST include "Why:" reasoning for EVERY item including travel blocks
-8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
-9. Group nearby attractions — minimise unnecessary travel
-10. Account for pace: ${pace} (~${totalActivitiesPerDay} main activities/day, plus meals and travel blocks)
-11. Use REAL places that exist — no invented names
-${isMultiCity ? `12. Use "## Leg N: CityName" header before each city section
-13. Start each new city leg with transit/arrival logistics` : ''}
-${flightConstraintContext ? '14. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
+2. Every day MUST have ALL THREE sub-sections: ### Morning, ### Afternoon, ### Evening — even if a flight lands late
+3. Every sightseeing activity MUST be followed by a 🚶 Travel block showing time and transport mode to the next stop
+4. Travel blocks use format: **🚶 Travel to [Destination]** | transport | [N min] | [Time]
+5. ${calendarContext.startsWith('CALENDAR') ? 'Use the exact calendar dates in each ## Day heading' : 'Label days as "Day N — [Weekday]"'}
+6. Day titles must be thematic (NOT "Day 1" or just the city name)
+7. Each activity: **Name** | type | duration | time
+8. MUST include "Why:" reasoning for EVERY item including travel blocks
+9. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
+10. Group nearby attractions — minimise unnecessary travel
+11. Account for pace: ${pace} (~${totalActivitiesPerDay} main activities/day, plus meals and travel blocks)
+12. Use REAL places that exist — no invented names
+13. DEFAULT DAY START TIME: ${startTime}. On days with a flight arrival, the first activity starts at arrival_time + 2 hours (minimum buffer for baggage, transit, hotel check-in). If flight lands after 14:00, reduce afternoon activities and focus on check-in + nearby dining.
+14. COMPLETE ALL DAYS — do not stop before finishing every day's ### Morning, ### Afternoon, and ### Evening sections. After all days, always end with ## Packing Tips and ## Transport Tips.
+${isMultiCity ? `15. Use "## Leg N: CityName" header before each city section
+16. Start each new city leg with transit/arrival logistics` : ''}
+${flightConstraintContext ? '17. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
 
     const userPrompt = `Create a ${numDays}-day itinerary for ${destinationsList}.
 ${legContext}
@@ -416,7 +419,7 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          max_tokens: 8192,
+          max_tokens: 16000,
           stream: true,
           messages: [
             { role: "system", content: systemPrompt },
@@ -441,8 +444,8 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
       }
       if (status === 429) {
         return new Response(
-          JSON.stringify({ error: `GEMINI_DEBUG: ${errorText.slice(0, 500)}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "The AI is a little busy right now. Please wait a few seconds and try again." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (status === 503 || status === 500) {

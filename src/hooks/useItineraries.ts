@@ -48,6 +48,20 @@ export interface CitySelection {
   daysToSpend: number;
 }
 
+export interface PreSaveFlightDetail {
+  airline?: string;
+  flight_number?: string;
+  departure_city: string;
+  arrival_city: string;
+  origin_iata?: string;
+  destination_iata?: string;
+  departure_date: string;
+  departure_time?: string;
+  arrival_date: string;
+  arrival_time?: string;
+  is_international?: boolean;
+}
+
 export interface CreateItineraryInput {
   /** First city id for backwards compat – used as primary city_id on itinerary */
   cityId: string;
@@ -63,6 +77,8 @@ export interface CreateItineraryInput {
   summary?: string;
   /** For multi-city trips, array of city selections in order */
   selectedCities?: CitySelection[];
+  /** Pre-save flight details — written to flight_details table after itinerary is created */
+  flightDetails?: PreSaveFlightDetail[];
 }
 
 export const useItineraries = () => {
@@ -280,6 +296,37 @@ export const useCreateItinerary = () => {
         if (itemsError) {
           console.error('[useCreateItinerary] itemsError:', itemsError);
           throw itemsError;
+        }
+      }
+
+      // 5. Save pre-collected flight details if provided
+      if (input.flightDetails && input.flightDetails.length > 0) {
+        const flightInserts = input.flightDetails.map((fd, idx) => ({
+          itinerary_id: itinerary.id,
+          leg_number: idx + 1,
+          airline: fd.airline ?? null,
+          flight_number: fd.flight_number ?? null,
+          departure_city: fd.departure_city,
+          arrival_city: fd.arrival_city,
+          origin_iata: fd.origin_iata ?? null,
+          destination_iata: fd.destination_iata ?? null,
+          departure_date: fd.departure_date,
+          departure_time: fd.departure_time ?? null,
+          arrival_date: fd.arrival_date,
+          arrival_time: fd.arrival_time ?? null,
+          is_international: fd.is_international ?? false,
+          delay_minutes: 0,
+        }));
+
+        const { error: flightError } = await supabase
+          .from('flight_details')
+          .insert(flightInserts);
+
+        if (flightError) {
+          // Non-fatal — itinerary is already saved
+          console.warn('[useCreateItinerary] flight_details insert failed (non-fatal):', flightError);
+        } else {
+          console.log('[useCreateItinerary] saved', flightInserts.length, 'flight(s)');
         }
       }
 

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { format, addDays } from 'date-fns';
-import { Calendar as CalendarIcon, Save, ArrowLeft, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Save, ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -10,6 +11,8 @@ import { cn } from '@/lib/utils';
 interface DateSelectionStepProps {
   cityName: string;
   numDays: number;
+  tripName: string;
+  onTripNameChange: (name: string) => void;
   onBack: () => void;
   onSave: (startDate: Date, endDate: Date) => void;
   isSaving: boolean;
@@ -18,6 +21,8 @@ interface DateSelectionStepProps {
 export const DateSelectionStep = ({
   cityName,
   numDays,
+  tripName,
+  onTripNameChange,
   onBack,
   onSave,
   isSaving,
@@ -47,6 +52,22 @@ export const DateSelectionStep = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Trip Name */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground flex items-center gap-1">
+            <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+            Trip Name
+          </label>
+          <Input
+            value={tripName}
+            onChange={(e) => onTripNameChange(e.target.value)}
+            placeholder="e.g. Helsinki Adventure"
+            className="text-base"
+            maxLength={60}
+          />
+          <p className="text-xs text-muted-foreground">Give your trip a memorable name</p>
+        </div>
+
         {/* Date Picker */}
         <div className="space-y-4">
           <div className="space-y-2">

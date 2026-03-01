@@ -365,9 +365,11 @@ export type Database = {
           estimated_daily_cost: number | null
           home_base: string | null
           id: string
+          is_link_shared: boolean
           name: string
           num_days: number
           pace: string | null
+          public_link_id: string | null
           start_date: string | null
           travel_style: string | null
           updated_at: string
@@ -382,9 +384,11 @@ export type Database = {
           estimated_daily_cost?: number | null
           home_base?: string | null
           id?: string
+          is_link_shared?: boolean
           name: string
           num_days: number
           pace?: string | null
+          public_link_id?: string | null
           start_date?: string | null
           travel_style?: string | null
           updated_at?: string
@@ -399,9 +403,11 @@ export type Database = {
           estimated_daily_cost?: number | null
           home_base?: string | null
           id?: string
+          is_link_shared?: boolean
           name?: string
           num_days?: number
           pace?: string | null
+          public_link_id?: string | null
           start_date?: string | null
           travel_style?: string | null
           updated_at?: string

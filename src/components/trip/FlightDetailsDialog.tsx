@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plane, Plus, Trash2, Edit2, Upload, Loader2, Camera, Search, CheckCircle, AlertCircle } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Plane, Plus, Trash2, Edit2, Upload, Loader2, Camera, Search, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -430,34 +431,76 @@ export const FlightDetailsDialog = ({
           {isAdding ? (
             <Card>
               <CardContent className="p-4 space-y-4">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-semibold">
                   {editingId ? 'Edit Flight' : 'Add New Flight'}
                 </p>
 
-                {/* Airline + Flight number */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Airline</Label>
+                {/* ── PRIMARY: Flight number + date + Look Up ── */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold text-foreground">Flight Number</Label>
+                  <div className="flex gap-2">
                     <Input
-                      placeholder="e.g., British Airways"
-                      value={formData.airline}
-                      onChange={(e) => handleInputChange('airline', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Flight Number</Label>
-                    <Input
-                      placeholder="e.g., BA123"
+                      placeholder="e.g. BA123"
                       value={formData.flight_number}
                       onChange={(e) => handleInputChange('flight_number', e.target.value.toUpperCase())}
+                      className="font-mono font-bold text-base uppercase flex-1"
+                    />
+                    <Input
+                      type="date"
+                      value={formData.departure_date}
+                      onChange={(e) => handleInputChange('departure_date', e.target.value)}
+                      className="w-36 shrink-0"
+                      required
                     />
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 border-primary/40 text-primary hover:bg-primary/5"
+                    onClick={handleLookup}
+                    disabled={!canLookup || isLookingUp}
+                    type="button"
+                  >
+                    {isLookingUp ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Looking up live flight data…
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-3.5 h-3.5" />
+                        Look Up Flight ✈
+                      </>
+                    )}
+                  </Button>
+                  {lookupStatus === 'found' && (
+                    <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 dark:bg-green-950/30 dark:text-green-400 px-3 py-2 rounded-md border border-green-200 dark:border-green-800">
+                      <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Times auto-filled from <strong>{lookupSource}</strong>. Review if needed.</span>
+                    </div>
+                  )}
+                  {lookupStatus === 'not-found' && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-3 py-2 rounded-md border border-amber-200 dark:border-amber-800">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Not found — enter details manually below.</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Cities with IATA codes */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">From City *</Label>
+                {/* ── Airline (secondary, often auto-filled) ── */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Airline <span className="text-muted-foreground/70">(auto-filled by lookup)</span></Label>
+                  <Input
+                    placeholder="e.g. British Airways"
+                    value={formData.airline}
+                    onChange={(e) => handleInputChange('airline', e.target.value)}
+                  />
+                </div>
+
+                {/* ── Cities: From ✈ To in one row ── */}
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs font-medium">From *</Label>
                     <Input
                       placeholder="Departure city"
                       value={formData.departure_city}
@@ -465,15 +508,18 @@ export const FlightDetailsDialog = ({
                       required
                     />
                     <Input
-                      placeholder="Airport code (e.g., LHR)"
+                      placeholder="IATA (LHR)"
                       value={formData.origin_iata}
                       onChange={(e) => handleInputChange('origin_iata', e.target.value.toUpperCase())}
-                      className="text-xs h-7 font-mono"
+                      className="h-7 text-xs font-mono"
                       maxLength={3}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">To City *</Label>
+                  <div className="flex items-center justify-center pt-5 px-1">
+                    <Plane className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-xs font-medium">To *</Label>
                     <Input
                       placeholder="Arrival city"
                       value={formData.arrival_city}
@@ -481,26 +527,17 @@ export const FlightDetailsDialog = ({
                       required
                     />
                     <Input
-                      placeholder="Airport code (e.g., CDG)"
+                      placeholder="IATA (CDG)"
                       value={formData.destination_iata}
                       onChange={(e) => handleInputChange('destination_iata', e.target.value.toUpperCase())}
-                      className="text-xs h-7 font-mono"
+                      className="h-7 text-xs font-mono"
                       maxLength={3}
                     />
                   </div>
                 </div>
 
-                {/* Departure date + time */}
+                {/* ── Times: depart + arrive in compact rows ── */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Departure Date *</Label>
-                    <Input
-                      type="date"
-                      value={formData.departure_date}
-                      onChange={(e) => handleInputChange('departure_date', e.target.value)}
-                      required
-                    />
-                  </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Departure Time</Label>
                     <Input
@@ -509,46 +546,6 @@ export const FlightDetailsDialog = ({
                       onChange={(e) => handleInputChange('departure_time', e.target.value)}
                     />
                   </div>
-                </div>
-
-                {/* Look Up button */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={handleLookup}
-                  disabled={!canLookup || isLookingUp}
-                  type="button"
-                >
-                  {isLookingUp ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Looking up live flight data…
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-3.5 h-3.5" />
-                      Look Up Flight Times ✈
-                    </>
-                  )}
-                </Button>
-
-                {/* Lookup status feedback */}
-                {lookupStatus === 'found' && (
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 dark:bg-green-950/30 dark:text-green-400 px-3 py-2 rounded-md border border-green-200 dark:border-green-800">
-                    <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Times auto-filled from <strong>{lookupSource}</strong>. Review and adjust if needed.</span>
-                  </div>
-                )}
-                {lookupStatus === 'not-found' && (
-                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 px-3 py-2 rounded-md border border-amber-200 dark:border-amber-800">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Flight not found in live data — enter times manually below.</span>
-                  </div>
-                )}
-
-                {/* Arrival date + time */}
-                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Arrival Date *</Label>
                     <Input
@@ -558,40 +555,49 @@ export const FlightDetailsDialog = ({
                       required
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 col-span-2">
                     <Label className="text-xs">Arrival Time</Label>
                     <Input
                       type="time"
                       value={formData.arrival_time}
                       onChange={(e) => handleInputChange('arrival_time', e.target.value)}
+                      className="w-full"
                     />
                   </div>
                 </div>
 
-                {/* Booking reference */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Booking Reference</Label>
-                  <Input
-                    placeholder="e.g., ABCDEF"
-                    value={formData.booking_reference}
-                    onChange={(e) => handleInputChange('booking_reference', e.target.value.toUpperCase())}
-                    className="font-mono uppercase"
-                    maxLength={10}
-                  />
-                </div>
+                {/* ── Advanced: booking ref + notes (collapsible) ── */}
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground h-7 px-0">
+                      Advanced (booking ref, notes)
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 pt-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Booking Reference</Label>
+                      <Input
+                        placeholder="e.g. ABCDEF"
+                        value={formData.booking_reference}
+                        onChange={(e) => handleInputChange('booking_reference', e.target.value.toUpperCase())}
+                        className="font-mono uppercase"
+                        maxLength={10}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Notes</Label>
+                      <Textarea
+                        placeholder="Terminal, gate, baggage info…"
+                        value={formData.notes}
+                        onChange={(e) => handleInputChange('notes', e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
 
-                {/* Notes */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Notes</Label>
-                  <Textarea
-                    placeholder="Terminal, gate, baggage info…"
-                    value={formData.notes}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    rows={2}
-                  />
-                </div>
-
-                <div className="flex gap-2 justify-end">
+                <div className="flex gap-2 justify-end pt-1">
                   <Button variant="outline" size="sm" onClick={handleCancel}>
                     Cancel
                   </Button>
