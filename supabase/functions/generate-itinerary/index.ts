@@ -404,7 +404,7 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
     // Free tier: 1,500 requests/day, 1M tokens/min — no credit card needed.
     // Uses OpenAI-compatible format so the SSE response streams as
     // choices[0].delta.content — already handled by the frontend parser.
-    console.log(`Calling Gemini gemini-2.0-flash for ${destinationsList} (${numDays} days)`);
+    console.log(`Calling Gemini gemini-1.5-flash for ${destinationsList} (${numDays} days)`);
 
     const aiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -415,7 +415,7 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gemini-2.0-flash",
+          model: "gemini-1.5-flash",
           max_tokens: 8192,
           stream: true,
           messages: [
@@ -441,8 +441,8 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
       }
       if (status === 429) {
         return new Response(
-          JSON.stringify({ error: "The AI service is temporarily busy. Please wait a moment and try again." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: `GEMINI_DEBUG: ${errorText.slice(0, 500)}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (status === 503 || status === 500) {
