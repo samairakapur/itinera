@@ -209,9 +209,9 @@ serve(async (req) => {
     // ── API key ─────────────────────────────────────────────────────────────
     // Google Gemini free tier: 1,500 requests/day, no credit card required.
     // Get your key at: https://aistudio.google.com/apikey
-    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
-    if (!GOOGLE_AI_API_KEY) {
-      console.error("GOOGLE_AI_API_KEY is not set");
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_API_KEY) {
+      console.error("GROQ_API_KEY is not set");
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -407,15 +407,15 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
     console.log(`Calling Gemini gemini-1.5-flash for ${destinationsList} (${numDays} days)`);
 
     const aiResponse = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${GOOGLE_AI_API_KEY}`,
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gemini-1.5-flash",
+          model: "llama-3.3-70b-versatile",
           max_tokens: 8192,
           stream: true,
           messages: [

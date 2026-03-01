@@ -42,8 +42,8 @@ serve(async (req) => {
 
     const { messages, cityContext } = await req.json();
 
-    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
-    if (!GOOGLE_AI_API_KEY) {
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_API_KEY) {
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -86,15 +86,15 @@ When answering, prioritize information relevant to ${cityContext.name}.`;
 
     // Call Google Gemini via OpenAI-compatible endpoint (free tier: 1,500 req/day)
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${GOOGLE_AI_API_KEY}`,
+          Authorization: `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gemini-1.5-flash",
+          model: "llama-3.3-70b-versatile",
           messages: [
             { role: "system", content: systemPrompt },
             ...messages,
