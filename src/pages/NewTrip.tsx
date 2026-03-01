@@ -593,7 +593,7 @@ const NewTrip = () => {
       const weatherHeader = response.headers.get('X-Weather-Data');
       if (weatherHeader) {
         try {
-          const weather = JSON.parse(weatherHeader);
+          const weather = JSON.parse(decodeURIComponent(weatherHeader));
           setWeatherData(weather);
         } catch (e) {
           console.warn('Failed to parse weather data from header');

@@ -474,8 +474,14 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
       ...corsHeaders,
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "X-Weather-Data": JSON.stringify(weatherByDay),
-      "X-Trip-Legs": JSON.stringify(cityLegs),
+      // encodeURIComponent ensures only ASCII chars are in the header value,
+      // preventing "Value is not a valid ByteString" errors from city names or
+      // descriptions that contain characters above U+00FF (typographic quotes,
+      // em dashes, etc.).
+      "X-Weather-Data": encodeURIComponent(JSON.stringify(weatherByDay)),
+      // X-Trip-Legs was removed — it was never consumed by the client and
+      // cityDescription fields can contain non-ASCII characters that break
+      // Deno's HTTP header encoding.
     };
 
     return new Response(aiResponse.body, { headers: responseHeaders });
