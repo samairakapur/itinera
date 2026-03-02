@@ -18,6 +18,7 @@ export interface SavedItinerary {
   dietary_preferences: string[] | null;
   home_base: string | null;
   estimated_daily_cost: number | null;
+  is_flight_aware: boolean;
   created_at: string;
   updated_at: string;
   cities?: {

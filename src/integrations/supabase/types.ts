@@ -305,45 +305,66 @@ export type Database = {
           arrival_city: string
           arrival_date: string
           arrival_time: string | null
+          booking_reference: string | null
           created_at: string
+          delay_minutes: number
           departure_city: string
           departure_date: string
           departure_time: string | null
+          destination_iata: string | null
           flight_number: string | null
           id: string
+          is_international: boolean
           itinerary_id: string
+          last_checked_at: string | null
           leg_number: number
           notes: string | null
+          origin_iata: string | null
+          terminal: string | null
         }
         Insert: {
           airline?: string | null
           arrival_city: string
           arrival_date: string
           arrival_time?: string | null
+          booking_reference?: string | null
           created_at?: string
+          delay_minutes?: number
           departure_city: string
           departure_date: string
           departure_time?: string | null
+          destination_iata?: string | null
           flight_number?: string | null
           id?: string
+          is_international?: boolean
           itinerary_id: string
+          last_checked_at?: string | null
           leg_number?: number
           notes?: string | null
+          origin_iata?: string | null
+          terminal?: string | null
         }
         Update: {
           airline?: string | null
           arrival_city?: string
           arrival_date?: string
           arrival_time?: string | null
+          booking_reference?: string | null
           created_at?: string
+          delay_minutes?: number
           departure_city?: string
           departure_date?: string
           departure_time?: string | null
+          destination_iata?: string | null
           flight_number?: string | null
           id?: string
+          is_international?: boolean
           itinerary_id?: string
+          last_checked_at?: string | null
           leg_number?: number
           notes?: string | null
+          origin_iata?: string | null
+          terminal?: string | null
         }
         Relationships: [
           {
@@ -365,6 +386,7 @@ export type Database = {
           estimated_daily_cost: number | null
           home_base: string | null
           id: string
+          is_flight_aware: boolean
           is_link_shared: boolean
           name: string
           num_days: number
@@ -384,6 +406,7 @@ export type Database = {
           estimated_daily_cost?: number | null
           home_base?: string | null
           id?: string
+          is_flight_aware?: boolean
           is_link_shared?: boolean
           name: string
           num_days: number
@@ -403,6 +426,7 @@ export type Database = {
           estimated_daily_cost?: number | null
           home_base?: string | null
           id?: string
+          is_flight_aware?: boolean
           is_link_shared?: boolean
           name?: string
           num_days?: number

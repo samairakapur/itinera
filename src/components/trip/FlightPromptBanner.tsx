@@ -8,9 +8,10 @@ interface FlightPromptBannerProps {
   itineraryId: string;
   tripName?: string;
   hasFlights: boolean;
+  onFlightSaved?: () => void;
 }
 
-export const FlightPromptBanner = ({ itineraryId, tripName, hasFlights }: FlightPromptBannerProps) => {
+export const FlightPromptBanner = ({ itineraryId, tripName, hasFlights, onFlightSaved }: FlightPromptBannerProps) => {
   const [dismissed, setDismissed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -68,6 +69,7 @@ export const FlightPromptBanner = ({ itineraryId, tripName, hasFlights }: Flight
         tripName={tripName}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        onFlightSaved={onFlightSaved}
       />
     </>
   );

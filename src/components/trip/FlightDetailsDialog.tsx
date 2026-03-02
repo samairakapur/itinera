@@ -24,6 +24,8 @@ interface FlightDetailsDialogProps {
   tripName?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Called after any flight is successfully saved (create or update). */
+  onFlightSaved?: () => void;
 }
 
 interface FlightFormData {
@@ -72,7 +74,8 @@ export const FlightDetailsDialog = ({
   itineraryId,
   tripName,
   open: controlledOpen,
-  onOpenChange: controlledOnOpenChange
+  onOpenChange: controlledOnOpenChange,
+  onFlightSaved,
 }: FlightDetailsDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -113,7 +116,7 @@ export const FlightDetailsDialog = ({
       const { data, error } = await supabase.functions.invoke('flight-lookup', {
         body: {
           flight_number: formData.flight_number.trim().toUpperCase(),
-          departure_date: formData.departure_date,
+          date: formData.departure_date,   // edge function expects "date", not "departure_date"
           origin_iata: formData.origin_iata.trim().toUpperCase() || undefined,
         },
       });
@@ -181,6 +184,9 @@ export const FlightDetailsDialog = ({
         ...payload,
       });
     }
+
+    // Notify parent that a flight was saved so it can show the regen banner
+    onFlightSaved?.();
 
     setFormData(emptyForm);
     setEnriched(emptyEnriched);
@@ -288,6 +294,7 @@ export const FlightDetailsDialog = ({
       }
 
       toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+      if (addedCount > 0) onFlightSaved?.();
     } catch (err) {
       console.error('Error parsing flight:', err);
       toast.error('Failed to parse flight details. Try entering manually.');
