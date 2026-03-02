@@ -260,21 +260,51 @@ serve(async (req) => {
     }
 
     // ── Flight constraints ──────────────────────────────────────────────────
+    // Helper: convert total minutes into "H:MM AM/PM" display string
+    function minsToDisplay(totalMins: number): string {
+      const h = Math.floor(totalMins / 60) % 24;
+      const m = totalMins % 60;
+      const period = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 || 12;
+      return `${displayH}:${String(m).padStart(2, '0')} ${period}`;
+    }
+
     let flightConstraintContext = '';
     if (flightDetails.length > 0) {
       const lines = flightDetails.map(f => {
         if (f.type === 'arrival') {
-          const delayNote  = f.delayMinutes ? ` (+${f.delayMinutes} min delay)` : '';
-          const intlNote   = f.isInternational
-            ? ' Allow 45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in after landing.'
-            : ' Allow 20 min baggage + transit + 30 min hotel check-in.';
-          return `⚠ ARRIVAL DAY ${f.dayNumber} — Flight lands ${f.city} at ${f.time}${delayNote}.${intlNote} Do NOT schedule activities before these buffers are accounted for.`;
+          const delayMins   = f.delayMinutes ?? 0;
+          const bufferMins  = f.isInternational ? 165 : 110; // matching useDayConstraints values
+          const bufferLabel = f.isInternational
+            ? '45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in'
+            : '20 min baggage/transit + 30 min hotel check-in + buffer';
+
+          // Parse HH:mm arrival time and compute first-activity time
+          const [hStr, mStr] = f.time.split(':');
+          const landingMins = parseInt(hStr, 10) * 60 + parseInt(mStr, 10) + delayMins;
+          const firstActivityMins = landingMins + bufferMins;
+          const firstActivityStr  = minsToDisplay(firstActivityMins);
+
+          const delayNote  = delayMins ? ` (+${delayMins} min delay)` : '';
+          const isLate     = Math.floor(landingMins / 60) >= 14; // lands at or after 14:00
+
+          const morningInstruction = isLate
+            ? `  → Morning section must contain ONLY: "Arrive at hotel, check in, unpack and rest." — NO breakfast restaurants or attractions before ${firstActivityStr}.`
+            : `  → Morning section: brief hotel check-in/rest note only. First attraction or meal no earlier than ${firstActivityStr}.`;
+
+          return [
+            `⚠ ARRIVAL DAY ${f.dayNumber} — Flight lands in ${f.city} at ${f.time}${delayNote}.`,
+            `  Required buffer: ${bufferLabel} = ${bufferMins} min.`,
+            `  ✏ MANDATORY: For Day ${f.dayNumber}, write EXACTLY: ### Start Time: ${firstActivityStr}`,
+            `  → Do NOT schedule any attraction, restaurant, or activity before ${firstActivityStr}.`,
+            morningInstruction,
+          ].join('\n');
         } else {
           const buffer = f.isInternational ? '2 h 30 min' : '1 h 30 min';
-          return `⚠ DEPARTURE DAY ${f.dayNumber} — Flight departs ${f.city} at ${f.time}. Last activity must end ≥ ${buffer} before departure to allow airport travel and check-in.`;
+          return `⚠ DEPARTURE DAY ${f.dayNumber} — Flight departs ${f.city} at ${f.time}. Last activity must end ≥ ${buffer} before departure for airport travel and check-in.`;
         }
       });
-      flightConstraintContext = `\n\nFLIGHT CONSTRAINTS — MUST BE RESPECTED:\n${lines.join('\n')}`;
+      flightConstraintContext = `\n\nFLIGHT CONSTRAINTS — MUST BE RESPECTED:\n${lines.join('\n\n')}`;
     }
 
     // ── Pace / slot settings ────────────────────────────────────────────────
@@ -363,8 +393,8 @@ Note: [One practical sentence — recommend indoor alternatives on rainy days]
 - [Tip 2]
 
 STRICT RULES:
-1. Every day MUST include: breakfast (morning), lunch (afternoon), dinner (evening) — real, named restaurants only
-2. Every day MUST have ALL THREE sub-sections: ### Morning, ### Afternoon, ### Evening — even if a flight lands late
+1. Every day MUST include: breakfast (morning), lunch (afternoon), dinner (evening) — real, named restaurants only. EXCEPTION: on arrival days where flight lands after 14:00, skip breakfast and include only dinner (or a late dinner).
+2. Every day MUST have ALL THREE sub-sections: ### Morning, ### Afternoon, ### Evening. EXCEPTION: on arrival days where flight lands after 14:00, Morning may contain ONLY a brief check-in/rest note — no restaurants or attractions in the Morning section.
 3. Every sightseeing activity MUST be followed by a 🚶 Travel block showing time and transport mode to the next stop
 4. Travel blocks use format: **🚶 Travel to [Destination]** | transport | [N min] | [Time]
 5. ${calendarContext.startsWith('CALENDAR') ? 'Use the exact calendar dates in each ## Day heading' : 'Label days as "Day N — [Weekday]"'}
@@ -375,7 +405,7 @@ STRICT RULES:
 10. Group nearby attractions — minimise unnecessary travel
 11. Account for pace: ${pace} (~${totalActivitiesPerDay} main activities/day, plus meals and travel blocks)
 12. Use REAL places that exist — no invented names
-13. DEFAULT DAY START TIME: ${startTime}. On days with a flight arrival, the first activity starts at arrival_time + 2 hours (minimum buffer for baggage, transit, hotel check-in). If flight lands after 14:00, reduce afternoon activities and focus on check-in + nearby dining.
+13. DEFAULT DAY START TIME for regular days: ${startTime}. For ARRIVAL DAYS: use EXACTLY the "### Start Time:" value specified in the FLIGHT CONSTRAINTS above for that day — this is the computed arrival+buffer time and OVERRIDES the default. Do not use the default ${startTime} on any flight arrival day.
 14. COMPLETE ALL DAYS — do not stop before finishing every day's ### Morning, ### Afternoon, and ### Evening sections. After all days, always end with ## Packing Tips and ## Transport Tips.
 ${isMultiCity ? `15. Use "## Leg N: CityName" header before each city section
 16. Start each new city leg with transit/arrival logistics` : ''}

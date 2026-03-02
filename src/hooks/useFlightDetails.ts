@@ -71,9 +71,35 @@ export const useCreateFlightDetail = () => {
 
   return useMutation({
     mutationFn: async (input: CreateFlightInput) => {
+      // Separate guaranteed-base columns from extended columns added in migration
+      // 20260225092934. Extended columns may not exist in all environments, and
+      // PostgREST will throw a schema-cache error if we include unknown columns.
+      const {
+        origin_iata,
+        destination_iata,
+        is_international,
+        delay_minutes,
+        terminal,
+        booking_reference,
+        ...baseInput
+      } = input;
+
+      // Start with the base fields that always exist
+      const insertData: Record<string, unknown> = { ...baseInput };
+
+      // Only include extended fields when they carry meaningful values — this
+      // prevents PostgREST from rejecting inserts if the columns don't yet exist
+      // in the DB schema cache (falsy values are handled by column defaults anyway).
+      if (origin_iata)       insertData.origin_iata       = origin_iata;
+      if (destination_iata)  insertData.destination_iata  = destination_iata;
+      if (is_international)  insertData.is_international  = is_international;
+      if (delay_minutes)     insertData.delay_minutes     = delay_minutes;
+      if (terminal)          insertData.terminal          = terminal;
+      if (booking_reference) insertData.booking_reference = booking_reference;
+
       const { data, error } = await supabase
         .from('flight_details')
-        .insert(input)
+        .insert(insertData)
         .select()
         .single();
 
@@ -97,9 +123,31 @@ export const useUpdateFlightDetail = () => {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<FlightDetail> & { id: string }) => {
+      // Strip extended columns from updates to avoid schema-cache errors
+      // when the migration hasn't been applied yet.
+      const {
+        origin_iata,
+        destination_iata,
+        is_international,
+        delay_minutes,
+        terminal,
+        booking_reference,
+        last_checked_at,
+        ...baseUpdates
+      } = updates as Partial<FlightDetail>;
+
+      const updateData: Record<string, unknown> = { ...baseUpdates };
+      if (origin_iata !== undefined)      updateData.origin_iata       = origin_iata;
+      if (destination_iata !== undefined) updateData.destination_iata  = destination_iata;
+      if (is_international !== undefined) updateData.is_international  = is_international;
+      if (delay_minutes !== undefined)    updateData.delay_minutes     = delay_minutes;
+      if (terminal !== undefined)         updateData.terminal          = terminal;
+      if (booking_reference !== undefined) updateData.booking_reference = booking_reference;
+      if (last_checked_at !== undefined)  updateData.last_checked_at   = last_checked_at;
+
       const { data, error } = await supabase
         .from('flight_details')
-        .update(updates)
+        .update(updateData)
         .eq('id', id)
         .select()
         .single();
