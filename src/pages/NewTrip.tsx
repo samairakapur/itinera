@@ -529,13 +529,25 @@ const NewTrip = () => {
         cityDescription: cd.city!.description,
       }));
 
-      // Use today as a provisional start date so Claude can use real calendar
-      // dates in day headings. The user will confirm (or change) the actual
-      // start date in the DateSelectionStep before saving the trip.
-      const provisionalStartDate = new Date().toISOString().split('T')[0];
-
       // Build flight constraints from the preview flights (if any)
       const flightsToUse = flights ?? previewFlights;
+
+      // If the user has entered flights, anchor the provisional start date to
+      // the earliest flight date so that day-number calculations in
+      // buildFlightConstraints are correct (e.g. a flight arriving on Mar 9
+      // becomes Day 1, not Day 8 relative to today).
+      // If no flights, fall back to today so the AI still uses real calendar dates.
+      const provisionalStartDate = (() => {
+        if (flightsToUse.length > 0) {
+          const allDates = flightsToUse
+            .flatMap(f => [f.departure_date, f.arrival_date])
+            .filter((d): d is string => Boolean(d))
+            .sort();
+          if (allDates.length > 0) return allDates[0];
+        }
+        return new Date().toISOString().split('T')[0];
+      })();
+
       const flightDetails = flightsToUse.length > 0
         ? buildFlightConstraints(flightsToUse, provisionalStartDate)
         : [];
