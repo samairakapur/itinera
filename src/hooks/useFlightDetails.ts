@@ -84,9 +84,10 @@ export const useCreateFlightDetail = () => {
       queryClient.invalidateQueries({ queryKey: ['flight-details', variables.itinerary_id] });
       toast.success('Flight added successfully');
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Error adding flight:', error);
-      toast.error('Failed to add flight');
+      const msg = error?.message || error?.details || error?.hint || JSON.stringify(error);
+      toast.error(`Failed to add flight: ${msg}`);
     },
   });
 };

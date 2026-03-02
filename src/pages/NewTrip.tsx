@@ -112,6 +112,57 @@ const NewTrip = () => {
 
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // When flights are added/removed in the pre-save panel, immediately update
+  // the displayed start time for each arrival day (arrival time + 2h buffer)
+  // so the user sees the correct schedule without having to click Re-generate.
+  useEffect(() => {
+    if (previewFlights.length === 0) return;
+
+    // Compute the same provisional start date used by handleGenerate
+    const allDates = previewFlights
+      .flatMap(f => [f.departure_date, f.arrival_date])
+      .filter((d): d is string => Boolean(d))
+      .sort();
+    if (allDates.length === 0) return;
+
+    const tripStart = new Date(allDates[0] + 'T12:00:00Z');
+
+    setParsedItinerary(prev => {
+      if (!prev) return prev;
+
+      let changed = false;
+      const newDays = prev.days.map(day => {
+        // Find an arrival flight that lands on this day number
+        const arrivalFlight = previewFlights.find(f => {
+          if (!f.arrival_date || !f.arrival_time) return false;
+          const arrDate = new Date(f.arrival_date + 'T12:00:00Z');
+          const dayNum = Math.round((arrDate.getTime() - tripStart.getTime()) / 86_400_000) + 1;
+          return dayNum === day.dayNumber;
+        });
+
+        if (arrivalFlight?.arrival_time) {
+          const [hStr, mStr] = arrivalFlight.arrival_time.split(':');
+          const h = parseInt(hStr, 10);
+          const m = parseInt(mStr, 10);
+          const totalMins = (h * 60 + m) + 120; // +2h buffer
+          const startH = Math.floor(totalMins / 60) % 24;
+          const startM = totalMins % 60;
+          // Format as "H:MM AM/PM" to match AI output style
+          const period = startH >= 12 ? 'PM' : 'AM';
+          const displayH = startH % 12 || 12;
+          const newStart = `${displayH}:${String(startM).padStart(2, '0')} ${period}`;
+          if (newStart !== day.startTime) {
+            changed = true;
+            return { ...day, startTime: newStart };
+          }
+        }
+        return day;
+      });
+
+      return changed ? { ...prev, days: newDays } : prev;
+    });
+  }, [previewFlights]);
+
   // Pre-fill from user profile preferences
   useEffect(() => {
     if (profile?.travel_preferences) {
