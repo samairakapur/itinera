@@ -107,13 +107,13 @@ export const useInviteCollaborator = () => {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['trip-collaborators', variables.itineraryId] });
-      toast.success('Invitation sent!');
+      toast.success('Collaborator added! They\'ll see this trip in their pending invitations when they sign in to Itinera.');
     },
     onError: (error: any) => {
       if (error.code === '23505') {
         toast.error('This person has already been invited');
       } else {
-        toast.error('Failed to send invitation');
+        toast.error('Failed to add collaborator. Please try again.');
       }
     },
   });

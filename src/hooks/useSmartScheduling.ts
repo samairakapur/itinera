@@ -8,6 +8,8 @@ export interface DayConstraints {
   dayNumber: number;
   isArrivalDay: boolean;
   isDepartureDay: boolean;
+  isOvernightTransit: boolean;  // departure < arrival on same day (overnight flight)
+  isEarlyDeparture: boolean;    // pure departure day with flight before 10:30 AM
   arrivalFlight?: FlightDetail;
   departureFlight?: FlightDetail;
   earliestStart: string;      // HH:mm — first activity can start no earlier
@@ -145,7 +147,8 @@ export const calculateDayConstraints = (
   flights: FlightDetail[],
   customStartTime?: string,
 ): DayConstraints => {
-  const baseStart = customStartTime || '09:00';
+  // Departure day default: 08:00. User can adjust via Edit Day.
+  const baseStart = customStartTime || '08:00';
   const baseEnd   = '22:00';
 
   if (!dayDate) {
@@ -153,6 +156,8 @@ export const calculateDayConstraints = (
       dayNumber,
       isArrivalDay: false,
       isDepartureDay: false,
+      isOvernightTransit: false,
+      isEarlyDeparture: false,
       earliestStart: baseStart,
       latestEnd: baseEnd,
       availableMinutes: calculateMinutesBetween(baseStart, baseEnd),
@@ -171,12 +176,24 @@ export const calculateDayConstraints = (
   const isArrivalDay   = !!arrivalFlight;
   const isDepartureDay = !!departureFlight;
 
+  // Detect overnight transit: same flight departs before it arrives on the same calendar
+  // day (e.g. 00:10 depart Singapore → 07:25 arrive Seoul). In this case the user has
+  // already left — don't apply a departure cutoff to their arrival day activities.
+  const isOvernightTransit =
+    isArrivalDay &&
+    isDepartureDay &&
+    !!departureFlight?.departure_time &&
+    !!arrivalFlight?.arrival_time &&
+    timeToMinutes(departureFlight.departure_time) < timeToMinutes(arrivalFlight.arrival_time);
+
   let earliestStart = baseStart;
   let latestEnd     = baseEnd;
   let arrivalBreakdown: ArrivalBufferBreakdown | undefined;
   let departureBreakdown: DepartureBufferBreakdown | undefined;
+  let isEarlyDeparture = false;
 
   // ── Arrival day: work out what time the user can realistically start ────
+  // Buffer = immigration + baggage + city transit + hotel check-in
   if (arrivalFlight?.arrival_time) {
     const delayMins    = arrivalFlight.delay_minutes ?? 0;
     const transitMins  = getTransitMinutes(arrivalFlight.destination_iata);
@@ -190,12 +207,13 @@ export const calculateDayConstraints = (
 
     const arrivalMins  = timeToMinutes(arrivalFlight.arrival_time);
     const adjustedMins = arrivalMins + totalBuffer;
-    const adjustedTime = minutesToTime(adjustedMins);
+    // Guard against wrapping past midnight
+    const cappedMins   = Math.min(adjustedMins, timeToMinutes('23:00'));
+    const adjustedTime = minutesToTime(cappedMins);
 
-    // Only override if it pushes the start later than user's preference
-    if (adjustedMins > timeToMinutes(earliestStart)) {
-      earliestStart = adjustedTime;
-    }
+    // Arrival buffer always takes priority — it tells the user when they can
+    // *realistically* start sightseeing after landing, clearing customs and checking in.
+    earliestStart = adjustedTime;
 
     arrivalBreakdown = {
       landingTime:          arrivalFlight.arrival_time.slice(0, 5),
@@ -210,17 +228,28 @@ export const calculateDayConstraints = (
   }
 
   // ── Departure day: work out latest activity end time ────────────────────
-  if (departureFlight?.departure_time) {
+  // Skip entirely for overnight-transit days — the departure already happened
+  // before the user arrived at the destination.
+  if (departureFlight?.departure_time && !isOvernightTransit) {
     const isIntl       = departureFlight.is_international ?? true;
     const transitMins  = getTransitMinutes(departureFlight.origin_iata);
     const checkinMins  = isIntl ? INTERNATIONAL_CHECKIN_BUFFER : DOMESTIC_CHECKIN_BUFFER;
 
     const totalBuffer  = transitMins + checkinMins;
     const depMins      = timeToMinutes(departureFlight.departure_time);
-    const latestMins   = Math.max(depMins - totalBuffer, timeToMinutes('08:00'));
-    const latestTime   = minutesToTime(latestMins);
+    const latestMins   = depMins - totalBuffer;
+    const latestTime   = minutesToTime(Math.max(latestMins, 0));
 
     latestEnd = latestTime;
+
+    // Flag early departure: flight before 10:30 on a pure departure day.
+    // These days have so little time that we show a special "plan manually" banner
+    // instead of a regular activity schedule.
+    const depHour = Math.floor(depMins / 60);
+    const depMinute = depMins % 60;
+    if (!isArrivalDay && (depHour < 10 || (depHour === 10 && depMinute < 30))) {
+      isEarlyDeparture = true;
+    }
 
     departureBreakdown = {
       departureTime:         departureFlight.departure_time.slice(0, 5),
@@ -241,6 +270,8 @@ export const calculateDayConstraints = (
     dayNumber,
     isArrivalDay,
     isDepartureDay,
+    isOvernightTransit,
+    isEarlyDeparture,
     arrivalFlight,
     departureFlight,
     earliestStart,

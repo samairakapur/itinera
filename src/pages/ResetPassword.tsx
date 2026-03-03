@@ -43,10 +43,15 @@ const ResetPassword = () => {
       }
     };
 
-    // Supabase processes the recovery hash fragment automatically and fires
+    // Supabase processes the recovery hash / PKCE code automatically and fires
     // PASSWORD_RECOVERY on the auth state listener below.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
+        markReady();
+      }
+      // INITIAL_SESSION fires when Supabase has already exchanged the code for a
+      // session before this component mounted (e.g. page hard-refresh).
+      if (event === 'INITIAL_SESSION' && session) {
         markReady();
       }
     });
@@ -57,9 +62,9 @@ const ResetPassword = () => {
       if (session) markReady();
     });
 
-    // Fall-through: if no recovery token and no existing session after a few
-    // seconds, the link has expired or the user arrived without a valid token.
-    const expireTimeout = setTimeout(markExpired, 5000);
+    // Fall-through: if no recovery token and no existing session after 10 s,
+    // the link has expired or the user arrived without a valid token.
+    const expireTimeout = setTimeout(markExpired, 10_000);
 
     return () => {
       subscription.unsubscribe();
