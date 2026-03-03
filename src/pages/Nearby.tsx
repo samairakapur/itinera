@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
@@ -57,24 +57,28 @@ const Nearby = () => {
   
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);   // prevents infinite-retry on failure
   const [activeTab, setActiveTab] = useState('all');
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState(10);
+  // Track the location + radius we last fetched so we can re-fetch only on real changes
+  const lastFetchKey = useRef<string | null>(null);
 
   const preferences = profile?.travel_preferences;
 
-  const fetchNearbyPlaces = useCallback(async () => {
-    if (!latitude || !longitude) return;
-
+  // fetchNearbyPlaces does NOT depend on activeTab — we always fetch ALL categories
+  // and filter client-side, so switching tabs never triggers a new API call.
+  const fetchNearbyPlaces = useCallback(async (lat: number, lng: number, radius: number) => {
     setLoading(true);
+    setHasError(false);
     try {
       const { data, error } = await supabase.functions.invoke('nearby-places', {
         body: {
-          lat: latitude,
-          lng: longitude,
-          radiusMeters: radiusKm * 1000,
-          category: activeTab === 'all' ? 'all' : activeTab,
+          lat,
+          lng,
+          radiusMeters: radius * 1000,
+          category: 'all',   // always fetch all; filter client-side
         },
       });
 
@@ -87,7 +91,7 @@ const Nearby = () => {
           .map((p: any) => {
             const distKm =
               p.latitude && p.longitude
-                ? haversineDistance(latitude, longitude, p.latitude, p.longitude)
+                ? haversineDistance(lat, lng, p.latitude, p.longitude)
                 : (p.distanceKm ?? 99);
             return {
               ...p,
@@ -98,7 +102,7 @@ const Nearby = () => {
                   : `${distKm.toFixed(1)} km`,
             } as NearbyPlace;
           })
-          .filter((p: NearbyPlace) => (p.distanceKm ?? 99) <= radiusKm)
+          .filter((p: NearbyPlace) => (p.distanceKm ?? 99) <= radius)
           .sort(
             (a: NearbyPlace, b: NearbyPlace) =>
               (a.distanceKm ?? 99) - (b.distanceKm ?? 99)
@@ -122,6 +126,7 @@ const Nearby = () => {
           toast.error(data.error);
         }
         setPlaces([]);
+        setHasError(true);
         return;
       }
 
@@ -129,37 +134,55 @@ const Nearby = () => {
     } catch (err: any) {
       console.error('Error fetching nearby places:', err);
       setPlaces([]);
+      setHasError(true);
       toast.error('Could not load nearby recommendations. Try again.');
     } finally {
       setLoading(false);
     }
-  }, [latitude, longitude, radiusKm, activeTab]);
+  }, []); // stable — no reactive deps; params passed explicitly
 
+  // Trigger a fetch only when location or radius meaningfully changes
   useEffect(() => {
-    if (latitude && longitude && places.length === 0 && !loading) {
-      fetchNearbyPlaces();
-    }
-  }, [latitude, longitude, fetchNearbyPlaces, places.length, loading]);
+    if (!latitude || !longitude) return;
+    const key = `${latitude.toFixed(4)},${longitude.toFixed(4)},${radiusKm}`;
+    if (lastFetchKey.current === key) return; // already fetched for this combination
+    lastFetchKey.current = key;
+    setPlaces([]);
+    setHasError(false);
+    fetchNearbyPlaces(latitude, longitude, radiusKm);
+  }, [latitude, longitude, radiusKm, fetchNearbyPlaces]);
 
   const handleManualLocationSet = (lat: number, lng: number, name?: string) => {
     setManualLocation(lat, lng);
     setLocationName(name || null);
     setPlaces([]);
+    setHasError(false);
+    lastFetchKey.current = null; // force re-fetch for new location
     toast.success(`Location set to ${name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}`);
   };
 
   const handleRefresh = () => {
-    setPlaces([]);
     if (isPermissionDenied && !locationName) {
       setManualDialogOpen(true);
-    } else {
-      fetchNearbyPlaces();
+    } else if (latitude && longitude) {
+      lastFetchKey.current = null; // force re-fetch
+      setPlaces([]);
+      setHasError(false);
+      fetchNearbyPlaces(latitude, longitude, radiusKm);
     }
   };
 
+  // Client-side tab filtering — no re-fetch needed when switching tabs
   const filteredPlaces = useMemo(() => {
     if (activeTab === 'all') return places;
-    return places.filter(p => p.type === activeTab);
+    // map tab values to place type strings
+    const typeMap: Record<string, string[]> = {
+      attraction: ['attraction', 'landmark', 'museum'],
+      cafe:       ['cafe', 'coffee'],
+      restaurant: ['restaurant', 'food'],
+    };
+    const types = typeMap[activeTab] ?? [activeTab];
+    return places.filter(p => types.some(t => p.type?.toLowerCase().includes(t)));
   }, [places, activeTab]);
 
   // Not logged in
@@ -400,7 +423,7 @@ const Nearby = () => {
                   <p className="text-muted-foreground mb-4">
                     Tap refresh to discover places near your current location.
                   </p>
-                  <Button variant="outline" onClick={fetchNearbyPlaces} disabled={loading}>
+                  <Button variant="outline" onClick={handleRefresh} disabled={loading}>
                     <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                     Load Recommendations
                   </Button>

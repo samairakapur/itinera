@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, Mail, Users, Trash2, Check, Clock, Link2, Copy, Globe, Lock } from 'lucide-react';
+import { UserPlus, Mail, Users, Trash2, Check, Clock, Link2, Copy, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,10 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { useTripCollaborators, useInviteCollaborator, useRemoveCollaborator } from '@/hooks/useTripCollaborators';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface InviteCollaboratorDialogProps {
@@ -35,77 +32,16 @@ interface InviteCollaboratorDialogProps {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Generate a short alphanumeric token (16 chars) for the public link */
-function generateLinkId(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  return Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
 export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollaboratorDialogProps) => {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
-  const [role, setRole] = useState<'viewer' | 'editor'>('editor');
-
-  // Public link state
-  const [isLinkShared, setIsLinkShared] = useState(false);
-  const [publicLinkId, setPublicLinkId] = useState<string | null>(null);
-  const [isTogglingLink, setIsTogglingLink] = useState(false);
+  const [role, setRole] = useState<'viewer' | 'editor'>('viewer');
+  const [copied, setCopied] = useState(false);
 
   const { data: collaborators = [] } = useTripCollaborators(itineraryId);
   const inviteCollaborator = useInviteCollaborator();
   const removeCollaborator = useRemoveCollaborator();
-
-  // Load public link state when dialog opens
-  const handleOpenChange = async (val: boolean) => {
-    setOpen(val);
-    if (val) {
-      const { data } = await supabase
-        .from('itineraries')
-        .select('is_link_shared, public_link_id')
-        .eq('id', itineraryId)
-        .single();
-      if (data) {
-        setIsLinkShared(data.is_link_shared ?? false);
-        setPublicLinkId(data.public_link_id ?? null);
-      }
-    }
-  };
-
-  const handleToggleLink = async (enabled: boolean) => {
-    setIsTogglingLink(true);
-    try {
-      let linkId = publicLinkId;
-      if (enabled && !linkId) {
-        linkId = generateLinkId();
-      }
-      const { error } = await supabase
-        .from('itineraries')
-        .update({
-          is_link_shared: enabled,
-          ...(enabled && linkId ? { public_link_id: linkId } : {}),
-        })
-        .eq('id', itineraryId);
-
-      if (error) throw error;
-      setIsLinkShared(enabled);
-      if (enabled && linkId) setPublicLinkId(linkId);
-      toast.success(enabled ? 'Public link enabled' : 'Public link disabled');
-    } catch (err) {
-      console.error('Error toggling link share:', err);
-      toast.error('Could not update sharing settings');
-    } finally {
-      setIsTogglingLink(false);
-    }
-  };
-
-  const handleCopyLink = () => {
-    if (!publicLinkId) return;
-    const url = `${window.location.origin}/trip/share/${publicLinkId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      toast.success('Link copied to clipboard!');
-    });
-  };
 
   const emailError = emailTouched && email.trim() !== '' && !EMAIL_REGEX.test(email.trim())
     ? 'Please enter a valid email address'
@@ -128,18 +64,41 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
 
     setEmail('');
     setEmailTouched(false);
-    setRole('editor');
+    setRole('viewer');
   };
 
   const handleRemove = async (id: string) => {
     await removeCollaborator.mutateAsync({ id, itineraryId });
   };
 
+  // Build the trip share URL — currently requires the recipient to be logged in
+  const shareUrl = `${window.location.origin}/trips/${itineraryId}`;
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success('Link copied to clipboard!');
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = shareUrl;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      toast.success('Link copied!');
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
   const acceptedCollaborators = collaborators.filter(c => c.accepted_at);
   const pendingInvitations = collaborators.filter(c => !c.accepted_at);
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           <Users className="w-4 h-4" />
@@ -158,29 +117,28 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
             Share Trip
           </DialogTitle>
           <DialogDescription>
-            Invite collaborators or share a public view link for {tripName ? `"${tripName}"` : 'this trip'}.
+            Invite collaborators or share a link for {tripName ? `"${tripName}"` : 'this trip'}.
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="invite">
-          <TabsList className="w-full">
-            <TabsTrigger value="invite" className="flex-1 gap-1.5">
-              <Mail className="w-3.5 h-3.5" />
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="invite" className="gap-2">
+              <Mail className="w-4 h-4" />
               Invite
               {collaborators.length > 0 && (
-                <Badge variant="secondary" className="h-4 w-4 p-0 flex items-center justify-center text-xs">
+                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1 flex items-center justify-center text-xs">
                   {collaborators.length}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="link" className="flex-1 gap-1.5">
-              <Link2 className="w-3.5 h-3.5" />
+            <TabsTrigger value="link" className="gap-2">
+              <Link2 className="w-4 h-4" />
               Share Link
-              {isLinkShared && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
             </TabsTrigger>
           </TabsList>
 
-          {/* ── Invite collaborators tab ── */}
+          {/* ── Invite Tab ─────────────────────────────────────────────── */}
           <TabsContent value="invite" className="space-y-4 mt-4">
             <form onSubmit={handleInvite} className="space-y-2">
               <div className="flex gap-2">
@@ -202,8 +160,8 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="editor">Editor</SelectItem>
                     <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button
@@ -216,7 +174,7 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
               {emailError && (
                 <p className="text-xs text-destructive pl-1">{emailError}</p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground pl-1">
                 Invited members must have an account to accept. Editors can modify the itinerary.
               </p>
             </form>
@@ -299,61 +257,44 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
             )}
           </TabsContent>
 
-          {/* ── Share link tab ── */}
-          <TabsContent value="link" className="mt-4 space-y-4">
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                {/* Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isLinkShared ? (
-                      <Globe className="w-4 h-4 text-emerald-500" />
-                    ) : (
-                      <Lock className="w-4 h-4 text-muted-foreground" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium">
-                        {isLinkShared ? 'Public link active' : 'Anyone with the link can view'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {isLinkShared
-                          ? 'Anyone with the link can view this itinerary'
-                          : 'Enable to generate a shareable view-only link'}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={isLinkShared}
-                    onCheckedChange={handleToggleLink}
-                    disabled={isTogglingLink}
-                  />
-                </div>
+          {/* ── Share Link Tab ──────────────────────────────────────────── */}
+          <TabsContent value="link" className="space-y-4 mt-4">
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Share this link with anyone who has an Itinera account. They'll be able to view your trip
+                once they're signed in.
+              </p>
 
-                {/* Copy link row — shown when enabled */}
-                {isLinkShared && publicLinkId && (
-                  <>
-                    <Separator />
-                    <div className="flex gap-2">
-                      <Input
-                        readOnly
-                        value={`${window.location.origin}/trip/share/${publicLinkId}`}
-                        className="text-xs font-mono bg-muted"
-                        onClick={e => (e.target as HTMLInputElement).select()}
-                      />
-                      <Button variant="outline" size="icon" onClick={handleCopyLink} className="shrink-0">
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={shareUrl}
+                  className="text-xs text-muted-foreground bg-muted"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleCopyLink}
+                  className="shrink-0"
+                  title="Copy link"
+                >
+                  {copied ? (
+                    <CheckCheck className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
 
-            <p className="text-xs text-muted-foreground">
-              🔒 View-only — visitors cannot edit. To collaborate on the itinerary, use the <strong>Invite</strong> tab.
-              <br />
-              Anyone without an account can view the trip and sign up to become a collaborator.
-            </p>
+              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">🔒 Account required</p>
+                <p>
+                  Recipients must sign in to Itinera to view this trip. To give someone editing access,
+                  use the <strong>Invite</strong> tab instead.
+                </p>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </DialogContent>
