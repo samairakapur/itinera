@@ -439,7 +439,8 @@ const TripDetail = () => {
                   Save
                 </Button>
               )}
-              {tripId && <InviteCollaboratorDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
+              {/* Only show Share once the itinerary is confirmed saved in the user's profile */}
+              {tripId && itinerary && <InviteCollaboratorDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
               {tripId && <FlightDetailsDialog itineraryId={tripId} tripName={itinerary.cities?.name} onFlightSaved={handleFlightSaved} />}
               <AlertDialog>
                 <AlertDialogTrigger asChild>

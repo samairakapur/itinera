@@ -255,6 +255,22 @@ const NewTrip = () => {
       return;
     }
 
+    // Warn the user about limited activity time on late-arrival days
+    const flightsForWarning = flights ?? previewFlights;
+    const lateArrival = flightsForWarning.find(f => {
+      if (!f.arrival_time) return false;
+      const [h] = f.arrival_time.split(':').map(Number);
+      return h >= 14; // landing at 2 PM or later = noticeably constrained day
+    });
+    if (lateArrival) {
+      const city = lateArrival.arrival_city || 'your destination';
+      const time = lateArrival.arrival_time?.slice(0, 5) ?? '';
+      toast.info(
+        `✈️ You arrive in ${city} at ${time} — your arrival day will have a lighter schedule to allow time for check‑in and rest.`,
+        { duration: 7000 },
+      );
+    }
+
     setIsGenerating(true);
     setRawItinerary('');
     setParsedItinerary(null);

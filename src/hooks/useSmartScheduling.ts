@@ -145,7 +145,8 @@ export const calculateDayConstraints = (
   flights: FlightDetail[],
   customStartTime?: string,
 ): DayConstraints => {
-  const baseStart = customStartTime || '09:00';
+  // Default start is 08:00 — standard morning time the user can adjust per-day.
+  const baseStart = customStartTime || '08:00';
   const baseEnd   = '22:00';
 
   if (!dayDate) {
@@ -190,22 +191,30 @@ export const calculateDayConstraints = (
 
     const arrivalMins  = timeToMinutes(arrivalFlight.arrival_time);
     const adjustedMins = arrivalMins + totalBuffer;
-    const adjustedTime = minutesToTime(adjustedMins);
+    // minutesToTime caps at 23:59; use modulo so times past midnight display as
+    // early-AM rather than being silently clamped to 23:59.
+    const wrappedMins  = adjustedMins % (24 * 60);
+    const adjustedTime = minutesToTime(wrappedMins);
 
-    // Only override if it pushes the start later than user's preference
-    if (adjustedMins > timeToMinutes(earliestStart)) {
+    // Only push earliestStart later on a PURE arrival day (no departure on the
+    // same day).  On transit days (depart city A → arrive city B same day),
+    // the morning is spent in city A, so we keep the default 08:00 start and
+    // let the departure constraint set the latest-end time instead.
+    if (!departureFlight && wrappedMins > timeToMinutes(earliestStart)) {
       earliestStart = adjustedTime;
     }
 
     arrivalBreakdown = {
-      landingTime:          arrivalFlight.arrival_time.slice(0, 5),
-      delayMinutes:         delayMins,
-      immigrationMinutes:   IMMIGRATION_MINUTES,
-      baggageMinutes:       BAGGAGE_MINUTES,
-      transitMinutes:       transitMins,
-      hotelCheckinMinutes:  HOTEL_CHECKIN_MINUTES,
-      totalBufferMinutes:   totalBuffer,
-      earliestActivityStart: earliestStart,
+      landingTime:           arrivalFlight.arrival_time.slice(0, 5),
+      delayMinutes:          delayMins,
+      immigrationMinutes:    IMMIGRATION_MINUTES,
+      baggageMinutes:        BAGGAGE_MINUTES,
+      transitMinutes:        transitMins,
+      hotelCheckinMinutes:   HOTEL_CHECKIN_MINUTES,
+      totalBufferMinutes:    totalBuffer,
+      // Always show the real arrival+buffer time in the banner regardless of
+      // whether it overrides the day's earliestStart (it may be next-day AM).
+      earliestActivityStart: adjustedTime,
     };
   }
 
