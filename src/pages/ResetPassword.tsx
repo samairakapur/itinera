@@ -30,36 +30,38 @@ const ResetPassword = () => {
     let settled = false;
 
     const markReady = () => {
-      if (!settled) {
-        settled = true;
-        setPageState('ready');
-      }
+      if (!settled) { settled = true; setPageState('ready'); }
     };
-
     const markExpired = () => {
-      if (!settled) {
-        settled = true;
-        setPageState('expired');
-      }
+      if (!settled) { settled = true; setPageState('expired'); }
     };
 
-    // Supabase processes the recovery hash fragment automatically and fires
-    // PASSWORD_RECOVERY on the auth state listener below.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    // ── PKCE flow (Supabase JS v2 default) ──────────────────────────────────
+    // Supabase appends ?code=... to the redirectTo URL.  The client library
+    // exchanges it for a session automatically; we just need to listen for the
+    // PASSWORD_RECOVERY event.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
+        markReady();
+      }
+      // If the code was already exchanged before this component mounted, the
+      // first INITIAL_SESSION event with a recovery session will suffice.
+      if (event === 'INITIAL_SESSION' && session) {
         markReady();
       }
     });
 
-    // Also handle the case where the token was already processed (e.g., the
-    // user navigated here while already in a valid recovery session).
+    // ── Implicit / hash flow fallback ────────────────────────────────────────
+    // Some Supabase configurations still append #access_token= fragments.
+    // getSession() picks these up synchronously after the library initialises.
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) markReady();
     });
 
-    // Fall-through: if no recovery token and no existing session after a few
-    // seconds, the link has expired or the user arrived without a valid token.
-    const expireTimeout = setTimeout(markExpired, 5000);
+    // ── Hard timeout ─────────────────────────────────────────────────────────
+    // Give Supabase up to 10 s to process the token before we declare it
+    // expired.  Increase from 5 s so slow connections don't false-positive.
+    const expireTimeout = setTimeout(markExpired, 10_000);
 
     return () => {
       subscription.unsubscribe();
