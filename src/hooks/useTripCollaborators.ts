@@ -76,17 +76,21 @@ export const useInviteCollaborator = () => {
       itineraryId,
       email,
       role,
+      tripName,
+      cityName,
     }: {
       itineraryId: string;
       email: string;
       role: 'viewer' | 'editor';
+      tripName?: string;
+      cityName?: string;
     }) => {
       if (!user) throw new Error('Must be logged in');
 
-      // Check if user exists
+      // Check if invited user already has an Itinera account
       const { data: existingUser } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, full_name')
         .eq('email', email)
         .single();
 
@@ -103,11 +107,35 @@ export const useInviteCollaborator = () => {
         .single();
 
       if (error) throw error;
+
+      // Fire-and-forget invitation email — don't fail the invite if email sending fails
+      try {
+        const inviterProfile = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        await supabase.functions.invoke('send-invite-email', {
+          body: {
+            inviteeEmail: email,
+            inviterName: inviterProfile.data?.full_name || user.email || 'A friend',
+            tripName: tripName || 'a trip',
+            cityName: cityName || '',
+            itineraryId,
+            appUrl: window.location.origin,
+          },
+        });
+      } catch (emailErr) {
+        // Email sending is best-effort — log but don't surface to user
+        console.warn('Invitation email could not be sent:', emailErr);
+      }
+
       return data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['trip-collaborators', variables.itineraryId] });
-      toast.success('Collaborator added! They\'ll see this trip in their pending invitations when they sign in to Itinera.');
+      toast.success('Invitation sent! They\'ll receive an email with a link to view the trip.');
     },
     onError: (error: any) => {
       if (error.code === '23505') {

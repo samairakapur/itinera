@@ -176,15 +176,21 @@ export const calculateDayConstraints = (
   const isArrivalDay   = !!arrivalFlight;
   const isDepartureDay = !!departureFlight;
 
-  // Detect overnight transit: same flight departs before it arrives on the same calendar
-  // day (e.g. 00:10 depart Singapore → 07:25 arrive Seoul). In this case the user has
-  // already left — don't apply a departure cutoff to their arrival day activities.
+  // Detect overnight transit: a flight that departed in the very early hours of the morning
+  // (before 08:00) and arrived later the same day — e.g. 00:10 depart Singapore → 07:25
+  // arrive Seoul.  In this case the user was already in the air; don't apply a departure
+  // cutoff to their arrival-day activities.
+  //
+  // Crucially, a *regular* same-day departure such as 16:55 Seoul → 22:30 Singapore is
+  // NOT an overnight transit — it is a normal departure day and must be treated as one.
+  // The extra `< 8 * 60` guard prevents those daytime flights from being misclassified.
   const isOvernightTransit =
     isArrivalDay &&
     isDepartureDay &&
     !!departureFlight?.departure_time &&
     !!arrivalFlight?.arrival_time &&
-    timeToMinutes(departureFlight.departure_time) < timeToMinutes(arrivalFlight.arrival_time);
+    timeToMinutes(departureFlight.departure_time) < timeToMinutes(arrivalFlight.arrival_time) &&
+    timeToMinutes(departureFlight.departure_time) < 8 * 60; // must have departed before 08:00
 
   let earliestStart = baseStart;
   let latestEnd     = baseEnd;
@@ -231,30 +237,31 @@ export const calculateDayConstraints = (
   // Skip entirely for overnight-transit days — the departure already happened
   // before the user arrived at the destination.
   if (departureFlight?.departure_time && !isOvernightTransit) {
-    const isIntl       = departureFlight.is_international ?? true;
-    const transitMins  = getTransitMinutes(departureFlight.origin_iata);
-    const checkinMins  = isIntl ? INTERNATIONAL_CHECKIN_BUFFER : DOMESTIC_CHECKIN_BUFFER;
+    const isIntl = departureFlight.is_international ?? true;
 
-    const totalBuffer  = transitMins + checkinMins;
-    const depMins      = timeToMinutes(departureFlight.departure_time);
-    const latestMins   = depMins - totalBuffer;
-    const latestTime   = minutesToTime(Math.max(latestMins, 0));
+    // Flat airport buffer: 2.5 h for international, 2 h for domestic.
+    // This is the total time the user needs from "last activity ends" to "gate closes"
+    // (travel to airport + security + check-in). Keeps the schedule realistic without
+    // over-padding with separate transit + check-in figures.
+    const totalBuffer = isIntl ? 150 : 120;
+
+    const depMins    = timeToMinutes(departureFlight.departure_time);
+    const latestMins = depMins - totalBuffer;
+    const latestTime = minutesToTime(Math.max(latestMins, 0));
 
     latestEnd = latestTime;
 
-    // Flag early departure: flight before 10:30 on a pure departure day.
-    // These days have so little time that we show a special "plan manually" banner
-    // instead of a regular activity schedule.
-    const depHour = Math.floor(depMins / 60);
-    const depMinute = depMins % 60;
-    if (!isArrivalDay && (depHour < 10 || (depHour === 10 && depMinute < 30))) {
+    // Flag "limited departure" days: flight before noon.
+    // The user may only fit 1 activity (or none) before they need to leave —
+    // so we show a friendly "take it easy" banner instead of a packed schedule.
+    if (!isArrivalDay && depMins < 12 * 60) {
       isEarlyDeparture = true;
     }
 
     departureBreakdown = {
       departureTime:         departureFlight.departure_time.slice(0, 5),
-      transitMinutes:        transitMins,
-      airportCheckinMinutes: checkinMins,
+      transitMinutes:        isIntl ? 60 : 30,   // informational (included in flat buffer)
+      airportCheckinMinutes: isIntl ? 90 : 90,   // informational (included in flat buffer)
       lastActivityMustEndBy: latestTime,
     };
   }

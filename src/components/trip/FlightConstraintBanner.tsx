@@ -26,9 +26,9 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
     return null;
   }
 
-  // ── Early departure day: show a friendly "plan manually" notice ──────────
-  // These days have a flight before ~10:30 AM so there's essentially no time
-  // for scheduled activities. Encourage the user to add anything manually.
+  // ── Departure day with flight before noon: "take it easy" amber notice ──
+  // There's limited time before needing to leave for the airport.
+  // We suggest keeping it light and let the user add activities manually.
   if (isEarlyDeparture && isDepartureDay && !isArrivalDay) {
     return (
       <div className={cn(
@@ -37,7 +37,7 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
       )}>
         <div className="flex items-center gap-2">
           <CalendarClock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="font-semibold text-amber-900 dark:text-amber-200">Early Departure Day</span>
+          <span className="font-semibold text-amber-900 dark:text-amber-200">Departure Day</span>
         </div>
 
         {departureFlight && (
@@ -50,7 +50,15 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
                   at {departureFlight.departure_time.slice(0, 5)}
                 </span>
               )}
+              {departureFlight.is_international && (
+                <span className="text-xs text-muted-foreground">(international)</span>
+              )}
             </div>
+            {latestEnd && (
+              <span className="text-xs text-muted-foreground shrink-0">
+                → wrap up by {latestEnd}
+              </span>
+            )}
           </div>
         )}
 
@@ -58,20 +66,19 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
           <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              Tight schedule before your flight
+              We thought you might want to take it easy today
             </p>
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              With an early morning departure, there may not be enough time for most activities.
-              We've left this day open so you can plan it exactly the way you want — use the
-              <strong> + Add Activity</strong> button to add anything you'd like to squeeze in
-              (a quick breakfast, airport transfer, etc.).
+              With a flight before noon, there isn't much time before you need to head to the
+              airport. We've kept this day light — but you can add up to 1 activity (a final
+              breakfast, a quick stroll) using <strong>+ Add Activity</strong> below.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
           <PlusCircle className="w-3 h-3" />
-          <span>Tap <strong>Edit Day</strong> on the day card below to adjust the start time or add activities manually.</span>
+          <span>Tap <strong>Edit Day</strong> to adjust the start time or add activities manually.</span>
         </div>
       </div>
     );
@@ -172,8 +179,20 @@ export const FlightConstraintBanner = ({ constraints, className }: FlightConstra
         )}
       </div>
 
-      {/* Limited Time Warning — only for non-overnight days */}
-      {isLimitedTime && !isOvernightTransit && (
+      {/* Departure day — friendly reminder to keep it relaxed */}
+      {isDepartureDay && !isArrivalDay && !isOvernightTransit && (
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-background/50 p-2 rounded-md">
+          <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+          <p>
+            It's your departure day — we've left the afternoon free so you can pack,
+            head to the airport, and check in stress-free. You can manually add any
+            final activities you'd like before you fly.
+          </p>
+        </div>
+      )}
+
+      {/* Limited Time Warning — for arrival days or mixed days that are time-squeezed */}
+      {isLimitedTime && !isOvernightTransit && !(isDepartureDay && !isArrivalDay) && (
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-background/50 p-2 rounded-md">
           <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
           <p>

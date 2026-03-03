@@ -27,12 +27,13 @@ import { toast } from 'sonner';
 
 interface InviteCollaboratorDialogProps {
   itineraryId: string;
-  tripName?: string;
+  tripName?: string;  // city/trip name e.g. "Seoul"
+  cityName?: string;  // full city + country e.g. "Seoul, South Korea"
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollaboratorDialogProps) => {
+export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName }: InviteCollaboratorDialogProps) => {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -60,6 +61,8 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
       itineraryId,
       email: email.trim(),
       role,
+      tripName: tripName || 'a trip',
+      cityName: cityName || tripName || '',
     });
 
     setEmail('');
@@ -261,8 +264,8 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName }: InviteCollab
           <TabsContent value="link" className="space-y-4 mt-4">
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Share this link with anyone who has an Itinera account. They'll be able to view your trip
-                once they're signed in.
+                Share this link with people you've invited. Once they sign in to Itinera,
+                they'll be able to view your trip immediately.
               </p>
 
               <div className="flex gap-2">
