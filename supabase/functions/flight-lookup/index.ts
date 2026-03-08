@@ -22,7 +22,8 @@ const corsHeaders = {
 
 interface RequestBody {
   flight_number: string;     // e.g. "BA123" or "DL456"
-  date: string;              // YYYY-MM-DD in local departure timezone
+  date?: string;             // YYYY-MM-DD in local departure timezone
+  departure_date?: string;   // Alias for date — client sends this
   origin_iata?: string;      // e.g. "LHR" — improves OpenSky accuracy
   destination_iata?: string; // e.g. "JFK"
 }
@@ -229,6 +230,23 @@ async function lookupOpenSky(
 
     if (!match) return null;
 
+    // Reverse lookup departure IATA from ICAO to validate origin
+    const depAirportIcao: string | null = match.estDepartureAirport ?? null;
+    const matchOriginIata = depAirportIcao
+      ? Object.entries(IATA_TO_ICAO_AIRPORT).find(([, v]) => v === depAirportIcao)?.[0] ?? null
+      : null;
+
+    // If user provided an origin_iata, verify the matched flight departs from
+    // the expected airport. This prevents returning wrong routes when the
+    // callsign matches a different flight on a different day / from a
+    // different hub (e.g., SQ632 showing LHR instead of SIN).
+    if (originIata && matchOriginIata && matchOriginIata !== originIata.toUpperCase()) {
+      console.warn(
+        `OpenSky callsign match origin mismatch: expected ${originIata}, got ${matchOriginIata}. Skipping.`
+      );
+      return null;
+    }
+
     const depTime = match.firstSeen ? unixToHHMM(match.firstSeen) : null;
     const arrTime = match.lastSeen  ? unixToHHMM(match.lastSeen)  : null;
     const depDate = match.firstSeen ? unixToDateStr(match.firstSeen) : date;
@@ -240,12 +258,15 @@ async function lookupOpenSky(
       ? Object.entries(IATA_TO_ICAO_AIRPORT).find(([, v]) => v === arrAirportIcao)?.[0] ?? null
       : null;
 
+    // Use the more accurate resolved origin IATA if available
+    const resolvedOrigin = matchOriginIata || originIata || null;
+
     return {
       found: true,
       source: "opensky",
       flight_number: flightNumber.toUpperCase(),
       airline: AIRLINE_NAMES[airlineCode] ?? airlineCode,
-      origin_iata: originIata ?? null,
+      origin_iata: resolvedOrigin,
       destination_iata: destIata,
       departure_time: depTime,
       arrival_time: arrTime,
@@ -253,7 +274,7 @@ async function lookupOpenSky(
       arrival_date: arrDate,
       delay_minutes: 0, // OpenSky doesn't expose delay directly
       terminal: null,
-      is_international: guessInternational(originIata, destIata),
+      is_international: guessInternational(resolvedOrigin, destIata),
       note: "Times are UTC approximations from OpenSky transponder data",
     };
   } catch (err) {
@@ -346,11 +367,13 @@ serve(async (req) => {
 
   try {
     const body: RequestBody = await req.json();
-    const { flight_number, date, origin_iata, destination_iata } = body;
+    const { flight_number, origin_iata, destination_iata } = body;
+    // Accept both "date" and "departure_date" (client sends departure_date)
+    const date = body.date || body.departure_date;
 
     if (!flight_number || !date) {
       return new Response(
-        JSON.stringify({ error: "flight_number and date are required" }),
+        JSON.stringify({ error: "flight_number and date (or departure_date) are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

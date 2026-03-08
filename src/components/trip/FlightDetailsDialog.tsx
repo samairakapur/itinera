@@ -23,6 +23,7 @@ interface FlightDetailsDialogProps {
   tripName?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onFlightSaved?: () => void;
 }
 
 interface FlightFormData {
@@ -71,7 +72,8 @@ export const FlightDetailsDialog = ({
   itineraryId,
   tripName,
   open: controlledOpen,
-  onOpenChange: controlledOnOpenChange
+  onOpenChange: controlledOnOpenChange,
+  onFlightSaved,
 }: FlightDetailsDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -186,6 +188,9 @@ export const FlightDetailsDialog = ({
     setLookupStatus('idle');
     setIsAdding(false);
     setEditingId(null);
+
+    // Notify parent that a flight was saved (triggers regeneration banner)
+    onFlightSaved?.();
   };
 
   const handleEdit = (flight: FlightDetail) => {
@@ -287,6 +292,7 @@ export const FlightDetailsDialog = ({
       }
 
       toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+      if (addedCount > 0) onFlightSaved?.();
     } catch (err) {
       console.error('Error parsing flight:', err);
       toast.error('Failed to parse flight details. Try entering manually.');

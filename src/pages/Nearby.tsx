@@ -79,6 +79,10 @@ const Nearby = () => {
           lng,
           radiusMeters: radius * 1000,
           category: 'all',   // always fetch all; filter client-side
+          // Pass user preferences for personalised matchReason
+          interests: preferences?.interests || [],
+          cuisines: preferences?.preferredCuisines || [],
+          budget: preferences?.dailyBudget,
         },
       });
 
