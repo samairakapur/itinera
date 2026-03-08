@@ -88,8 +88,15 @@ const Nearby = () => {
 
       if (error) throw error;
 
-      // Edge function returns { places, source, count } with real API coordinates.
-      // Re-verify distance client-side as a safety net.
+      // Edge function signalled a hard error (both APIs failed)
+      if (data?.source === 'error') {
+        setPlaces([]);
+        setHasError(true);
+        toast.error('Could not load nearby places. Please try again.');
+        return;
+      }
+
+      // Edge function returns { places, source, count } — re-verify distance client-side
       if (data?.places && Array.isArray(data.places)) {
         const verified: NearbyPlace[] = data.places
           .map((p: any) => {

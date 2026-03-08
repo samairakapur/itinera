@@ -148,25 +148,25 @@ async function fetchFoursquarePlaces(
   cuisines: string[],
   budget?: string,
 ): Promise<NearbyPlace[]> {
-  // Use /places/search for proper radius + category filtering
-  // (The /nearby endpoint is a "trending" feed that ignores radius)
-  const url = new URL("https://api.foursquare.com/v3/places/search");
-  url.searchParams.set("ll", `${lat},${lng}`);
-  url.searchParams.set("radius", String(Math.min(radiusMeters, 100000)));
-  url.searchParams.set("categories", categoryIds);
-  url.searchParams.set("limit", "30");
-  url.searchParams.set(
-    "fields",
-    "fsq_id,name,geocodes,categories,rating,price,hours,location,photos,description,distance",
-  );
-  url.searchParams.set("sort", "DISTANCE");
+  // IMPORTANT: Build URL manually — URLSearchParams encodes commas as %2C,
+  // but Foursquare v3 requires literal commas in both `ll` and `categories`.
+  const fields = "fsq_id,name,geocodes,categories,rating,price,hours,location,photos,description,distance";
+  const radius = Math.min(radiusMeters, 100000);
+  const urlStr =
+    `https://api.foursquare.com/v3/places/search` +
+    `?ll=${lat},${lng}` +
+    `&radius=${radius}` +
+    `&categories=${categoryIds}` +
+    `&limit=30` +
+    `&fields=${fields}` +
+    `&sort=DISTANCE`;
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(urlStr, {
     headers: {
       Authorization: apiKey,
       Accept: "application/json",
     },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -252,6 +252,96 @@ async function fetchFoursquarePlaces(
 }
 
 // ---------------------------------------------------------------------------
+// OpenStreetMap Overpass API — free, no key required, used as fallback
+// ---------------------------------------------------------------------------
+async function fetchOverpassPlaces(
+  lat: number,
+  lng: number,
+  radiusMeters: number,
+  interests: string[],
+  cuisines: string[],
+  budget?: string,
+): Promise<NearbyPlace[]> {
+  const radius = Math.min(radiusMeters, 50000);
+
+  // Overpass QL — fetch amenity, tourism, historic, leisure nodes within radius
+  const query = `[out:json][timeout:20];
+(
+  node["amenity"~"restaurant|cafe|bar|pub|fast_food|ice_cream|food_court"](around:${radius},${lat},${lng});
+  node["amenity"~"museum|theatre|cinema|library|art_gallery|nightclub|casino"](around:${radius},${lat},${lng});
+  node["tourism"~"attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork"](around:${radius},${lat},${lng});
+  node["historic"~"monument|castle|ruins|memorial|building|church|fort"](around:${radius},${lat},${lng});
+  node["leisure"~"park|garden|nature_reserve"](around:${radius},${lat},${lng});
+);
+out body;`;
+
+  const res = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `data=${encodeURIComponent(query)}`,
+    signal: AbortSignal.timeout(25000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Overpass API error ${res.status}`);
+  }
+
+  const data = await res.json();
+  const elements: any[] = data.elements || [];
+
+  const cafeAmenities = ["cafe", "bar", "pub", "ice_cream"];
+  const restaurantAmenities = ["restaurant", "fast_food", "food_court"];
+
+  return elements
+    .filter((el) => el.tags?.name) // only named places
+    .map((el): NearbyPlace => {
+      const pLat = el.lat as number;
+      const pLng = el.lon as number;
+      const distKm = haversine(lat, lng, pLat, pLng);
+
+      const amenity = (el.tags?.amenity || "") as string;
+      const tourism  = (el.tags?.tourism  || "") as string;
+      const historic = (el.tags?.historic || "") as string;
+      const leisure  = (el.tags?.leisure  || "") as string;
+      const catTags  = [amenity, tourism, historic, leisure].filter(Boolean);
+
+      let placeType: NearbyPlace["type"] = "attraction";
+      if (restaurantAmenities.includes(amenity)) placeType = "restaurant";
+      if (cafeAmenities.includes(amenity))        placeType = "cafe";
+
+      const name = el.tags.name as string;
+
+      return {
+        id:               `osm-${el.id}`,
+        name,
+        type:             placeType,
+        description:      (el.tags?.description as string) || catTags[0] || "Local point of interest",
+        latitude:         pLat,
+        longitude:        pLng,
+        rating:           null,
+        priceLevel:       null,
+        openNow:          null,
+        address:          [
+          el.tags?.["addr:housenumber"],
+          el.tags?.["addr:street"],
+          el.tags?.["addr:city"],
+        ].filter(Boolean).join(", "),
+        imageUrl:         null,
+        distanceKm:       distKm,
+        distance:         formatDistance(distKm),
+        typicalTimeSpent: typicalTime(placeType, name),
+        matchReason:      buildMatchReason(
+          { name, type: placeType, description: el.tags?.description || "", categories: catTags },
+          interests, cuisines, budget,
+        ),
+        cuisine: placeType === "restaurant" ? (el.tags?.cuisine as string | undefined) : undefined,
+      };
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 20);
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 serve(async (req) => {
@@ -278,50 +368,54 @@ serve(async (req) => {
       );
     }
 
-    const foursquareKey = Deno.env.get("FOURSQUARE_API_KEY");
-
-    if (!foursquareKey) {
-      console.warn("FOURSQUARE_API_KEY is not set — returning empty places list");
-      return new Response(
-        JSON.stringify({
-          places: [],
-          source: "none",
-          count: 0,
-          message:
-            "Nearby places require a Foursquare API key. Add FOURSQUARE_API_KEY to your Supabase Edge Function secrets.",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Foursquare category ID groups
-    // Full Foursquare v3 category tree: https://location.foursquare.com/places/docs/categories
     const fsqMap: Record<string, string> = {
-      attraction: "10000,16000,17000,12000", // arts+entertainment, outdoors, events, landmarks
-      cafe:       "13032,13033,13034,13035,13036", // coffee, tea, bakery, juice bar
-      restaurant: "13065,13000",                   // restaurant, food & drink
+      attraction: "10000,16000,17000,12000",
+      cafe:       "13032,13033,13034,13035,13036",
+      restaurant: "13065,13000",
       all:        "10000,12000,13000,13032,13033,13065,16000",
     };
     const categoryIds = fsqMap[category] || fsqMap.all;
 
+    const foursquareKey = Deno.env.get("FOURSQUARE_API_KEY");
     let places: NearbyPlace[] = [];
+    let source = "openstreetmap";
 
-    try {
-      places = await fetchFoursquarePlaces(
-        lat, lng, radiusMeters, categoryIds, foursquareKey,
-        interests, cuisines, budget,
-      );
-    } catch (fsErr) {
-      console.error("Foursquare request failed:", fsErr);
-      return new Response(
-        JSON.stringify({
-          places: [],
-          source: "foursquare_error",
-          count: 0,
-          message: "Could not reach Foursquare — please try again later.",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // ── Try Foursquare first (if key is configured) ──────────────────────────
+    if (foursquareKey) {
+      try {
+        places = await fetchFoursquarePlaces(
+          lat, lng, radiusMeters, categoryIds, foursquareKey,
+          interests, cuisines, budget,
+        );
+        source = "foursquare";
+        console.log(`Foursquare returned ${places.length} places`);
+      } catch (fsErr) {
+        const fsErrMsg = fsErr instanceof Error ? fsErr.message : String(fsErr);
+        // 401 = invalid/expired key; fall through to Overpass
+        console.warn(`Foursquare unavailable (${fsErrMsg}) — falling back to OpenStreetMap`);
+      }
+    }
+
+    // ── Fall back to OpenStreetMap Overpass if Foursquare had no results ─────
+    if (places.length === 0) {
+      try {
+        places = await fetchOverpassPlaces(lat, lng, radiusMeters, interests, cuisines, budget);
+        source = "openstreetmap";
+        console.log(`Overpass returned ${places.length} places`);
+      } catch (osmErr) {
+        const osmErrMsg = osmErr instanceof Error ? osmErr.message : String(osmErr);
+        console.error("Overpass also failed:", osmErrMsg);
+        return new Response(
+          JSON.stringify({
+            places: [],
+            source: "error",
+            count: 0,
+            message: "Could not reach any places service. Please try again later.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Sort by distance and cap at 20
@@ -329,7 +423,7 @@ serve(async (req) => {
     places = places.slice(0, 20);
 
     return new Response(
-      JSON.stringify({ places, source: "foursquare", count: places.length }),
+      JSON.stringify({ places, source, count: places.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

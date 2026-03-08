@@ -415,6 +415,8 @@ const TripDetail = () => {
                 <FlightDetailsDialog
                   itineraryId={tripId}
                   tripName={itinerary.cities?.name}
+                  tripDestinationCity={itinerary.cities?.name}
+                  tripStartDate={itinerary.start_date || undefined}
                   onFlightSaved={() => setFlightJustSaved(true)}
                 />
               )}
