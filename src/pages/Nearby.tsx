@@ -102,7 +102,7 @@ out center tags;`;
       if (elements.length === 0) continue;
 
       return elements
-        .slice(0, 30)
+        .slice(0, 50)
         .map((el: any): NearbyPlace => {
           // node elements have el.lat/el.lon directly;
           // way elements need el.center.lat/el.center.lon (from "out center")
@@ -125,11 +125,26 @@ out center tags;`;
               `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(wmc)}?width=400`;
           }
 
+          // OSM cuisine tag e.g. "indian", "japanese", "pizza;italian"
+          const rawCuisine = el.tags?.cuisine as string | undefined;
+          const cuisine = rawCuisine
+            ? rawCuisine.split(/[;,]/).map((c: string) => c.trim()).join(', ')
+            : undefined;
+
+          // Build a rich description that the AI can match against food queries
+          const descParts: string[] = [];
+          if (cuisine) descParts.push(`Serves ${cuisine} cuisine`);
+          if (el.tags?.description) descParts.push(el.tags.description as string);
+          else if (el.tags?.tourism) descParts.push(el.tags.tourism as string);
+          else if (amenity && amenity !== 'restaurant' && amenity !== 'cafe') descParts.push(amenity);
+          const description = descParts.join('. ') || 'Local point of interest';
+
           return {
             id: `osm-${el.id}`,
             name: el.tags.name,
             type,
-            description: el.tags?.description || el.tags?.tourism || amenity || 'Local attraction',
+            description,
+            cuisine,
             latitude: pLat,
             longitude: pLng,
             rating: null,
@@ -141,7 +156,7 @@ out center tags;`;
             distance: distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)} km`,
             typicalTimeSpent:
               type === 'cafe' ? '30 – 60 min' : type === 'restaurant' ? '45 min – 1.5 hrs' : '1 – 2 hrs',
-            matchReason: 'Nearby local point of interest',
+            matchReason: cuisine ? `${cuisine.charAt(0).toUpperCase() + cuisine.slice(1)} cuisine nearby` : 'Nearby local point of interest',
           };
         })
         .sort((a, b) => (a.distanceKm ?? 99) - (b.distanceKm ?? 99));
@@ -413,10 +428,13 @@ const Nearby = () => {
     setAiLoading(true);
     setAiInputValue('');
 
-    // Build a compact venue list for the prompt (cap at 25 to keep tokens manageable)
-    const venueList = places.slice(0, 25).map(p =>
-      `- ${p.name} (${p.type}, ${p.distance}${p.rating ? `, rated ${p.rating}/5` : ''}): ${p.description || p.matchReason || ''}`
-    ).join('\n');
+    // Build a compact venue list for the prompt (cap at 40 to keep tokens manageable)
+    // Include cuisine tag explicitly so the AI can match food-specific queries (e.g. "I want lamb" → Indian restaurant)
+    const venueList = places.slice(0, 40).map(p => {
+      const cuisineNote = p.cuisine ? ` [cuisine: ${p.cuisine}]` : '';
+      const ratingNote = p.rating ? `, rated ${p.rating}/5` : '';
+      return `- ${p.name} (${p.type}${cuisineNote}, ${p.distance}${ratingNote}): ${p.description || p.matchReason || ''}`;
+    }).join('\n');
 
     const prefsContext = preferences ? [
       preferences.interests?.length ? `Interests: ${preferences.interests.join(', ')}` : '',
