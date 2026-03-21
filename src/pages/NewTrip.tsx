@@ -90,6 +90,7 @@ const NewTrip = () => {
   const [selectedCities, setSelectedCities] = useState<{ cityId: string; daysToSpend: number }[]>([]);
   
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingStatus, setGeneratingStatus] = useState('');
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
   const [weatherData, setWeatherData] = useState<DayWeather[]>([]);
@@ -186,46 +187,58 @@ const NewTrip = () => {
       // start date in the DateSelectionStep before saving the trip.
       const provisionalStartDate = new Date().toISOString().split('T')[0];
 
-      const response = await fetch(ITINERARY_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
+      const requestBody = JSON.stringify({
+        // Multi-city array (primary)
+        cities: citiesForRequest,
+        // Legacy single-city fields (fallback)
+        cityName: citiesForRequest[0].cityName,
+        countryName: citiesForRequest[0].countryName,
+        numDays,
+        travelStyle: mapTravelGroup(preferences.travelGroup),
+        budgetLevel: mapBudgetStyle(preferences.budgetStyle),
+        pace: mapDailyPace(preferences.dailyPace),
+        dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
+        userPreferences: {
+          ...profile?.travel_preferences,
+          mainInterests: preferences.mainInterests,
+          comfortPreferences: preferences.comfortPreferences,
+          tripVibe: preferences.tripVibe,
+          specialOccasion: preferences.specialOccasion,
         },
-        body: JSON.stringify({
-          // Multi-city array (primary)
-          cities: citiesForRequest,
-          // Legacy single-city fields (fallback)
-          cityName: citiesForRequest[0].cityName,
-          countryName: citiesForRequest[0].countryName,
-          numDays,
-          travelStyle: mapTravelGroup(preferences.travelGroup),
-          budgetLevel: mapBudgetStyle(preferences.budgetStyle),
-          pace: mapDailyPace(preferences.dailyPace),
-          dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
-          userPreferences: {
-            ...profile?.travel_preferences,
-            mainInterests: preferences.mainInterests,
-            comfortPreferences: preferences.comfortPreferences,
-            tripVibe: preferences.tripVibe,
-            specialOccasion: preferences.specialOccasion,
-          },
-          cityDescription: citiesForRequest[0].cityDescription,
-          // Provisional start date — Claude uses this for real calendar dates.
-          // The user will confirm / adjust in the date-selection step.
-          startDate: provisionalStartDate,
-        }),
+        cityDescription: citiesForRequest[0].cityDescription,
+        startDate: provisionalStartDate,
       });
+
+      const fetchItinerary = () => fetch(ITINERARY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: requestBody,
+      });
+
+      // Auto-retry: silently retry up to 2× when Gemini is rate-limited (429/503).
+      // Status is shown inline in the loading card — no intrusive toast.
+      let response = await fetchItinerary();
+      if (response.status === 429 || response.status === 503) {
+        setGeneratingStatus('AI is a little busy — retrying shortly…');
+        await new Promise(r => setTimeout(r, 8_000));
+        setGeneratingStatus('');
+        response = await fetchItinerary();
+      }
+      if (response.status === 429 || response.status === 503) {
+        setGeneratingStatus('Still warming up — almost there…');
+        await new Promise(r => setTimeout(r, 12_000));
+        setGeneratingStatus('');
+        response = await fetchItinerary();
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const msg = errorData.error || '';
-        // Provide helpful, specific messages for known error cases
         if (response.status === 429) {
-          throw new Error('The AI is a little busy right now. Please wait a few seconds and try again.');
+          throw new Error('The AI is still very busy. Please wait 30 seconds and try again.');
         }
         if (response.status === 503) {
-          throw new Error('The AI service is temporarily overloaded. Please try again in a moment.');
+          throw new Error('The AI service is temporarily unavailable. Please try again in a moment.');
         }
         if (response.status === 401) {
           throw new Error('Unable to authenticate with the AI service. Please sign out and back in.');
@@ -302,6 +315,7 @@ const NewTrip = () => {
       setViewMode('form');
     } finally {
       setIsGenerating(false);
+      setGeneratingStatus('');
     }
   };
 
@@ -590,10 +604,12 @@ const NewTrip = () => {
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
                 <p className="text-muted-foreground">
-                  Crafting your personalized adventure...
+                  {generatingStatus || 'Crafting your personalized adventure...'}
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This usually takes 10-20 seconds
+                  {generatingStatus
+                    ? 'This can take up to 30 seconds when AI is busy'
+                    : 'This usually takes 10–20 seconds'}
                 </p>
               </CardContent>
             </Card>

@@ -166,7 +166,7 @@ async function fetchFoursquarePlaces(
       Authorization: apiKey,
       Accept: "application/json",
     },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {
@@ -252,7 +252,8 @@ async function fetchFoursquarePlaces(
 }
 
 // ---------------------------------------------------------------------------
-// OpenStreetMap Overpass API — free, no key required, used as fallback
+// OpenStreetMap Overpass API — free, no key required
+// Tries a fast compact query first; if that times out, tries a minimal fallback.
 // ---------------------------------------------------------------------------
 async function fetchOverpassPlaces(
   lat: number,
@@ -262,25 +263,37 @@ async function fetchOverpassPlaces(
   cuisines: string[],
   budget?: string,
 ): Promise<NearbyPlace[]> {
-  const radius = Math.min(radiusMeters, 50000);
+  const radius = Math.min(radiusMeters, 25000); // cap at 25km for speed
 
-  // Overpass QL — fetch amenity, tourism, historic, leisure nodes within radius
-  const query = `[out:json][timeout:20];
+  // Primary query — most useful amenity/tourism/historic types
+  const query = `[out:json][timeout:12];
 (
-  node["amenity"~"restaurant|cafe|bar|pub|fast_food|ice_cream|food_court"](around:${radius},${lat},${lng});
-  node["amenity"~"museum|theatre|cinema|library|art_gallery|nightclub|casino"](around:${radius},${lat},${lng});
-  node["tourism"~"attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park|artwork"](around:${radius},${lat},${lng});
-  node["historic"~"monument|castle|ruins|memorial|building|church|fort"](around:${radius},${lat},${lng});
-  node["leisure"~"park|garden|nature_reserve"](around:${radius},${lat},${lng});
+  node["amenity"~"restaurant|cafe|bar|pub|fast_food|ice_cream"](around:${radius},${lat},${lng});
+  node["amenity"~"museum|theatre|art_gallery"](around:${radius},${lat},${lng});
+  node["tourism"~"attraction|museum|gallery|viewpoint|zoo|aquarium"](around:${radius},${lat},${lng});
+  node["historic"~"monument|castle|memorial|building"](around:${radius},${lat},${lng});
+  node["leisure"~"park|garden"](around:${radius},${lat},${lng});
 );
 out body;`;
 
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
+  // Try primary Overpass endpoint with 14s browser abort
+  let res = await fetch("https://overpass-api.de/api/interpreter", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `data=${encodeURIComponent(query)}`,
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(14000),
   });
+
+  // If primary endpoint is overloaded (429/503), try the backup mirror
+  if (!res.ok && (res.status === 429 || res.status === 503)) {
+    console.warn(`Primary Overpass failed (${res.status}), trying backup mirror…`);
+    res = await fetch("https://overpass.kumi.systems/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(14000),
+    });
+  }
 
   if (!res.ok) {
     throw new Error(`Overpass API error ${res.status}`);
@@ -406,15 +419,69 @@ serve(async (req) => {
       } catch (osmErr) {
         const osmErrMsg = osmErr instanceof Error ? osmErr.message : String(osmErr);
         console.error("Overpass also failed:", osmErrMsg);
-        return new Response(
-          JSON.stringify({
-            places: [],
-            source: "error",
-            count: 0,
-            message: "Could not reach any places service. Please try again later.",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+
+        // ── Last resort: try the backup Overpass mirror with a simpler query ──
+        try {
+          console.log("Trying minimal Overpass fallback query…");
+          const simpleRadius = Math.min(radiusMeters, 10000);
+          const simpleQuery = `[out:json][timeout:10];
+(
+  node["amenity"~"restaurant|cafe|museum"](around:${simpleRadius},${lat},${lng});
+  node["tourism"="attraction"](around:${simpleRadius},${lat},${lng});
+);
+out body;`;
+          const fallbackRes = await fetch("https://overpass.kumi.systems/api/interpreter", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `data=${encodeURIComponent(simpleQuery)}`,
+            signal: AbortSignal.timeout(12000),
+          });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            const elements: any[] = (fallbackData.elements || []).filter((el: any) => el.tags?.name);
+            if (elements.length > 0) {
+              places = elements.slice(0, 20).map((el: any): NearbyPlace => {
+                const pLat = el.lat as number;
+                const pLng = el.lon as number;
+                const distKm = haversine(lat, lng, pLat, pLng);
+                const amenity = el.tags?.amenity || "";
+                let placeType: NearbyPlace["type"] = "attraction";
+                if (["restaurant","fast_food"].includes(amenity)) placeType = "restaurant";
+                if (["cafe","bar","pub"].includes(amenity)) placeType = "cafe";
+                return {
+                  id: `osm-${el.id}`,
+                  name: el.tags.name,
+                  type: placeType,
+                  description: el.tags?.description || amenity || "Local attraction",
+                  latitude: pLat, longitude: pLng,
+                  rating: null, priceLevel: null, openNow: null,
+                  address: [el.tags?.["addr:street"], el.tags?.["addr:city"]].filter(Boolean).join(", "),
+                  imageUrl: null,
+                  distanceKm: distKm,
+                  distance: formatDistance(distKm),
+                  typicalTimeSpent: typicalTime(placeType, el.tags.name),
+                  matchReason: buildMatchReason({ name: el.tags.name, type: placeType }, interests, cuisines, budget),
+                };
+              }).sort((a, b) => a.distanceKm - b.distanceKm);
+              source = "openstreetmap";
+              console.log(`Fallback Overpass returned ${places.length} places`);
+            }
+          }
+        } catch (fallbackErr) {
+          console.error("Fallback Overpass also failed:", fallbackErr);
+        }
+
+        if (places.length === 0) {
+          return new Response(
+            JSON.stringify({
+              places: [],
+              source: "error",
+              count: 0,
+              message: "Could not reach any places service. Please try again later.",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
     }
 

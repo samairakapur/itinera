@@ -18,6 +18,12 @@ export interface SavedItinerary {
   dietary_preferences: string[] | null;
   home_base: string | null;
   estimated_daily_cost: number | null;
+  /**
+   * True once the itinerary has been (re)generated with flight constraints applied.
+   * Set to false whenever a flight is added / updated / deleted, so the amber
+   * "Regenerate Itinerary" banner re-appears automatically.
+   */
+  is_flight_aware: boolean;
   created_at: string;
   updated_at: string;
   cities?: {
@@ -120,6 +126,62 @@ export const useItinerary = (itineraryId: string | undefined) => {
       return data as SavedItinerary;
     },
     enabled: !!user && !!itineraryId,
+  });
+};
+
+/**
+ * Returns the first itinerary where today's date falls within the trip's
+ * start_date → end_date window. Used to show the global "Today's Trip" banner.
+ */
+export const useActiveTripToday = () => {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['active-trip-today', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const { data, error } = await supabase
+        .from('itineraries')
+        .select(`
+          id,
+          name,
+          num_days,
+          start_date,
+          end_date,
+          cities (
+            name,
+            country
+          )
+        `)
+        .eq('user_id', user.id)
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr)
+        .order('start_date', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) return null;
+
+      const trip = data[0] as any;
+      const startDate = new Date(trip.start_date);
+      // Calculate which day of the trip today is (1-indexed)
+      const diffMs = today.getTime() - startDate.getTime();
+      const dayNumber = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+
+      return {
+        id: trip.id as string,
+        name: trip.name as string,
+        cityName: (trip.cities?.name as string) || '',
+        dayNumber,
+        numDays: trip.num_days as number,
+      };
+    },
+    enabled: !!user,
+    staleTime: 60_000, // re-check at most once per minute
   });
 };
 

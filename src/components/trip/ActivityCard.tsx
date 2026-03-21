@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { 
-  Utensils, 
-  Landmark, 
-  MapPin, 
-  Clock, 
-  Star, 
+import {
+  Utensils,
+  Landmark,
+  MapPin,
+  Clock,
+  Timer,
+  Star,
   MoreHorizontal,
   ArrowUpDown,
   Trash2,
@@ -19,7 +20,9 @@ import {
   Check,
   CheckCircle2,
   Circle,
-  ChevronDown
+  ChevronDown,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +49,7 @@ import { toast } from 'sonner';
 
 export interface Activity {
   id: string;
-  type: 'attraction' | 'restaurant' | 'transport' | 'custom' | 'prebooked';
+  type: 'attraction' | 'restaurant' | 'transport' | 'custom' | 'prebooked' | 'flex';
   title: string;
   description?: string;
   time?: string;
@@ -76,6 +79,10 @@ interface ActivityCardProps {
   onToggleComplete?: (id: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
+  /** Computed by the reflow engine — overrides activity.time when present */
+  computedStartTime?: string;
+  /** True when this activity overflows the day's flight-constraint window */
+  isScheduleOverflow?: boolean;
 }
 
 const typeIcons = {
@@ -84,6 +91,7 @@ const typeIcons = {
   transport: MapPin,
   custom: Star,
   prebooked: Ticket,
+  flex: Sparkles,
 };
 
 const typeColors = {
@@ -92,6 +100,7 @@ const typeColors = {
   transport: 'bg-sky/10 text-sky border-sky/20',
   custom: 'bg-lavender/10 text-lavender border-lavender/20',
   prebooked: 'bg-primary/10 text-primary border-primary/20',
+  flex: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
 };
 
 export const ActivityCard = ({
@@ -107,6 +116,8 @@ export const ActivityCard = ({
   onToggleComplete,
   isFirst,
   isLast,
+  computedStartTime,
+  isScheduleOverflow = false,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -158,12 +169,22 @@ export const ActivityCard = ({
     window.open(getGoogleMapsUrl(), '_blank', 'noopener,noreferrer');
   };
 
+  // Split description and booking warning (⚠️ line)
+  const rawDesc = activity.description || '';
+  const bookingWarningIdx = rawDesc.indexOf('\n⚠️');
+  const mainDescription = bookingWarningIdx >= 0 ? rawDesc.slice(0, bookingWarningIdx).trim() : rawDesc;
+  const bookingWarning = bookingWarningIdx >= 0 ? rawDesc.slice(bookingWarningIdx + 1).trim() : undefined;
+
+  const isFlexActivity = activity.type === 'flex';
+
   return (
     <Card className={cn(
       "border shadow-sm hover:shadow-md transition-all duration-200",
+      isFlexActivity && "border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/10",
       activity.mustDo && "ring-2 ring-primary/30 bg-primary/5",
       activity.isPrebooked && "ring-2 ring-teal/30 bg-teal/5",
-      isCompleted && "opacity-60 bg-muted/50"
+      isCompleted && "opacity-60 bg-muted/50",
+      isScheduleOverflow && "border-l-4 border-l-destructive/70",
     )}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
@@ -197,6 +218,11 @@ export const ActivityCard = ({
                   )}>
                     {activity.title}
                   </h4>
+                  {isFlexActivity && (
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-amber-300 text-amber-700 bg-amber-50">
+                      Free time
+                    </Badge>
+                  )}
                   {activity.mustDo && (
                     <Badge variant="default" className="text-xs px-2 py-0.5">
                       Must-Do
@@ -209,10 +235,17 @@ export const ActivityCard = ({
                     </Badge>
                   )}
                 </div>
-                {activity.description && (
+                {mainDescription && (
                   <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                    {activity.description}
+                    {mainDescription}
                   </p>
+                )}
+                {/* Booking warning pill */}
+                {bookingWarning && (
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-2 py-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{bookingWarning.replace(/^⚠️\s*/, '')}</span>
+                  </div>
                 )}
               </div>
 
@@ -272,17 +305,31 @@ export const ActivityCard = ({
             </div>
 
             {/* Meta */}
-            {(activity.time || activity.duration || activity.location) && (
+            {(computedStartTime || activity.time || activity.duration || activity.location) && (
               <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
-                {activity.time && (
+                {/* Reflow-computed start time — shown in red when activity overflows day window */}
+                {computedStartTime ? (
+                  <span className={cn(
+                    "flex items-center gap-1 font-medium",
+                    isScheduleOverflow
+                      ? "text-destructive"
+                      : "text-foreground"
+                  )}>
+                    <Clock className="w-3 h-3" />
+                    {computedStartTime}
+                    {isScheduleOverflow && (
+                      <span className="ml-0.5 text-destructive font-normal">(over limit)</span>
+                    )}
+                  </span>
+                ) : activity.time ? (
                   <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     {activity.time}
                   </span>
-                )}
+                ) : null}
                 {activity.duration && (
                   <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                    <Timer className="w-3 h-3" />
                     {activity.duration}
                   </span>
                 )}
@@ -296,7 +343,7 @@ export const ActivityCard = ({
             )}
 
             {/* How to get there */}
-            {activity.type !== 'transport' && (
+            {activity.type !== 'transport' && activity.type !== 'flex' && (
               <div className="mt-3 flex items-center gap-2">
                 <Popover>
                   <PopoverTrigger asChild>

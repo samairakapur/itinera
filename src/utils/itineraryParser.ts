@@ -169,24 +169,50 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
           const duration = headerMatch[3]?.trim() || '';
           const time = headerMatch[4]?.trim() || '';
 
-          // Get description (line after header, before Why:)
+          // Get description (line after header, before Why: or ⚠️)
           const restOfBlock = block.slice(block.indexOf(headerMatch[0]) + headerMatch[0].length);
-          const descMatch = restOfBlock.match(/^\s*\n?\s*([^\n]+?)(?:\s*\n\s*Why:|$)/);
+          const descMatch = restOfBlock.match(/^\s*\n?\s*([^\n]+?)(?:\s*\n\s*(?:Why:|⚠️)|$)/);
           const whyMatch = restOfBlock.match(/Why:\s*([^\n]+)/i);
+          // Capture booking warning if present
+          const bookingWarningMatch = restOfBlock.match(/⚠️\s*([^\n]+)/);
+
+          // Build description, optionally appending the booking warning
+          let description = descMatch?.[1]?.trim() || undefined;
+          if (bookingWarningMatch) {
+            const warning = `⚠️ ${bookingWarningMatch[1].trim()}`;
+            description = description ? `${description}\n${warning}` : warning;
+          }
 
           if (title && title.length > 2) {
-            const isRestaurant = typeHint.includes('restaurant') ||
-                                title.toLowerCase().includes('lunch') ||
-                                title.toLowerCase().includes('dinner') ||
-                                title.toLowerCase().includes('breakfast') ||
-                                title.toLowerCase().includes('café') ||
-                                title.toLowerCase().includes('cafe');
+            // Determine activity type from the explicit pipe value first,
+            // then fall back to title keyword detection
+            let activityType: string;
+            if (typeHint.includes('transport') || title.includes('🚶')) {
+              activityType = 'transport';
+            } else if (typeHint.includes('flex') || title.includes('🗺️')) {
+              activityType = 'flex';
+            } else if (typeHint.includes('prebooked')) {
+              activityType = 'prebooked';
+            } else if (
+              typeHint.includes('restaurant') ||
+              title.toLowerCase().includes('lunch') ||
+              title.toLowerCase().includes('dinner') ||
+              title.toLowerCase().includes('breakfast') ||
+              title.toLowerCase().includes('café') ||
+              title.toLowerCase().includes('cafe')
+            ) {
+              activityType = 'restaurant';
+            } else {
+              activityType = 'attraction';
+            }
 
             activities.push({
               id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
-              type: isRestaurant ? 'restaurant' : 'attraction',
-              title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
-              description: descMatch?.[1]?.trim() || undefined,
+              type: activityType,
+              title: title
+                .replace(/^(Lunch|Dinner|Breakfast):\s*/i, '')
+                .replace(/^🗺️\s*Wander\s*&\s*Explore:\s*/i, '🗺️ '),
+              description,
               duration: duration || undefined,
               time: time || undefined,
               reasoning: whyMatch?.[1]?.trim(),

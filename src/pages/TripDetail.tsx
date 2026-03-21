@@ -18,6 +18,7 @@ import { FlightPromptBanner } from '@/components/trip/FlightPromptBanner';
 import { FlightConstraintBanner } from '@/components/trip/FlightConstraintBanner';
 import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDialog';
 import { CityDayBadge } from '@/components/trip/CityDayBadge';
+import { TransitionDayCard } from '@/components/trip/TransitionDayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -502,7 +503,7 @@ const TripDetail = () => {
           )}
 
           {/* Regeneration Banner — shows when flights exist but itinerary hasn't been regenerated */}
-          {flights.length > 0 && !(itinerary as any).is_flight_aware && (
+          {flights.length > 0 && !itinerary.is_flight_aware && (
             <Card className="border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -544,7 +545,7 @@ const TripDetail = () => {
           )}
 
           {/* Also show banner right after saving a new flight */}
-          {flightJustSaved && (itinerary as any).is_flight_aware && flights.length > 0 && (
+          {flightJustSaved && itinerary.is_flight_aware && flights.length > 0 && (
             <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -686,6 +687,38 @@ const TripDetail = () => {
                 {departureFlights.map(flight => (
                   <FlightCard key={`departure-${flight.id}`} flight={flight} type="departure" />
                 ))}
+
+                {/* TransitionDayCard — shown after the last day of every leg except the final one */}
+                {tripLegs.length > 1 && isLastDayOfLeg && legForDay && (
+                  (() => {
+                    const nextLeg = tripLegs.find(l => l.leg_number === (legForDay.leg_number ?? 0) + 1);
+                    if (!nextLeg) return null;
+
+                    // Flights connecting this leg to the next (departure or arrival on the gap date)
+                    const nextArrivalDay = nextLeg.start_day;
+                    const nextArrivalDate = startDate ? addDays(startDate, nextArrivalDay - 1) : undefined;
+                    const connectingFlights = nextArrivalDate
+                      ? flights.filter(f =>
+                          isSameDay(new Date(f.departure_date), dayDate || new Date()) ||
+                          isSameDay(new Date(f.arrival_date), nextArrivalDate)
+                        )
+                      : [];
+
+                    // Constraint for the arrival day (first day of next leg)
+                    const arrivalConstraint = dayConstraints[nextArrivalDay - 1];
+
+                    return (
+                      <TransitionDayCard
+                        key={`transition-${legForDay.leg_number}`}
+                        fromLeg={legForDay}
+                        toLeg={nextLeg}
+                        connectingFlights={connectingFlights}
+                        arrivalDayStart={arrivalConstraint?.earliestStart}
+                        arrivalDayNumber={nextArrivalDay}
+                      />
+                    );
+                  })()
+                )}
               </div>
             );
           })}
@@ -717,7 +750,7 @@ const TripDetail = () => {
                 setFlightJustSaved(false);
                 regenerateItinerary.mutate({
                   itineraryId: tripId,
-                  itinerary: itinerary as any,
+                  itinerary,
                   flights,
                 });
               }}

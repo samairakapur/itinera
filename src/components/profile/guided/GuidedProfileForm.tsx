@@ -411,7 +411,8 @@ export const GuidedProfileForm = ({
       </div>
 
       {/* Navigation */}
-      <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t px-4 py-4">
+      {/* bottom-16 on mobile clears the fixed MobileBottomNav (h-16); bottom-0 on md+ where it is hidden */}
+      <div className="sticky bottom-16 md:bottom-0 bg-background/95 backdrop-blur-sm border-t px-4 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
           <Button
             variant="ghost"
