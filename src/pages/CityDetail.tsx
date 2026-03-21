@@ -81,7 +81,7 @@ const CityDetail = () => {
   return (
     <div className="min-h-screen">
       {/* Hero */}
-      <div className="relative h-64 md:h-80 overflow-hidden">
+      <div className="relative h-72 md:h-[50vh] overflow-hidden">
         {city.hero_image_url || city.image_url ? (
           <img
             src={city.hero_image_url || city.image_url || ''}
@@ -89,7 +89,7 @@ const CityDetail = () => {
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20" />
+          <div className="w-full h-full bg-muted" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8">
@@ -118,7 +118,7 @@ const CityDetail = () => {
       <div className="container px-4 py-6 md:py-8">
         <Tabs defaultValue="overview" className="space-y-6 md:space-y-8">
           {/* Mobile-friendly tabs with icons AND text */}
-          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto gap-1 bg-muted/50 p-1.5">
+          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto gap-1 bg-muted/30 p-1 border border-white/5">
             <TabsTrigger value="overview" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Info className="w-4 h-4" />
               <span>Overview</span>

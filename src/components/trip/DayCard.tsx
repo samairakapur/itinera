@@ -324,10 +324,10 @@ export const DayCard = ({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <Card className="border shadow-sm overflow-hidden">
           <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors p-4">
+            <CardHeader className="cursor-pointer hover:bg-white/5 transition-colors p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-primary flex flex-col items-center justify-center text-primary-foreground">
+                  <div className="w-12 h-12 rounded-sm border border-primary/40 flex flex-col items-center justify-center text-primary">
                     {formattedDate ? (
                       <>
                         <span className="text-xs font-medium leading-none">{dayOfWeek}</span>
@@ -410,7 +410,7 @@ export const DayCard = ({
             <CardContent className="p-4 pt-0 space-y-6">
               {/* Weather Summary Banner */}
               {day.weather && (
-                <div className="p-4 rounded-xl bg-gradient-to-r from-sky/10 via-primary/5 to-teal/10 border border-sky/20">
+                <div className="p-4 rounded-sm bg-muted/60 border border-white/8">
                   <div className="flex items-start gap-4">
                     <div className="p-3 rounded-xl bg-background/80 shadow-sm">
                       <WeatherIcon className="w-8 h-8 text-primary" />

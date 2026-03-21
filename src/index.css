@@ -1,168 +1,153 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Quicksand:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* TravelBuddy Design System - Vibrant & Playful */
+/* Itinera Design System — Dark & Luxe */
 
 @layer base {
   :root {
-    /* Core brand colors - Warm and inviting */
-    --background: 45 30% 98%;
-    --foreground: 240 15% 15%;
+    /* === BACKGROUNDS === */
+    --background: 0 0% 4%;
+    --foreground: 38 36% 94%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 240 15% 15%;
+    --card: 221 39% 11%;
+    --card-foreground: 38 36% 94%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 15% 15%;
+    --popover: 221 39% 11%;
+    --popover-foreground: 38 36% 94%;
 
-    /* Primary - Vibrant Coral/Orange */
-    --primary: 16 85% 58%;
-    --primary-foreground: 0 0% 100%;
+    /* === PRIMARY — Warm Gold === */
+    --primary: 43 58% 54%;
+    --primary-foreground: 0 0% 4%;
 
-    /* Secondary - Playful Teal */
-    --secondary: 174 60% 45%;
-    --secondary-foreground: 0 0% 100%;
+    /* === SECONDARY — Deep Ember === */
+    --secondary: 23 63% 46%;
+    --secondary-foreground: 38 36% 94%;
 
-    /* Muted - Soft warm gray */
-    --muted: 40 20% 94%;
-    --muted-foreground: 240 10% 45%;
+    /* === MUTED === */
+    --muted: 221 30% 15%;
+    --muted-foreground: 220 9% 66%;
 
-    /* Accent - Sunny Yellow */
-    --accent: 45 95% 55%;
-    --accent-foreground: 240 15% 15%;
+    /* === ACCENT — Gold variant === */
+    --accent: 43 58% 54%;
+    --accent-foreground: 0 0% 4%;
 
-    /* Destructive */
-    --destructive: 0 75% 55%;
-    --destructive-foreground: 0 0% 100%;
+    /* === DESTRUCTIVE === */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 38 36% 94%;
 
-    --border: 40 15% 88%;
-    --input: 40 15% 88%;
-    --ring: 16 85% 58%;
+    /* === BORDERS & INPUTS === */
+    --border: 0 0% 16%;
+    --input: 221 30% 15%;
+    --ring: 43 58% 54%;
 
-    --radius: 1rem;
+    /* === RADIUS — sharper corners for premium editorial feel === */
+    --radius: 0.5rem;
 
-    /* Extended palette */
-    --coral: 16 85% 58%;
-    --coral-light: 16 85% 75%;
-    --coral-dark: 16 85% 45%;
-    
-    --teal: 174 60% 45%;
-    --teal-light: 174 60% 70%;
-    --teal-dark: 174 60% 30%;
-    
-    --sunshine: 45 95% 55%;
-    --sunshine-light: 45 95% 75%;
-    
-    --lavender: 270 50% 60%;
-    --lavender-light: 270 50% 85%;
-    
-    --sky: 200 80% 55%;
-    --sky-light: 200 80% 80%;
+    /* === EXTENDED PALETTE (names kept for compatibility) === */
+    --coral: 43 58% 54%;
+    --coral-light: 45 71% 66%;
+    --coral-dark: 43 50% 40%;
 
-    --mint: 150 50% 50%;
-    --mint-light: 150 50% 80%;
+    --teal: 23 63% 46%;
+    --teal-light: 23 63% 60%;
+    --teal-dark: 23 63% 35%;
 
-    /* Warning - Amber */
-    --warning: 38 92% 50%;
-    --warning-foreground: 240 15% 15%;
+    --sunshine: 43 80% 50%;
+    --sunshine-light: 43 80% 65%;
 
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(16 85% 58%), hsl(35 90% 55%));
-    --gradient-secondary: linear-gradient(135deg, hsl(174 60% 45%), hsl(190 70% 50%));
-    --gradient-sunset: linear-gradient(135deg, hsl(16 85% 58%), hsl(340 80% 60%));
-    --gradient-ocean: linear-gradient(135deg, hsl(200 80% 55%), hsl(174 60% 45%));
-    --gradient-hero: linear-gradient(180deg, hsl(45 30% 98%) 0%, hsl(40 40% 96%) 100%);
+    --lavender: 220 9% 50%;
+    --lavender-light: 220 9% 65%;
 
-    /* Shadows */
-    --shadow-sm: 0 2px 8px -2px hsl(240 15% 15% / 0.08);
-    --shadow-md: 0 4px 16px -4px hsl(240 15% 15% / 0.12);
-    --shadow-lg: 0 8px 32px -8px hsl(240 15% 15% / 0.15);
-    --shadow-glow: 0 0 24px hsl(16 85% 58% / 0.3);
-    --shadow-card: 0 4px 20px -4px hsl(240 15% 15% / 0.1);
+    --sky: 220 9% 55%;
+    --sky-light: 220 9% 70%;
 
-    /* Sidebar */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 15% 15%;
-    --sidebar-primary: 16 85% 58%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 40 20% 96%;
-    --sidebar-accent-foreground: 240 15% 15%;
-    --sidebar-border: 40 15% 90%;
-    --sidebar-ring: 16 85% 58%;
+    --mint: 43 30% 50%;
+    --mint-light: 43 30% 65%;
+
+    --warning: 43 80% 50%;
+    --warning-foreground: 0 0% 4%;
+
+    /* === GRADIENTS === */
+    --gradient-primary: linear-gradient(135deg, hsl(43 58% 54%), hsl(45 71% 66%));
+    --gradient-secondary: linear-gradient(135deg, hsl(23 63% 46%), hsl(35 70% 55%));
+    --gradient-sunset: linear-gradient(135deg, hsl(43 58% 54%), hsl(23 63% 46%));
+    --gradient-ocean: linear-gradient(135deg, hsl(221 39% 11%), hsl(221 30% 18%));
+    --gradient-hero: linear-gradient(180deg, hsl(0 0% 4%) 0%, hsl(221 39% 8%) 100%);
+
+    /* === SHADOWS (deep, gold-tinted) === */
+    --shadow-sm: 0 2px 8px -2px hsl(0 0% 0% / 0.5);
+    --shadow-md: 0 4px 16px -4px hsl(0 0% 0% / 0.6);
+    --shadow-lg: 0 8px 32px -8px hsl(0 0% 0% / 0.7);
+    --shadow-glow: 0 0 24px hsl(43 58% 54% / 0.25);
+    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.5);
+
+    /* === SIDEBAR === */
+    --sidebar-background: 221 39% 8%;
+    --sidebar-foreground: 38 36% 94%;
+    --sidebar-primary: 43 58% 54%;
+    --sidebar-primary-foreground: 0 0% 4%;
+    --sidebar-accent: 221 30% 15%;
+    --sidebar-accent-foreground: 38 36% 94%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 43 58% 54%;
   }
 
+  /* .dark mirrors :root — dark is the default and only mode */
   .dark {
-    --background: 240 15% 10%;
-    --foreground: 45 20% 95%;
-
-    --card: 240 15% 13%;
-    --card-foreground: 45 20% 95%;
-
-    --popover: 240 15% 13%;
-    --popover-foreground: 45 20% 95%;
-
-    --primary: 16 85% 60%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 174 55% 40%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 240 12% 18%;
-    --muted-foreground: 240 10% 60%;
-
-    --accent: 45 90% 50%;
-    --accent-foreground: 240 15% 10%;
-
+    --background: 0 0% 4%;
+    --foreground: 38 36% 94%;
+    --card: 221 39% 11%;
+    --card-foreground: 38 36% 94%;
+    --popover: 221 39% 11%;
+    --popover-foreground: 38 36% 94%;
+    --primary: 43 58% 54%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 23 63% 46%;
+    --secondary-foreground: 38 36% 94%;
+    --muted: 221 30% 15%;
+    --muted-foreground: 220 9% 66%;
+    --accent: 43 58% 54%;
+    --accent-foreground: 0 0% 4%;
     --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 240 12% 20%;
-    --input: 240 12% 20%;
-    --ring: 16 85% 60%;
-
-    --coral: 16 85% 60%;
-    --coral-light: 16 80% 70%;
-    --coral-dark: 16 85% 50%;
-    
-    --teal: 174 55% 45%;
-    --teal-light: 174 50% 55%;
-    --teal-dark: 174 60% 35%;
-    
-    --sunshine: 45 90% 50%;
-    --sunshine-light: 45 85% 60%;
-    
-    --lavender: 270 45% 55%;
-    --lavender-light: 270 40% 65%;
-    
-    --sky: 200 75% 50%;
-    --sky-light: 200 70% 60%;
-
-    --mint: 150 45% 45%;
-    --mint-light: 150 40% 55%;
-
-    --gradient-primary: linear-gradient(135deg, hsl(16 85% 60%), hsl(35 85% 55%));
-    --gradient-secondary: linear-gradient(135deg, hsl(174 55% 45%), hsl(190 65% 50%));
-    --gradient-sunset: linear-gradient(135deg, hsl(16 85% 60%), hsl(340 75% 55%));
-    --gradient-ocean: linear-gradient(135deg, hsl(200 75% 50%), hsl(174 55% 45%));
-    --gradient-hero: linear-gradient(180deg, hsl(240 15% 10%) 0%, hsl(240 15% 12%) 100%);
-
-    --shadow-sm: 0 2px 8px -2px hsl(0 0% 0% / 0.3);
-    --shadow-md: 0 4px 16px -4px hsl(0 0% 0% / 0.4);
-    --shadow-lg: 0 8px 32px -8px hsl(0 0% 0% / 0.5);
-    --shadow-glow: 0 0 24px hsl(16 85% 60% / 0.4);
-    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.3);
-
-    --sidebar-background: 240 15% 12%;
-    --sidebar-foreground: 45 20% 95%;
-    --sidebar-primary: 16 85% 60%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 12% 18%;
-    --sidebar-accent-foreground: 45 20% 95%;
-    --sidebar-border: 240 12% 20%;
-    --sidebar-ring: 16 85% 60%;
+    --destructive-foreground: 38 36% 94%;
+    --border: 0 0% 16%;
+    --input: 221 30% 15%;
+    --ring: 43 58% 54%;
+    --coral: 43 58% 54%;
+    --coral-light: 45 71% 66%;
+    --coral-dark: 43 50% 40%;
+    --teal: 23 63% 46%;
+    --teal-light: 23 63% 60%;
+    --teal-dark: 23 63% 35%;
+    --sunshine: 43 80% 50%;
+    --sunshine-light: 43 80% 65%;
+    --lavender: 220 9% 50%;
+    --lavender-light: 220 9% 65%;
+    --sky: 220 9% 55%;
+    --sky-light: 220 9% 70%;
+    --mint: 43 30% 50%;
+    --mint-light: 43 30% 65%;
+    --gradient-primary: linear-gradient(135deg, hsl(43 58% 54%), hsl(45 71% 66%));
+    --gradient-secondary: linear-gradient(135deg, hsl(23 63% 46%), hsl(35 70% 55%));
+    --gradient-sunset: linear-gradient(135deg, hsl(43 58% 54%), hsl(23 63% 46%));
+    --gradient-ocean: linear-gradient(135deg, hsl(221 39% 11%), hsl(221 30% 18%));
+    --gradient-hero: linear-gradient(180deg, hsl(0 0% 4%) 0%, hsl(221 39% 8%) 100%);
+    --shadow-sm: 0 2px 8px -2px hsl(0 0% 0% / 0.5);
+    --shadow-md: 0 4px 16px -4px hsl(0 0% 0% / 0.6);
+    --shadow-lg: 0 8px 32px -8px hsl(0 0% 0% / 0.7);
+    --shadow-glow: 0 0 24px hsl(43 58% 54% / 0.25);
+    --shadow-card: 0 4px 20px -4px hsl(0 0% 0% / 0.5);
+    --sidebar-background: 221 39% 8%;
+    --sidebar-foreground: 38 36% 94%;
+    --sidebar-primary: 43 58% 54%;
+    --sidebar-primary-foreground: 0 0% 4%;
+    --sidebar-accent: 221 30% 15%;
+    --sidebar-accent-foreground: 38 36% 94%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 43 58% 54%;
   }
 }
 
@@ -176,7 +161,7 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display font-bold tracking-tight;
+    @apply font-display font-semibold tracking-tight;
   }
 }
 
@@ -219,12 +204,24 @@
     box-shadow: var(--shadow-card);
   }
 
-  /* iOS safe-area bottom padding (for home indicator) */
+  /* Gold border utility */
+  .border-gold {
+    border-color: hsl(43 58% 54% / 0.3);
+  }
+
+  /* Glass surface utility */
+  .glass {
+    background: hsl(0 0% 0% / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(43 58% 54% / 0.1);
+  }
+
+  /* iOS safe-area bottom padding */
   .safe-area-pb {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* Animation utilities */
   .animate-float {
     animation: float 3s ease-in-out infinite;
   }
@@ -248,7 +245,7 @@
   }
 
   @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 24px hsl(16 85% 58% / 0.3); }
-    50% { box-shadow: 0 0 32px hsl(16 85% 58% / 0.5); }
+    0%, 100% { box-shadow: 0 0 24px hsl(43 58% 54% / 0.25); }
+    50% { box-shadow: 0 0 40px hsl(43 58% 54% / 0.45); }
   }
 }

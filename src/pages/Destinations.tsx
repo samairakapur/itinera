@@ -144,7 +144,7 @@ const Destinations = () => {
         {showPersonalized && personalizedCities.length > 0 && (
           <section className="mb-16">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 rounded-xl bg-primary/10">
+              <div className="p-2 rounded-sm bg-primary/10 border border-primary/15">
                 <Sparkles className="w-5 h-5 text-primary" />
               </div>
               <div>
@@ -176,7 +176,7 @@ const Destinations = () => {
 
         {/* Call to action for non-personalized users */}
         {!hasPersonalization && !searchQuery && selectedCountry === 'all' && (
-          <Card className="mb-12 p-6 bg-gradient-to-r from-primary/5 to-secondary/5 border-primary/20">
+          <Card className="mb-12 p-6 bg-muted border-white/10">
             <div className="flex flex-col md:flex-row items-center gap-6">
               <div className="p-3 rounded-2xl bg-primary/10">
                 <Sparkles className="w-8 h-8 text-primary" />
@@ -202,7 +202,7 @@ const Destinations = () => {
         {/* Popular Destinations Section */}
         <section>
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-xl bg-muted">
+            <div className="p-2 rounded-sm bg-muted border border-white/8">
               <MapPin className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>

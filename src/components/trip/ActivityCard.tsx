@@ -95,12 +95,12 @@ const typeIcons = {
 };
 
 const typeColors = {
-  attraction: 'bg-teal/10 text-teal border-teal/20',
-  restaurant: 'bg-coral/10 text-coral border-coral/20',
-  transport: 'bg-sky/10 text-sky border-sky/20',
-  custom: 'bg-lavender/10 text-lavender border-lavender/20',
-  prebooked: 'bg-primary/10 text-primary border-primary/20',
-  flex: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+  attraction: 'bg-primary/8 text-primary border-primary/15',
+  restaurant: 'bg-white/5 text-foreground/70 border-white/10',
+  transport: 'bg-white/5 text-muted-foreground border-white/10',
+  custom: 'bg-white/5 text-muted-foreground border-white/10',
+  prebooked: 'bg-primary/8 text-primary border-primary/15',
+  flex: 'bg-white/5 text-muted-foreground border-white/10',
 };
 
 export const ActivityCard = ({
@@ -180,9 +180,9 @@ export const ActivityCard = ({
   return (
     <Card className={cn(
       "border shadow-sm hover:shadow-md transition-all duration-200",
-      isFlexActivity && "border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/10",
-      activity.mustDo && "ring-2 ring-primary/30 bg-primary/5",
-      activity.isPrebooked && "ring-2 ring-teal/30 bg-teal/5",
+      isFlexActivity && "border-white/10",
+      activity.mustDo && "ring-1 ring-primary/40",
+      activity.isPrebooked && "ring-1 ring-primary/30",
       isCompleted && "opacity-60 bg-muted/50",
       isScheduleOverflow && "border-l-4 border-l-destructive/70",
     )}>
@@ -219,7 +219,7 @@ export const ActivityCard = ({
                     {activity.title}
                   </h4>
                   {isFlexActivity && (
-                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-amber-300 text-amber-700 bg-amber-50">
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary bg-transparent">
                       Free time
                     </Badge>
                   )}
@@ -229,7 +229,7 @@ export const ActivityCard = ({
                     </Badge>
                   )}
                   {activity.isPrebooked && (
-                    <Badge variant="secondary" className="text-xs px-2 py-0.5 bg-teal/10 text-teal border-teal/20">
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/10 text-primary border-primary/20">
                       <Ticket className="w-3 h-3 mr-1" />
                       Pre-booked
                     </Badge>
@@ -242,7 +242,7 @@ export const ActivityCard = ({
                 )}
                 {/* Booking warning pill */}
                 {bookingWarning && (
-                  <div className="flex items-center gap-1.5 mt-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-2 py-1.5">
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground bg-white/5 border border-white/10 rounded-sm px-2 py-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                     <span>{bookingWarning.replace(/^⚠️\s*/, '')}</span>
                   </div>
@@ -350,7 +350,7 @@ export const ActivityCard = ({
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="h-8 text-xs gap-1.5 bg-sky/5 border-sky/20 text-sky hover:bg-sky/10 hover:text-sky"
+                      className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
                     >
                       <Navigation className="w-3.5 h-3.5" />
                       How to get there
@@ -414,7 +414,7 @@ export const ActivityCard = ({
                       "mt-2 h-8 px-3 text-xs gap-2 border",
                       showReasoning 
                         ? "bg-primary/10 border-primary/20 text-primary" 
-                        : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
                     )}
                   >
                     <Lightbulb className="w-3.5 h-3.5" />
@@ -426,7 +426,7 @@ export const ActivityCard = ({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
+                  <div className="mt-2 p-3 rounded-sm bg-muted border border-white/10 text-sm text-foreground/80">
                     <div className="flex items-start gap-2">
                       <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <p>{activity.reasoning}</p>

@@ -156,18 +156,18 @@ const Auth = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-accent/20 to-background">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-accent/20 to-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="p-6">
         <a href="/" className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center">
+          <div className="w-9 h-9 rounded-sm bg-gradient-primary flex items-center justify-center">
             <Plane className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="font-display text-xl font-bold text-foreground">Itinera</span>
@@ -203,7 +203,7 @@ const Auth = () => {
                 )}
               </div>
 
-              <Card className="shadow-elegant border-border/50">
+              <Card className="shadow-card border-white/5">
                 {view === 'forgot' ? (
                   <>
                     <CardHeader className="pb-4">
@@ -277,14 +277,14 @@ const Auth = () => {
             <>
               <div className="text-center mb-8">
                 <h1 className="font-display text-3xl font-bold text-foreground mb-2">
-                  Your Next Adventure Awaits! 🌍
+                  The World Awaits
                 </h1>
                 <p className="text-muted-foreground">
                   Join thousands of travelers planning unforgettable trips
                 </p>
               </div>
 
-              <Card className="shadow-elegant border-border/50">
+              <Card className="shadow-card border-white/5">
                 <Tabs defaultValue="login" className="w-full">
                   <CardHeader className="pb-4">
                     <TabsList className="grid w-full grid-cols-2">
@@ -402,19 +402,19 @@ const Auth = () => {
               {/* Features strip */}
               <div className="mt-8 grid grid-cols-3 gap-4 text-center">
                 <div className="p-4">
-                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-primary/10 flex items-center justify-center">
+                  <div className="w-10 h-10 mx-auto mb-2 rounded-sm border border-primary/20 flex items-center justify-center">
                     <MapPin className="w-6 h-6 text-primary" />
                   </div>
                   <p className="text-sm text-muted-foreground">8+ Cities</p>
                 </div>
                 <div className="p-4">
-                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-secondary/10 flex items-center justify-center">
+                  <div className="w-10 h-10 mx-auto mb-2 rounded-sm border border-primary/20 flex items-center justify-center">
                     <Users className="w-6 h-6 text-secondary-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">Personalized</p>
                 </div>
                 <div className="p-4">
-                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-accent/30 flex items-center justify-center">
+                  <div className="w-10 h-10 mx-auto mb-2 rounded-sm border border-primary/20 flex items-center justify-center">
                     <Plane className="w-6 h-6 text-accent-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">AI Advisor</p>

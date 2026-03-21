@@ -1,6 +1,4 @@
-// Variation 1: Minimalist Hero - Airbnb/Apple inspired
-// Clean, image-focused with prominent single CTA
-
+// Variation 1: Dark & Luxe — cinematic hero, editorial typography
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
@@ -16,65 +14,66 @@ const HomeVariation1 = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Hero - Full viewport, image-forward */}
-      <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-secondary/10" />
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 right-1/4 w-[500px] h-[500px] rounded-full bg-primary/10 blur-[100px]" />
-          <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[400px] rounded-full bg-secondary/10 blur-[80px]" />
-        </div>
-        
+      {/* Hero — cinematic full-viewport */}
+      <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-[#0A0A0A]">
+        {/* Cinematic vignette — no blobs, just depth */}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0A0A0A]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_hsl(0_0%_4%)_100%)]" />
+
         <div className="container relative px-4 text-center max-w-4xl">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-background/80 backdrop-blur-sm border border-border/50 text-sm font-medium mb-8">
-            <Sparkles className="w-4 h-4 text-primary" />
+          {/* Editorial badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 backdrop-blur-sm border border-primary/20 text-xs font-medium mb-8 tracking-widest uppercase text-primary">
+            <Sparkles className="w-3.5 h-3.5" />
             AI-Powered Trip Planning
           </div>
-          
-          <h1 className="font-display text-5xl md:text-7xl font-bold text-foreground mb-6 tracking-tight leading-[1.1]">
+
+          <h1 className="font-display text-5xl md:text-7xl font-semibold text-foreground mb-6 tracking-tight leading-[1.1]">
             Your Perfect Trip,
             <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary/60">
+            <span
+              className="text-transparent bg-clip-text"
+              style={{ backgroundImage: 'var(--gradient-primary)' }}
+            >
               Planned in Minutes
             </span>
           </h1>
-          
-          <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto leading-relaxed">
-            Tell us how you travel. We'll create a personalized itinerary that matches your style, pace, and interests.
+
+          <p className="text-lg text-muted-foreground mb-12 max-w-2xl mx-auto leading-relaxed">
+            Tell us how you travel. We'll create a personalised itinerary that matches your style, pace, and interests.
           </p>
-          
-          {/* Single prominent CTA */}
-          <Button 
-            size="lg" 
-            asChild 
-            className="h-16 px-12 text-lg font-semibold rounded-2xl shadow-xl shadow-primary/25 hover:shadow-primary/40 transition-all hover:scale-105"
+
+          {/* Single luxe CTA */}
+          <Button
+            size="lg"
+            asChild
+            className="h-14 px-10 text-base font-medium tracking-widest uppercase rounded-sm shadow-lg shadow-primary/20 hover:shadow-primary/35 transition-all hover:scale-[1.02]"
           >
             <Link to={user ? "/planner/new" : "/auth"}>
-              Plan My Trip Now
-              <ArrowRight className="w-5 h-5 ml-3" />
+              Plan My Trip
+              <ArrowRight className="w-4 h-4 ml-3" />
             </Link>
           </Button>
-          
+
           {!user && (
-            <p className="mt-6 text-sm text-muted-foreground">
-              Free to start • No credit card required
+            <p className="mt-6 text-sm text-muted-foreground tracking-wide">
+              Free to start · No credit card required
             </p>
           )}
         </div>
       </section>
 
-      {/* Featured Destinations - Clean grid */}
-      <section className="py-24 bg-muted/30">
+      {/* Featured Destinations */}
+      <section className="py-24 bg-[#0D0D0D]">
         <div className="container px-4">
           <div className="text-center mb-12">
-            <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
+            <h2 className="font-display text-3xl md:text-4xl font-semibold text-foreground mb-4">
               Popular Destinations
             </h2>
             <p className="text-muted-foreground text-lg">
-              Start exploring our handpicked cities
+              Destinations worth the journey
             </p>
           </div>
-          
+
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[1, 2, 3, 4].map((i) => (
@@ -94,9 +93,9 @@ const HomeVariation1 = () => {
               ))}
             </div>
           )}
-          
+
           <div className="text-center mt-12">
-            <Button variant="outline" size="lg" asChild className="rounded-xl">
+            <Button variant="outline" size="lg" asChild className="rounded-sm border-white/15 hover:border-primary/40 tracking-widest uppercase text-sm">
               <Link to="/destinations">
                 View All Destinations
                 <ArrowRight className="w-4 h-4 ml-2" />
