@@ -4,8 +4,9 @@ import { useDayPreferences, getStartTimeForDay, useUpsertDayPreference } from '@
 import { useFlightDetails } from '@/hooks/useFlightDetails';
 import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
 import { useDayConstraints, calculateDayConstraints, timeToMinutes } from '@/hooks/useSmartScheduling';
-import { format, addDays, isSameDay } from 'date-fns';
-import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check } from 'lucide-react';
+import { useRegenerateItinerary } from '@/hooks/useRegenerateItinerary';
+import { format, addDays, isSameDay, differenceInDays } from 'date-fns';
+import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check, RefreshCw, Plane, Sparkles, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DayCard, DayData } from '@/components/trip/DayCard';
@@ -17,6 +18,7 @@ import { FlightPromptBanner } from '@/components/trip/FlightPromptBanner';
 import { FlightConstraintBanner } from '@/components/trip/FlightConstraintBanner';
 import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDialog';
 import { CityDayBadge } from '@/components/trip/CityDayBadge';
+import { TransitionDayCard } from '@/components/trip/TransitionDayCard';
 import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect, useMemo } from 'react';
@@ -33,6 +35,7 @@ const TripDetail = () => {
   const updateItinerary = useUpdateItinerary();
   const deleteItinerary = useDeleteItinerary();
   const upsertDayPreference = useUpsertDayPreference();
+  const regenerateItinerary = useRegenerateItinerary();
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -41,6 +44,8 @@ const TripDetail = () => {
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
   const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [flightJustSaved, setFlightJustSaved] = useState(false);
 
   // Calculate flight-aware constraints for each day
   const startDate = itinerary?.start_date ? new Date(itinerary.start_date) : undefined;
@@ -407,7 +412,15 @@ const TripDetail = () => {
                   cityName={[itinerary.cities?.name, itinerary.cities?.country].filter(Boolean).join(', ')}
                 />
               )}
-              {tripId && <FlightDetailsDialog itineraryId={tripId} tripName={itinerary.cities?.name} />}
+              {tripId && (
+                <FlightDetailsDialog
+                  itineraryId={tripId}
+                  tripName={itinerary.cities?.name}
+                  tripDestinationCity={itinerary.cities?.name}
+                  tripStartDate={itinerary.start_date || undefined}
+                  onFlightSaved={() => setFlightJustSaved(true)}
+                />
+              )}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -451,15 +464,141 @@ const TripDetail = () => {
             summary="" 
           />
 
+          {/* Active-trip banner — shows when today falls within the trip dates */}
+          {isOngoing && tripStartDate && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0 w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground leading-snug">
+                      You're on Day {differenceInDays(new Date(), tripStartDate) + 1} of your trip!
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Switch to Day Mode for a live, checkable view of today's plan.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => navigate(`/trips/${tripId}/day`)}
+                    className="shrink-0 gap-1.5"
+                  >
+                    Day Mode
+                    <Zap className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Flight Prompt Banner */}
           {tripId && (
-            <FlightPromptBanner 
-              itineraryId={tripId} 
+            <FlightPromptBanner
+              itineraryId={tripId}
               tripName={itinerary.cities?.name}
               hasFlights={flights.length > 0}
             />
           )}
-          
+
+          {/* Regeneration Banner — shows when flights exist but itinerary hasn't been regenerated */}
+          {flights.length > 0 && !itinerary.is_flight_aware && (
+            <Card className="border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 mt-0.5">
+                    <Plane className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                      Your flights haven't been applied to the itinerary yet
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Regenerate your itinerary so activities are scheduled around your flight times —
+                      arrival days will start later, departure days will end earlier, and the AI will
+                      plan accordingly.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                      onClick={() => setShowRegenConfirm(true)}
+                      disabled={regenerateItinerary.isPending}
+                    >
+                      {regenerateItinerary.isPending ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Regenerating…
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Regenerate Itinerary
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Also show banner right after saving a new flight */}
+          {flightJustSaved && itinerary.is_flight_aware && flights.length > 0 && (
+            <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-200">
+                      New flight added — want to update your itinerary?
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                      Your new flight may change the available time on some days. Regenerate to adjust.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2 border-blue-300 dark:border-blue-700"
+                        onClick={() => setShowRegenConfirm(true)}
+                        disabled={regenerateItinerary.isPending}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Regenerate
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setFlightJustSaved(false)}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Regeneration loading overlay */}
+          {regenerateItinerary.isPending && (
+            <Card className="border-0 shadow-card">
+              <CardContent className="py-12 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+                  <Sparkles className="w-8 h-8 text-primary" />
+                </div>
+                <p className="text-muted-foreground font-medium">
+                  Regenerating your itinerary with flight times…
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Activities will be scheduled around your flights
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Travel Tips for all days */}
           <TravelTips 
             packingTips={[
@@ -548,12 +687,81 @@ const TripDetail = () => {
                 {departureFlights.map(flight => (
                   <FlightCard key={`departure-${flight.id}`} flight={flight} type="departure" />
                 ))}
+
+                {/* TransitionDayCard — shown after the last day of every leg except the final one */}
+                {tripLegs.length > 1 && isLastDayOfLeg && legForDay && (
+                  (() => {
+                    const nextLeg = tripLegs.find(l => l.leg_number === (legForDay.leg_number ?? 0) + 1);
+                    if (!nextLeg) return null;
+
+                    // Flights connecting this leg to the next (departure or arrival on the gap date)
+                    const nextArrivalDay = nextLeg.start_day;
+                    const nextArrivalDate = startDate ? addDays(startDate, nextArrivalDay - 1) : undefined;
+                    const connectingFlights = nextArrivalDate
+                      ? flights.filter(f =>
+                          isSameDay(new Date(f.departure_date), dayDate || new Date()) ||
+                          isSameDay(new Date(f.arrival_date), nextArrivalDate)
+                        )
+                      : [];
+
+                    // Constraint for the arrival day (first day of next leg)
+                    const arrivalConstraint = dayConstraints[nextArrivalDay - 1];
+
+                    return (
+                      <TransitionDayCard
+                        key={`transition-${legForDay.leg_number}`}
+                        fromLeg={legForDay}
+                        toLeg={nextLeg}
+                        connectingFlights={connectingFlights}
+                        arrivalDayStart={arrivalConstraint?.earliestStart}
+                        arrivalDayNumber={nextArrivalDay}
+                      />
+                    );
+                  })()
+                )}
               </div>
             );
           })}
         </div>
       </div>
       <AddActivityDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onSave={handleSaveActivity} dayNumber={addDialogDay} timeSlot={addDialogTimeSlot} editActivity={editActivity} />
+
+      {/* Regeneration confirmation dialog */}
+      <AlertDialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Regenerate Itinerary?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will replace your current itinerary with a new AI-generated one that
+              accounts for your flight times. Arrival days will start later, departure
+              days will end earlier, and activities will be rescheduled accordingly.
+              <br /><br />
+              <strong>Any manual edits to activities will be lost.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!tripId || !itinerary) return;
+                setFlightJustSaved(false);
+                regenerateItinerary.mutate({
+                  itineraryId: tripId,
+                  itinerary,
+                  flights,
+                });
+              }}
+              className="gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Regenerate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

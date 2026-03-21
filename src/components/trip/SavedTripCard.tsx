@@ -33,7 +33,7 @@ export const SavedTripCard = ({ trip, onDelete, isDeleting }: SavedTripCardProps
   const isOngoing = startDate && endDate && startDate <= new Date() && endDate >= new Date();
 
   return (
-    <Card className="overflow-hidden hover:shadow-md transition-shadow group">
+    <Card className="overflow-hidden hover:shadow-glow transition-all duration-300 group border-white/5 hover:border-primary/20">
       <div className="relative h-32 overflow-hidden">
         {trip.cities?.image_url ? (
           <img
@@ -42,18 +42,18 @@ export const SavedTripCard = ({ trip, onDelete, isDeleting }: SavedTripCardProps
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5" />
+          <div className="w-full h-full bg-muted" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         
         {/* Status Badge */}
         <div className="absolute top-3 left-3">
           {isOngoing ? (
-            <Badge className="bg-green-500 text-white">Ongoing</Badge>
+            <Badge className="bg-primary/90 text-primary-foreground text-xs uppercase tracking-widest">Ongoing</Badge>
           ) : isUpcoming ? (
-            <Badge variant="secondary">Upcoming</Badge>
+            <Badge variant="outline" className="border-primary/30 text-primary/80 text-xs uppercase tracking-widest bg-black/50">Upcoming</Badge>
           ) : (
-            <Badge variant="outline" className="bg-background/80">Past</Badge>
+            <Badge variant="outline" className="border-white/20 text-white/60 text-xs uppercase tracking-widest bg-black/50">Past</Badge>
           )}
         </div>
 

@@ -18,6 +18,11 @@ export interface SavedItinerary {
   dietary_preferences: string[] | null;
   home_base: string | null;
   estimated_daily_cost: number | null;
+  /**
+   * True once the itinerary has been (re)generated with flight constraints applied.
+   * Set to false whenever a flight is added / updated / deleted, so the amber
+   * "Regenerate Itinerary" banner re-appears automatically.
+   */
   is_flight_aware: boolean;
   created_at: string;
   updated_at: string;
@@ -49,20 +54,6 @@ export interface CitySelection {
   daysToSpend: number;
 }
 
-export interface PreSaveFlightDetail {
-  airline?: string;
-  flight_number?: string;
-  departure_city: string;
-  arrival_city: string;
-  origin_iata?: string;
-  destination_iata?: string;
-  departure_date: string;
-  departure_time?: string;
-  arrival_date: string;
-  arrival_time?: string;
-  is_international?: boolean;
-}
-
 export interface CreateItineraryInput {
   /** First city id for backwards compat – used as primary city_id on itinerary */
   cityId: string;
@@ -78,8 +69,6 @@ export interface CreateItineraryInput {
   summary?: string;
   /** For multi-city trips, array of city selections in order */
   selectedCities?: CitySelection[];
-  /** Pre-save flight details — written to flight_details table after itinerary is created */
-  flightDetails?: PreSaveFlightDetail[];
 }
 
 export const useItineraries = () => {
@@ -137,6 +126,62 @@ export const useItinerary = (itineraryId: string | undefined) => {
       return data as SavedItinerary;
     },
     enabled: !!user && !!itineraryId,
+  });
+};
+
+/**
+ * Returns the first itinerary where today's date falls within the trip's
+ * start_date → end_date window. Used to show the global "Today's Trip" banner.
+ */
+export const useActiveTripToday = () => {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['active-trip-today', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const { data, error } = await supabase
+        .from('itineraries')
+        .select(`
+          id,
+          name,
+          num_days,
+          start_date,
+          end_date,
+          cities (
+            name,
+            country
+          )
+        `)
+        .eq('user_id', user.id)
+        .lte('start_date', todayStr)
+        .gte('end_date', todayStr)
+        .order('start_date', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) return null;
+
+      const trip = data[0] as any;
+      const startDate = new Date(trip.start_date);
+      // Calculate which day of the trip today is (1-indexed)
+      const diffMs = today.getTime() - startDate.getTime();
+      const dayNumber = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+
+      return {
+        id: trip.id as string,
+        name: trip.name as string,
+        cityName: (trip.cities?.name as string) || '',
+        dayNumber,
+        numDays: trip.num_days as number,
+      };
+    },
+    enabled: !!user,
+    staleTime: 60_000, // re-check at most once per minute
   });
 };
 
@@ -297,37 +342,6 @@ export const useCreateItinerary = () => {
         if (itemsError) {
           console.error('[useCreateItinerary] itemsError:', itemsError);
           throw itemsError;
-        }
-      }
-
-      // 5. Save pre-collected flight details if provided
-      if (input.flightDetails && input.flightDetails.length > 0) {
-        const flightInserts = input.flightDetails.map((fd, idx) => ({
-          itinerary_id: itinerary.id,
-          leg_number: idx + 1,
-          airline: fd.airline ?? null,
-          flight_number: fd.flight_number ?? null,
-          departure_city: fd.departure_city,
-          arrival_city: fd.arrival_city,
-          origin_iata: fd.origin_iata ?? null,
-          destination_iata: fd.destination_iata ?? null,
-          departure_date: fd.departure_date,
-          departure_time: fd.departure_time ?? null,
-          arrival_date: fd.arrival_date,
-          arrival_time: fd.arrival_time ?? null,
-          is_international: fd.is_international ?? false,
-          delay_minutes: 0,
-        }));
-
-        const { error: flightError } = await supabase
-          .from('flight_details')
-          .insert(flightInserts);
-
-        if (flightError) {
-          // Non-fatal — itinerary is already saved
-          console.warn('[useCreateItinerary] flight_details insert failed (non-fatal):', flightError);
-        } else {
-          console.log('[useCreateItinerary] saved', flightInserts.length, 'flight(s)');
         }
       }
 

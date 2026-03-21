@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { 
-  Utensils, 
-  Landmark, 
-  MapPin, 
-  Clock, 
-  Star, 
+import {
+  Utensils,
+  Landmark,
+  MapPin,
+  Clock,
+  Timer,
+  Star,
   MoreHorizontal,
   ArrowUpDown,
   Trash2,
@@ -19,7 +20,9 @@ import {
   Check,
   CheckCircle2,
   Circle,
-  ChevronDown
+  ChevronDown,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +49,7 @@ import { toast } from 'sonner';
 
 export interface Activity {
   id: string;
-  type: 'attraction' | 'restaurant' | 'transport' | 'custom' | 'prebooked';
+  type: 'attraction' | 'restaurant' | 'transport' | 'custom' | 'prebooked' | 'flex';
   title: string;
   description?: string;
   time?: string;
@@ -76,6 +79,10 @@ interface ActivityCardProps {
   onToggleComplete?: (id: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
+  /** Computed by the reflow engine — overrides activity.time when present */
+  computedStartTime?: string;
+  /** True when this activity overflows the day's flight-constraint window */
+  isScheduleOverflow?: boolean;
 }
 
 const typeIcons = {
@@ -84,14 +91,16 @@ const typeIcons = {
   transport: MapPin,
   custom: Star,
   prebooked: Ticket,
+  flex: Sparkles,
 };
 
 const typeColors = {
-  attraction: 'bg-teal/10 text-teal border-teal/20',
-  restaurant: 'bg-coral/10 text-coral border-coral/20',
-  transport: 'bg-sky/10 text-sky border-sky/20',
-  custom: 'bg-lavender/10 text-lavender border-lavender/20',
-  prebooked: 'bg-primary/10 text-primary border-primary/20',
+  attraction: 'bg-primary/8 text-primary border-primary/15',
+  restaurant: 'bg-white/5 text-foreground/70 border-white/10',
+  transport: 'bg-white/5 text-muted-foreground border-white/10',
+  custom: 'bg-white/5 text-muted-foreground border-white/10',
+  prebooked: 'bg-primary/8 text-primary border-primary/15',
+  flex: 'bg-white/5 text-muted-foreground border-white/10',
 };
 
 export const ActivityCard = ({
@@ -107,6 +116,8 @@ export const ActivityCard = ({
   onToggleComplete,
   isFirst,
   isLast,
+  computedStartTime,
+  isScheduleOverflow = false,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -158,12 +169,22 @@ export const ActivityCard = ({
     window.open(getGoogleMapsUrl(), '_blank', 'noopener,noreferrer');
   };
 
+  // Split description and booking warning (⚠️ line)
+  const rawDesc = activity.description || '';
+  const bookingWarningIdx = rawDesc.indexOf('\n⚠️');
+  const mainDescription = bookingWarningIdx >= 0 ? rawDesc.slice(0, bookingWarningIdx).trim() : rawDesc;
+  const bookingWarning = bookingWarningIdx >= 0 ? rawDesc.slice(bookingWarningIdx + 1).trim() : undefined;
+
+  const isFlexActivity = activity.type === 'flex';
+
   return (
     <Card className={cn(
       "border shadow-sm hover:shadow-md transition-all duration-200",
-      activity.mustDo && "ring-2 ring-primary/30 bg-primary/5",
-      activity.isPrebooked && "ring-2 ring-teal/30 bg-teal/5",
-      isCompleted && "opacity-60 bg-muted/50"
+      isFlexActivity && "border-white/10",
+      activity.mustDo && "ring-1 ring-primary/40",
+      activity.isPrebooked && "ring-1 ring-primary/30",
+      isCompleted && "opacity-60 bg-muted/50",
+      isScheduleOverflow && "border-l-4 border-l-destructive/70",
     )}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
@@ -197,22 +218,34 @@ export const ActivityCard = ({
                   )}>
                     {activity.title}
                   </h4>
+                  {isFlexActivity && (
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary bg-transparent">
+                      Free time
+                    </Badge>
+                  )}
                   {activity.mustDo && (
                     <Badge variant="default" className="text-xs px-2 py-0.5">
                       Must-Do
                     </Badge>
                   )}
                   {activity.isPrebooked && (
-                    <Badge variant="secondary" className="text-xs px-2 py-0.5 bg-teal/10 text-teal border-teal/20">
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/10 text-primary border-primary/20">
                       <Ticket className="w-3 h-3 mr-1" />
                       Pre-booked
                     </Badge>
                   )}
                 </div>
-                {activity.description && (
+                {mainDescription && (
                   <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                    {activity.description}
+                    {mainDescription}
                   </p>
+                )}
+                {/* Booking warning pill */}
+                {bookingWarning && (
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground bg-white/5 border border-white/10 rounded-sm px-2 py-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{bookingWarning.replace(/^⚠️\s*/, '')}</span>
+                  </div>
                 )}
               </div>
 
@@ -272,17 +305,31 @@ export const ActivityCard = ({
             </div>
 
             {/* Meta */}
-            {(activity.time || activity.duration || activity.location) && (
+            {(computedStartTime || activity.time || activity.duration || activity.location) && (
               <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
-                {activity.time && (
+                {/* Reflow-computed start time — shown in red when activity overflows day window */}
+                {computedStartTime ? (
+                  <span className={cn(
+                    "flex items-center gap-1 font-medium",
+                    isScheduleOverflow
+                      ? "text-destructive"
+                      : "text-foreground"
+                  )}>
+                    <Clock className="w-3 h-3" />
+                    {computedStartTime}
+                    {isScheduleOverflow && (
+                      <span className="ml-0.5 text-destructive font-normal">(over limit)</span>
+                    )}
+                  </span>
+                ) : activity.time ? (
                   <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     {activity.time}
                   </span>
-                )}
+                ) : null}
                 {activity.duration && (
                   <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                    <Timer className="w-3 h-3" />
                     {activity.duration}
                   </span>
                 )}
@@ -296,14 +343,14 @@ export const ActivityCard = ({
             )}
 
             {/* How to get there */}
-            {activity.type !== 'transport' && (
+            {activity.type !== 'transport' && activity.type !== 'flex' && (
               <div className="mt-3 flex items-center gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="h-8 text-xs gap-1.5 bg-sky/5 border-sky/20 text-sky hover:bg-sky/10 hover:text-sky"
+                      className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
                     >
                       <Navigation className="w-3.5 h-3.5" />
                       How to get there
@@ -367,7 +414,7 @@ export const ActivityCard = ({
                       "mt-2 h-8 px-3 text-xs gap-2 border",
                       showReasoning 
                         ? "bg-primary/10 border-primary/20 text-primary" 
-                        : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
                     )}
                   >
                     <Lightbulb className="w-3.5 h-3.5" />
@@ -379,7 +426,7 @@ export const ActivityCard = ({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
+                  <div className="mt-2 p-3 rounded-sm bg-muted border border-white/10 text-sm text-foreground/80">
                     <div className="flex items-start gap-2">
                       <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <p>{activity.reasoning}</p>

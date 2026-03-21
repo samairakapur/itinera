@@ -1,176 +1,129 @@
-/**
- * useRegenerateItinerary
- *
- * Regenerates a *saved* itinerary with flight-aware scheduling.
- *
- * Flow:
- *  1. Convert saved flight rows → FlightConstraint[] using the itinerary's
- *     actual start_date so day numbers are exact (no provisional-date offset).
- *  2. Call the generate-itinerary edge function (same endpoint as NewTrip.tsx)
- *     with the itinerary's city / preferences + flight constraints.
- *  3. Stream + collect the full AI response text via SSE.
- *  4. Parse it with the shared parseItineraryText utility.
- *  5. DELETE all existing itinerary_items for this itinerary.
- *  6. INSERT the newly parsed items.
- *  7. Set itinerary.is_flight_aware = true.
- *  8. Invalidate the itinerary + items query caches.
- */
-
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { parseItineraryText } from '@/utils/itineraryParser';
-import { SavedItinerary } from '@/hooks/useItineraries';
-import { FlightDetail } from '@/hooks/useFlightDetails';
-import { TripLeg } from '@/hooks/useTripLegs';
+import { FlightDetail } from './useFlightDetails';
+import { SavedItinerary, SavedItineraryItem } from './useItineraries';
+import { differenceInDays, format } from 'date-fns';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
-// ── helpers ────────────────────────────────────────────────────────────────
-
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-function minutesToTime(m: number): string {
-  const h = Math.floor(m / 60) % 24;
-  const min = m % 60;
-  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-}
-
 interface FlightConstraint {
-  type: 'arrival' | 'departure';
   dayNumber: number;
-  time: string;
-  city: string;
-  iata?: string;
-  isInternational?: boolean;
-  delayMinutes?: number;
+  type: 'arrival' | 'departure';
+  time: string;         // "HH:mm"
+  airportCode?: string;
+  isInternational: boolean;
 }
 
-/** Convert DB flight rows → FlightConstraint[] anchored to the trip start date. */
+/**
+ * Convert DB flight rows into FlightConstraint[] for the edge function prompt.
+ */
 function buildFlightConstraints(
   flights: FlightDetail[],
-  startDateStr: string,
+  startDate: Date,
 ): FlightConstraint[] {
-  const tripStart = new Date(startDateStr + 'T12:00:00Z');
+  const constraints: FlightConstraint[] = [];
 
-  return flights.flatMap(f => {
-    const constraints: FlightConstraint[] = [];
+  for (const f of flights) {
+    // Day number = (flight date - trip start) + 1
+    const arrDay = differenceInDays(new Date(f.arrival_date), startDate) + 1;
+    const depDay = differenceInDays(new Date(f.departure_date), startDate) + 1;
 
-    if (f.arrival_date && f.arrival_city) {
-      const arrDate = new Date(f.arrival_date + 'T12:00:00Z');
-      const dayNum = Math.round((arrDate.getTime() - tripStart.getTime()) / 86_400_000) + 1;
-      if (dayNum >= 1) {
-        // Add 2-hour buffer on top of the raw arrival time for the AI prompt.
-        // useDayConstraints also applies a more detailed buffer (immigration +
-        // baggage + transit + hotel) in the TripDetail view, but the prompt
-        // needs a concrete start time to guide the AI.
-        const arrivalMins = timeToMinutes(f.arrival_time || '12:00');
-        const startMins = arrivalMins + 120; // +2 h
-        constraints.push({
-          type: 'arrival',
-          dayNumber: dayNum,
-          time: minutesToTime(startMins),
-          city: f.arrival_city,
-          iata: f.destination_iata || undefined,
-          isInternational: f.is_international,
-          delayMinutes: f.delay_minutes ?? 0,
-        });
-      }
+    if (f.arrival_time && arrDay >= 1) {
+      constraints.push({
+        dayNumber: arrDay,
+        type: 'arrival',
+        time: f.arrival_time.slice(0, 5),
+        airportCode: f.destination_iata || undefined,
+        isInternational: f.is_international ?? true,
+      });
     }
 
-    if (f.departure_date && f.departure_city) {
-      const depDate = new Date(f.departure_date + 'T12:00:00Z');
-      const dayNum = Math.round((depDate.getTime() - tripStart.getTime()) / 86_400_000) + 1;
-      if (dayNum >= 1) {
-        constraints.push({
-          type: 'departure',
-          dayNumber: dayNum,
-          time: f.departure_time || '12:00',
-          city: f.departure_city,
-          iata: f.origin_iata || undefined,
-          isInternational: f.is_international,
-        });
-      }
+    if (f.departure_time && depDay >= 1) {
+      constraints.push({
+        dayNumber: depDay,
+        type: 'departure',
+        time: f.departure_time.slice(0, 5),
+        airportCode: f.origin_iata || undefined,
+        isInternational: f.is_international ?? true,
+      });
     }
+  }
 
-    return constraints;
-  });
+  return constraints;
 }
 
-// ── hook ───────────────────────────────────────────────────────────────────
-
-export interface RegenerateInput {
+interface RegenerateInput {
+  itineraryId: string;
   itinerary: SavedItinerary;
-  tripLegs: TripLeg[];
   flights: FlightDetail[];
-  /** Callback to stream progress text back to the caller (optional). */
-  onProgress?: (text: string) => void;
 }
 
+/**
+ * Hook to regenerate an existing itinerary with flight constraints.
+ *
+ * 1. Builds flight constraints from DB flight rows
+ * 2. Calls the generate-itinerary edge function with constraints
+ * 3. Streams + parses the response
+ * 4. Replaces itinerary_items in the DB
+ * 5. Sets is_flight_aware = true
+ * 6. Invalidates query caches
+ */
 export const useRegenerateItinerary = () => {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ itinerary, tripLegs, flights, onProgress }: RegenerateInput) => {
-      // ── 1. Auth ───────────────────────────────────────────────────────
+    mutationFn: async ({ itineraryId, itinerary, flights }: RegenerateInput) => {
+      if (!user) throw new Error('Must be logged in');
+
+      const startDate = itinerary.start_date ? new Date(itinerary.start_date) : new Date();
+      const flightConstraints = buildFlightConstraints(flights, startDate);
+
+      // Get session token
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
       if (!accessToken) throw new Error('Session expired. Please sign in again.');
 
-      // ── 2. Build request body ─────────────────────────────────────────
-      const startDateStr = itinerary.start_date ?? new Date().toISOString().split('T')[0];
-      const flightDetails = buildFlightConstraints(flights, startDateStr);
+      // Build request body similar to NewTrip.tsx
+      const cityName = itinerary.cities?.name || 'Unknown';
+      const countryName = itinerary.cities?.country || '';
 
-      // Build city legs from trip_legs or fall back to the primary itinerary city.
-      const cityLegs = tripLegs.length > 0
-        ? tripLegs.map(leg => ({
-            cityId: leg.city_id,
-            cityName: leg.city?.name ?? 'Unknown City',
-            countryName: leg.city?.country ?? '',
-            daysToSpend: leg.end_day - leg.start_day + 1,
-          }))
-        : [{
-            cityId: itinerary.city_id,
-            cityName: itinerary.cities?.name ?? 'Unknown City',
-            countryName: itinerary.cities?.country ?? '',
-            daysToSpend: itinerary.num_days,
-          }];
-
-      const requestBody = {
-        cities: cityLegs,
-        cityName: cityLegs[0].cityName,
-        countryName: cityLegs[0].countryName,
-        numDays: itinerary.num_days,
-        travelStyle: itinerary.travel_style ?? 'mixed',
-        budgetLevel: itinerary.budget_level ?? 'medium',
-        pace: itinerary.pace ?? 'moderate',
-        dietaryPreferences: itinerary.dietary_preferences ?? [],
-        userPreferences: null,
-        startDate: startDateStr,
-        flightDetails,
-      };
-
-      // ── 3. Call edge function + stream response ───────────────────────
       const response = await fetch(ITINERARY_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          cityName,
+          countryName,
+          numDays: itinerary.num_days,
+          travelStyle: itinerary.travel_style || 'group',
+          budgetLevel: itinerary.budget_level || 'moderate',
+          pace: itinerary.pace || 'medium',
+          dietaryPreferences: itinerary.dietary_preferences || [],
+          startDate: format(startDate, 'yyyy-MM-dd'),
+          flightConstraints,
+        }),
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Generation failed (${response.status})`);
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error('AI is busy. Please wait a moment and try again.');
+        }
+        if (response.status === 503) {
+          throw new Error('AI service temporarily overloaded. Try again soon.');
+        }
+        throw new Error(errorData.error || 'Failed to regenerate itinerary');
       }
 
-      if (!response.body) throw new Error('No response body from AI');
+      // Stream the response
+      if (!response.body) throw new Error('No response body');
 
-      // Read the SSE stream and collect full text
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -182,106 +135,124 @@ export const useRegenerateItinerary = () => {
 
         buffer += decoder.decode(value, { stream: true });
 
-        let newlineIdx: number;
-        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, newlineIdx).trim();
-          buffer = buffer.slice(newlineIdx + 1);
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
 
-          if (!line.startsWith('data:')) continue;
-          const raw = line.slice(5).trim();
-          if (raw === '[DONE]') continue;
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
 
           try {
-            const json = JSON.parse(raw);
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullText += delta;
-              onProgress?.(fullText);
+            const parsed = JSON.parse(jsonStr);
+            let content: string | undefined;
+            if (parsed.choices?.[0]?.delta?.content) {
+              content = parsed.choices[0].delta.content;
+            } else if (
+              parsed.type === 'content_block_delta' &&
+              parsed.delta?.type === 'text_delta'
+            ) {
+              content = parsed.delta.text;
+            }
+            if (content) {
+              fullText += content;
             }
           } catch {
-            // skip malformed SSE lines
+            buffer = line + '\n' + buffer;
+            break;
           }
         }
       }
 
-      if (!fullText.trim()) throw new Error('AI returned empty response');
+      if (!fullText || fullText.length < 100) {
+        throw new Error('Regeneration produced empty result. Please try again.');
+      }
 
-      // ── 4. Parse ──────────────────────────────────────────────────────
+      // Parse the AI output
       const parsed = parseItineraryText(fullText, itinerary.num_days);
 
-      // ── 5. Replace itinerary_items ────────────────────────────────────
+      if (parsed.days.length === 0) {
+        throw new Error('Could not parse regenerated itinerary. Please try again.');
+      }
+
+      // Delete existing itinerary_items
       const { error: deleteError } = await supabase
         .from('itinerary_items')
         .delete()
-        .eq('itinerary_id', itinerary.id);
+        .eq('itinerary_id', itineraryId);
 
-      if (deleteError) throw deleteError;
-
-      const newItems = parsed.days.flatMap(day =>
-        [
-          ...day.morning.map((act, i) => ({
-            itinerary_id: itinerary.id,
-            day_number: day.dayNumber,
-            time_slot: 'morning',
-            order_index: i,
-            item_type: act.type,
-            custom_title: act.title,
-            custom_description: act.description ?? null,
-            notes: act.reasoning ?? null,
-            attraction_id: null,
-            restaurant_id: null,
-          })),
-          ...day.afternoon.map((act, i) => ({
-            itinerary_id: itinerary.id,
-            day_number: day.dayNumber,
-            time_slot: 'afternoon',
-            order_index: i,
-            item_type: act.type,
-            custom_title: act.title,
-            custom_description: act.description ?? null,
-            notes: act.reasoning ?? null,
-            attraction_id: null,
-            restaurant_id: null,
-          })),
-          ...day.evening.map((act, i) => ({
-            itinerary_id: itinerary.id,
-            day_number: day.dayNumber,
-            time_slot: 'evening',
-            order_index: i,
-            item_type: act.type,
-            custom_title: act.title,
-            custom_description: act.description ?? null,
-            notes: act.reasoning ?? null,
-            attraction_id: null,
-            restaurant_id: null,
-          })),
-        ]
-      );
-
-      if (newItems.length > 0) {
-        const { error: insertError } = await supabase
-          .from('itinerary_items')
-          .insert(newItems);
-        if (insertError) throw insertError;
+      if (deleteError) {
+        console.error('[regenerate] delete items error:', deleteError);
+        throw new Error('Failed to clear old itinerary items');
       }
 
-      // ── 6. Mark itinerary as flight-aware ─────────────────────────────
-      await supabase
+      // Insert new itinerary_items from parsed days
+      const items: Omit<SavedItineraryItem, 'id'>[] = [];
+
+      parsed.days.forEach((day) => {
+        const addItems = (activities: typeof day.morning, timeSlot: string) => {
+          activities.forEach((activity, index) => {
+            items.push({
+              itinerary_id: itineraryId,
+              day_number: day.dayNumber,
+              time_slot: timeSlot,
+              order_index: index,
+              item_type: activity.type,
+              custom_title: activity.title,
+              custom_description: activity.description || null,
+              notes: activity.reasoning || null,
+              attraction_id: null,
+              restaurant_id: null,
+            });
+          });
+        };
+
+        addItems(day.morning, 'morning');
+        addItems(day.afternoon, 'afternoon');
+        addItems(day.evening, 'evening');
+      });
+
+      if (items.length > 0) {
+        const { error: insertError } = await supabase
+          .from('itinerary_items')
+          .insert(items);
+
+        if (insertError) {
+          console.error('[regenerate] insert items error:', insertError);
+          throw new Error('Failed to save regenerated itinerary items');
+        }
+      }
+
+      // Mark itinerary as flight-aware
+      const { error: updateError } = await supabase
         .from('itineraries')
-        .update({ is_flight_aware: true })
-        .eq('id', itinerary.id);
+        .update({
+          is_flight_aware: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', itineraryId);
 
-      return { parsed, itemCount: newItems.length };
+      if (updateError) {
+        console.warn('[regenerate] failed to set is_flight_aware:', updateError);
+        // Non-fatal — items are already saved
+      }
+
+      return { dayCount: parsed.days.length, activityCount: items.length };
     },
-
-    onSuccess: (_, { itinerary }) => {
-      queryClient.invalidateQueries({ queryKey: ['itinerary', itinerary.id] });
-      queryClient.invalidateQueries({ queryKey: ['itinerary-items', itinerary.id] });
-      toast.success('Itinerary regenerated with your flight times!');
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['itinerary', variables.itineraryId] });
+      queryClient.invalidateQueries({ queryKey: ['itinerary-items', variables.itineraryId] });
+      queryClient.invalidateQueries({ queryKey: ['itineraries'] });
+      toast.success(
+        `Itinerary regenerated! ${result.dayCount} days, ${result.activityCount} activities — now flight-aware.`
+      );
     },
-
     onError: (error: Error) => {
-      console.error('[useRegenerateItinerary] error:', error);
+      console.error('[regenerate] error:', error);
       toast.error(error.message || 'Failed to regenerate itinerary');
     },
   });

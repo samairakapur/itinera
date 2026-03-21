@@ -21,7 +21,7 @@ const MobileBottomNav = () => {
     <nav
       className={cn(
         'fixed bottom-0 left-0 right-0 z-50 md:hidden',
-        'bg-background/95 backdrop-blur border-t border-border/40',
+        'bg-black/85 backdrop-blur-md border-t border-white/5',
         'safe-area-pb', // respects iOS home bar
       )}
     >

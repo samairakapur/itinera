@@ -47,14 +47,14 @@ const Navbar = () => {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-black/80 backdrop-blur-md supports-[backdrop-filter]:bg-black/75">
       <div className="container flex h-16 items-center justify-between px-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-glow">
-            <Plane className="w-5 h-5 text-primary-foreground" />
+          <div className="w-9 h-9 rounded-sm bg-gradient-primary flex items-center justify-center shadow-glow">
+            <Plane className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-display text-xl font-bold text-foreground hidden sm:block">
+          <span className="font-display text-xl font-semibold tracking-widest uppercase text-foreground hidden sm:block">
             Itinera
           </span>
         </Link>
@@ -71,8 +71,8 @@ const Navbar = () => {
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    ? "text-primary border-b border-primary pb-0.5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -88,7 +88,7 @@ const Navbar = () => {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                  <Avatar className="h-10 w-10 border-2 border-primary/20">
+                  <Avatar className="h-9 w-9 border border-primary/30">
                     <AvatarFallback className="bg-gradient-primary text-primary-foreground font-semibold">
                       {getInitials()}
                     </AvatarFallback>
@@ -130,7 +130,7 @@ const Navbar = () => {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-72">
+            <SheetContent side="right" className="w-72 bg-card border-l border-white/5">
               <nav className="flex flex-col gap-2 mt-8">
                 {navLinks.map((link) => {
                   const Icon = link.icon;
@@ -141,10 +141,10 @@ const Navbar = () => {
                       to={link.href}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-lg text-base font-medium transition-all",
+                        "flex items-center gap-3 px-4 py-3 rounded-sm text-base font-medium transition-all",
                         isActive
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                          ? "text-primary bg-primary/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                       )}
                     >
                       <Icon className="w-5 h-5" />

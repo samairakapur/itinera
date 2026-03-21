@@ -13,6 +13,7 @@ import Destinations from "@/pages/Destinations";
 import CityDetail from "@/pages/CityDetail";
 import Trips from "@/pages/Trips";
 import TripDetail from "@/pages/TripDetail";
+import TripDayMode from "@/pages/TripDayMode";
 import NewTrip from "@/pages/NewTrip";
 import Nearby from "@/pages/Nearby";
 import Profile from "@/pages/Profile";
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/city/:cityId" element={<RequireProfile><CityDetail /></RequireProfile>} />
               <Route path="/trips" element={<RequireProfile><Trips /></RequireProfile>} />
               <Route path="/trips/:tripId" element={<RequireProfile><TripDetail /></RequireProfile>} />
+              <Route path="/trips/:tripId/day" element={<RequireProfile><TripDayMode /></RequireProfile>} />
               <Route path="/planner/new" element={<RequireProfile><NewTrip /></RequireProfile>} />
               <Route path="/nearby" element={<RequireProfile><Nearby /></RequireProfile>} />
               <Route path="/profile" element={<RequireProfile><Profile /></RequireProfile>} />

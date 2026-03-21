@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
-import { 
-  ChevronDown, 
-  Sun, 
-  CloudSun, 
-  Sunrise, 
-  Sunset, 
-  Cloud, 
-  CloudRain, 
+import {
+  ChevronDown,
+  Sun,
+  CloudSun,
+  Sunrise,
+  Sunset,
+  Cloud,
+  CloudRain,
   Snowflake,
   Clock,
   Plus,
@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   Timer,
   Edit3,
-  Settings2
+  Settings2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ import { TravelTimeCard } from './TravelTimeCard';
 import { FlightConstraintBanner } from './FlightConstraintBanner';
 import { DayEditorDialog } from './DayEditorDialog';
 import { DayConstraints, estimateTravelTime, formatAvailableTime } from '@/hooks/useSmartScheduling';
+import { computeDaySchedule, overflowLabel, ScheduledActivity } from '@/utils/reflowEngine';
 import { cn } from '@/lib/utils';
 
 export interface DayWeather {
@@ -101,6 +103,7 @@ const TimeSlot = ({
   timeSlot,
   cityName,
   completedIds,
+  scheduleById,
   onRemove,
   onSwap,
   onToggleMustDo,
@@ -117,6 +120,8 @@ const TimeSlot = ({
   timeSlot: 'morning' | 'afternoon' | 'evening';
   cityName?: string;
   completedIds?: Set<string>;
+  /** Schedule computed by the reflow engine for this day */
+  scheduleById?: Map<string, ScheduledActivity>;
   onRemove?: (id: string) => void;
   onSwap?: (id: string) => void;
   onToggleMustDo?: (id: string) => void;
@@ -182,16 +187,18 @@ const TimeSlot = ({
                 <ActivityCard
                   activity={activity}
                   cityName={cityName}
-                isCompleted={completedIds?.has(activity.id)}
-                onRemove={onRemove}
-                onSwap={onSwap}
-                onToggleMustDo={onToggleMustDo}
-                onMoveUp={onMoveUp}
-                onMoveDown={onMoveDown}
+                  isCompleted={completedIds?.has(activity.id)}
+                  onRemove={onRemove}
+                  onSwap={onSwap}
+                  onToggleMustDo={onToggleMustDo}
+                  onMoveUp={onMoveUp}
+                  onMoveDown={onMoveDown}
                   onEdit={onEdit}
                   onToggleComplete={onToggleComplete}
                   isFirst={index === 0}
                   isLast={index === activities.length - 1}
+                  computedStartTime={scheduleById?.get(activity.id)?.computedStart}
+                  isScheduleOverflow={scheduleById?.get(activity.id)?.isOverflow}
                 />
               </div>
             );
@@ -244,6 +251,15 @@ export const DayCard = ({
   const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
   const totalActivities = allActivities.length;
   const completedCount = allActivities.filter(a => completedActivityIds.has(a.id)).length;
+
+  // ── Reflow engine ───────────────────────────────────────────────────────
+  // Computes a realistic cascading schedule for the day. Automatically
+  // reflows whenever activities change, are reordered, or constraints change
+  // (e.g. a flight time is updated). No manual trigger needed.
+  const daySchedule = useMemo(() => {
+    if (!constraints) return null;
+    return computeDaySchedule(day.morning, day.afternoon, day.evening, constraints);
+  }, [day.morning, day.afternoon, day.evening, constraints]);
 
   // Calculate actual date from start date
   const actualDate = startDate 
@@ -308,10 +324,10 @@ export const DayCard = ({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <Card className="border shadow-sm overflow-hidden">
           <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors p-4">
+            <CardHeader className="cursor-pointer hover:bg-white/5 transition-colors p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-primary flex flex-col items-center justify-center text-primary-foreground">
+                  <div className="w-12 h-12 rounded-sm border border-primary/40 flex flex-col items-center justify-center text-primary">
                     {formattedDate ? (
                       <>
                         <span className="text-xs font-medium leading-none">{dayOfWeek}</span>
@@ -394,7 +410,7 @@ export const DayCard = ({
             <CardContent className="p-4 pt-0 space-y-6">
               {/* Weather Summary Banner */}
               {day.weather && (
-                <div className="p-4 rounded-xl bg-gradient-to-r from-sky/10 via-primary/5 to-teal/10 border border-sky/20">
+                <div className="p-4 rounded-sm bg-muted/60 border border-white/8">
                   <div className="flex items-start gap-4">
                     <div className="p-3 rounded-xl bg-background/80 shadow-sm">
                       <WeatherIcon className="w-8 h-8 text-primary" />
@@ -450,6 +466,7 @@ export const DayCard = ({
                 timeSlot="morning"
                 cityName={cityName}
                 completedIds={completedActivityIds}
+                scheduleById={daySchedule?.byId}
                 onRemove={handleRemove}
                 onSwap={handleSwap}
                 onToggleMustDo={handleToggleMustDo}
@@ -467,6 +484,7 @@ export const DayCard = ({
                 timeSlot="afternoon"
                 cityName={cityName}
                 completedIds={completedActivityIds}
+                scheduleById={daySchedule?.byId}
                 onRemove={handleRemove}
                 onSwap={handleSwap}
                 onToggleMustDo={handleToggleMustDo}
@@ -484,6 +502,7 @@ export const DayCard = ({
                 timeSlot="evening"
                 cityName={cityName}
                 completedIds={completedActivityIds}
+                scheduleById={daySchedule?.byId}
                 onRemove={handleRemove}
                 onSwap={handleSwap}
                 onToggleMustDo={handleToggleMustDo}
@@ -493,6 +512,25 @@ export const DayCard = ({
                 onAdd={handleAddEvening}
                 onToggleComplete={handleToggleComplete}
               />
+
+              {/* ── Reflow overflow banner ──────────────────────────────────
+                  Shown when the scheduled activities exceed the day's flight
+                  constraint window. Suggests dropping Flex blocks first.    */}
+              {daySchedule?.hasOverflow && (
+                <div className="mt-3 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+                  <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-1">
+                    <p className="font-medium text-destructive">
+                      Day is {overflowLabel(daySchedule)} over schedule
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {daySchedule.suggestedDropIds.length > 0
+                        ? `Consider removing the highlighted flex block${daySchedule.suggestedDropIds.length > 1 ? 's' : ''} to bring the day back on track.`
+                        : 'Consider shortening an activity or moving one to the next day.'}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Check-in Button */}
               {showCheckIn && (

@@ -14,20 +14,19 @@ const CityCard = ({ city }: CityCardProps) => {
   const tags = city.tags?.slice(0, 3) || [];
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  
-  // Use the image utility for accurate, place-matched images
-  const imageUrl = imageError || !city.image_url 
-    ? getCityImage(city.name, city.country) 
+
+  const imageUrl = imageError || !city.image_url
+    ? getCityImage(city.name, city.country)
     : city.image_url;
-  
+
   return (
     <Link to={`/city/${city.id}`}>
-      <Card className="group overflow-hidden border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-elegant">
+      <Card className="group overflow-hidden border-white/5 hover:border-primary/30 transition-all duration-500 hover:shadow-glow bg-card">
         <div className="relative aspect-[4/3] overflow-hidden bg-muted">
           {/* Placeholder while loading */}
           {!imageLoaded && (
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center animate-pulse">
-              <MapPin className="w-12 h-12 text-primary/50" />
+            <div className="absolute inset-0 bg-muted flex items-center justify-center animate-pulse">
+              <MapPin className="w-12 h-12 text-muted-foreground/30" />
             </div>
           )}
           <img
@@ -43,12 +42,12 @@ const CityCard = ({ city }: CityCardProps) => {
             }}
             loading="lazy"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0 p-4">
-            <h3 className="font-display text-xl font-bold text-white mb-1">
+            <h3 className="font-display text-2xl font-semibold text-white mb-1 tracking-wide">
               {city.name}
             </h3>
-            <div className="flex items-center gap-1 text-white/80 text-sm">
+            <div className="flex items-center gap-1 text-white/70 text-sm">
               <MapPin className="w-3 h-3" />
               {city.country}
             </div>
@@ -57,10 +56,10 @@ const CityCard = ({ city }: CityCardProps) => {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <Badge 
-                key={tag} 
-                variant="secondary" 
-                className="text-xs font-normal"
+              <Badge
+                key={tag}
+                variant="outline"
+                className="text-xs font-normal border-white/15 text-white/50 bg-transparent"
               >
                 {tag}
               </Badge>

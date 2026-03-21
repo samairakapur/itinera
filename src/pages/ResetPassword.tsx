@@ -155,7 +155,7 @@ const ResetPassword = () => {
           <h1 className="font-display text-3xl font-bold text-foreground mb-2">Link expired</h1>
           <p className="text-muted-foreground">Reset links are only valid for a short time</p>
         </div>
-        <Card className="shadow-elegant border-border/50">
+        <Card className="shadow-card border-white/5">
           <CardContent className="pt-6 pb-6">
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -187,7 +187,7 @@ const ResetPassword = () => {
           </h1>
           <p className="text-muted-foreground">Redirecting you to the app…</p>
         </div>
-        <Card className="shadow-elegant border-border/50">
+        <Card className="shadow-card border-white/5">
           <CardContent className="pt-6 pb-6">
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-950/40 flex items-center justify-center">
@@ -218,7 +218,7 @@ const ResetPassword = () => {
         </p>
       </div>
 
-      <Card className="shadow-elegant border-border/50">
+      <Card className="shadow-card border-white/5">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">

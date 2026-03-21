@@ -66,6 +66,21 @@ export const useFlightDetails = (itineraryId: string | undefined) => {
   });
 };
 
+// ---------------------------------------------------------------------------
+// Helper — mark an itinerary as no longer flight-aware (non-fatal).
+// Called after any flight mutation so the amber "Regenerate" banner re-appears.
+// ---------------------------------------------------------------------------
+async function markItineraryStale(itineraryId: string): Promise<void> {
+  const { error } = await supabase
+    .from('itineraries')
+    .update({ is_flight_aware: false })
+    .eq('id', itineraryId);
+  if (error) {
+    // Non-fatal: column may not exist on older DB instances.
+    console.warn('[markItineraryStale] could not reset is_flight_aware:', error.message);
+  }
+}
+
 export const useCreateFlightDetail = () => {
   const queryClient = useQueryClient();
 
@@ -106,8 +121,11 @@ export const useCreateFlightDetail = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      // Mark itinerary stale so "Regenerate" banner re-appears persistently
+      await markItineraryStale(variables.itinerary_id);
       queryClient.invalidateQueries({ queryKey: ['flight-details', variables.itinerary_id] });
+      queryClient.invalidateQueries({ queryKey: ['itinerary', variables.itinerary_id] });
       toast.success('Flight added successfully');
     },
     onError: (error: any) => {
@@ -155,8 +173,10 @@ export const useUpdateFlightDetail = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      await markItineraryStale(data.itinerary_id);
       queryClient.invalidateQueries({ queryKey: ['flight-details', data.itinerary_id] });
+      queryClient.invalidateQueries({ queryKey: ['itinerary', data.itinerary_id] });
       toast.success('Flight updated');
     },
     onError: (error) => {
@@ -179,8 +199,10 @@ export const useDeleteFlightDetail = () => {
       if (error) throw error;
       return itineraryId;
     },
-    onSuccess: (itineraryId) => {
+    onSuccess: async (itineraryId) => {
+      await markItineraryStale(itineraryId);
       queryClient.invalidateQueries({ queryKey: ['flight-details', itineraryId] });
+      queryClient.invalidateQueries({ queryKey: ['itinerary', itineraryId] });
       toast.success('Flight removed');
     },
     onError: (error) => {

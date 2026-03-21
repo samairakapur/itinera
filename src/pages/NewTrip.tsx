@@ -6,7 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { useCreateItinerary } from '@/hooks/useItineraries';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2, ArrowRight, Plane } from 'lucide-react';
+import { Calendar, ArrowLeft, Sparkles, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { GuidedTripForm } from '@/components/trip/guided';
@@ -16,15 +16,9 @@ import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { DateSelectionStep } from '@/components/trip/DateSelectionStep';
-import { PreviewFlightPanel, PreviewFlight } from '@/components/trip/PreviewFlightPanel';
 import { parseItineraryText, ParsedItinerary } from '@/utils/itineraryParser';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
-
-// ---------------------------------------------------------------------------
-// parseItineraryText extracted to src/utils/itineraryParser.ts
-// The function below is kept temporarily as a marker and will be removed;
-// TypeScript will error if the import above shadows it — so delete it.
 
 // Helper to convert trip length string to number
 const tripLengthToNumDays = (tripLength: string): number => {
@@ -96,13 +90,11 @@ const NewTrip = () => {
   const [selectedCities, setSelectedCities] = useState<{ cityId: string; daysToSpend: number }[]>([]);
   
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingStatus, setGeneratingStatus] = useState('');
   const [rawItinerary, setRawItinerary] = useState('');
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
   const [weatherData, setWeatherData] = useState<DayWeather[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('form');
-  const [tripName, setTripName] = useState('');
-  const [previewFlights, setPreviewFlights] = useState<PreviewFlight[]>([]);
-  const [showFlightPanel, setShowFlightPanel] = useState(false);
 
   // Add activity dialog state
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -111,57 +103,6 @@ const NewTrip = () => {
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
 
   const contentRef = useRef<HTMLDivElement>(null);
-
-  // When flights are added/removed in the pre-save panel, immediately update
-  // the displayed start time for each arrival day (arrival time + 2h buffer)
-  // so the user sees the correct schedule without having to click Re-generate.
-  useEffect(() => {
-    if (previewFlights.length === 0) return;
-
-    // Compute the same provisional start date used by handleGenerate
-    const allDates = previewFlights
-      .flatMap(f => [f.departure_date, f.arrival_date])
-      .filter((d): d is string => Boolean(d))
-      .sort();
-    if (allDates.length === 0) return;
-
-    const tripStart = new Date(allDates[0] + 'T12:00:00Z');
-
-    setParsedItinerary(prev => {
-      if (!prev) return prev;
-
-      let changed = false;
-      const newDays = prev.days.map(day => {
-        // Find an arrival flight that lands on this day number
-        const arrivalFlight = previewFlights.find(f => {
-          if (!f.arrival_date || !f.arrival_time) return false;
-          const arrDate = new Date(f.arrival_date + 'T12:00:00Z');
-          const dayNum = Math.round((arrDate.getTime() - tripStart.getTime()) / 86_400_000) + 1;
-          return dayNum === day.dayNumber;
-        });
-
-        if (arrivalFlight?.arrival_time) {
-          const [hStr, mStr] = arrivalFlight.arrival_time.split(':');
-          const h = parseInt(hStr, 10);
-          const m = parseInt(mStr, 10);
-          const totalMins = (h * 60 + m) + 120; // +2h buffer
-          const startH = Math.floor(totalMins / 60) % 24;
-          const startM = totalMins % 60;
-          // Format as "H:MM AM/PM" to match AI output style
-          const period = startH >= 12 ? 'PM' : 'AM';
-          const displayH = startH % 12 || 12;
-          const newStart = `${displayH}:${String(startM).padStart(2, '0')} ${period}`;
-          if (newStart !== day.startTime) {
-            changed = true;
-            return { ...day, startTime: newStart };
-          }
-        }
-        return day;
-      });
-
-      return changed ? { ...prev, days: newDays } : prev;
-    });
-  }, [previewFlights]);
 
   // Pre-fill from user profile preferences
   useEffect(() => {
@@ -192,47 +133,7 @@ const NewTrip = () => {
     }
   }, [rawItinerary, numDays, weatherData]);
 
-  /** Convert UI PreviewFlight objects to FlightConstraint format the edge function expects */
-  const buildFlightConstraints = (flights: PreviewFlight[], startDateStr: string) => {
-    const tripStart = new Date(startDateStr + 'T12:00:00Z');
-    return flights.flatMap(f => {
-      const constraints: object[] = [];
-      // Arrival constraint: which day does the flight land?
-      if (f.arrival_date && f.arrival_city) {
-        const arrDate = new Date(f.arrival_date + 'T12:00:00Z');
-        const dayNum = Math.round((arrDate.getTime() - tripStart.getTime()) / 86400000) + 1;
-        if (dayNum >= 1) {
-          constraints.push({
-            type: 'arrival',
-            dayNumber: dayNum,
-            time: f.arrival_time || '12:00',
-            city: f.arrival_city,
-            iata: f.destination_iata || undefined,
-            isInternational: f.is_international,
-            delayMinutes: 0,
-          });
-        }
-      }
-      // Departure constraint: which day does the flight leave?
-      if (f.departure_date && f.departure_city) {
-        const depDate = new Date(f.departure_date + 'T12:00:00Z');
-        const dayNum = Math.round((depDate.getTime() - tripStart.getTime()) / 86400000) + 1;
-        if (dayNum >= 1) {
-          constraints.push({
-            type: 'departure',
-            dayNumber: dayNum,
-            time: f.departure_time || '12:00',
-            city: f.departure_city,
-            iata: f.origin_iata || undefined,
-            isInternational: f.is_international,
-          });
-        }
-      }
-      return constraints;
-    });
-  };
-
-  const handleGenerate = async (flights?: PreviewFlight[]) => {
+  const handleGenerate = async () => {
     if (!user) {
       toast.error('Please sign in to create an itinerary');
       navigate('/auth');
@@ -253,22 +154,6 @@ const NewTrip = () => {
     if (cityData.length === 0) {
       toast.error('City not found');
       return;
-    }
-
-    // Warn the user about limited activity time on late-arrival days
-    const flightsForWarning = flights ?? previewFlights;
-    const lateArrival = flightsForWarning.find(f => {
-      if (!f.arrival_time) return false;
-      const [h] = f.arrival_time.split(':').map(Number);
-      return h >= 14; // landing at 2 PM or later = noticeably constrained day
-    });
-    if (lateArrival) {
-      const city = lateArrival.arrival_city || 'your destination';
-      const time = lateArrival.arrival_time?.slice(0, 5) ?? '';
-      toast.info(
-        `✈️ You arrive in ${city} at ${time} — your arrival day will have a lighter schedule to allow time for check‑in and rest.`,
-        { duration: 7000 },
-      );
     }
 
     setIsGenerating(true);
@@ -297,77 +182,63 @@ const NewTrip = () => {
         cityDescription: cd.city!.description,
       }));
 
-      // Build flight constraints from the preview flights (if any)
-      const flightsToUse = flights ?? previewFlights;
+      // Use today as a provisional start date so Claude can use real calendar
+      // dates in day headings. The user will confirm (or change) the actual
+      // start date in the DateSelectionStep before saving the trip.
+      const provisionalStartDate = new Date().toISOString().split('T')[0];
 
-      // If the user has entered flights, anchor the provisional start date to
-      // the earliest flight date so that day-number calculations in
-      // buildFlightConstraints are correct (e.g. a flight arriving on Mar 9
-      // becomes Day 1, not Day 8 relative to today).
-      // If no flights, fall back to today so the AI still uses real calendar dates.
-      const provisionalStartDate = (() => {
-        if (flightsToUse.length > 0) {
-          const allDates = flightsToUse
-            .flatMap(f => [f.departure_date, f.arrival_date])
-            .filter((d): d is string => Boolean(d))
-            .sort();
-          if (allDates.length > 0) return allDates[0];
-        }
-        return new Date().toISOString().split('T')[0];
-      })();
-
-      const flightDetails = flightsToUse.length > 0
-        ? buildFlightConstraints(flightsToUse, provisionalStartDate)
-        : [];
-
-      const response = await fetch(ITINERARY_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
+      const requestBody = JSON.stringify({
+        // Multi-city array (primary)
+        cities: citiesForRequest,
+        // Legacy single-city fields (fallback)
+        cityName: citiesForRequest[0].cityName,
+        countryName: citiesForRequest[0].countryName,
+        numDays,
+        travelStyle: mapTravelGroup(preferences.travelGroup),
+        budgetLevel: mapBudgetStyle(preferences.budgetStyle),
+        pace: mapDailyPace(preferences.dailyPace),
+        dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
+        userPreferences: {
+          ...profile?.travel_preferences,
+          mainInterests: preferences.mainInterests,
+          comfortPreferences: preferences.comfortPreferences,
+          tripVibe: preferences.tripVibe,
+          specialOccasion: preferences.specialOccasion,
         },
-        body: JSON.stringify({
-          // Multi-city array (primary)
-          cities: citiesForRequest,
-          // Legacy single-city fields (fallback)
-          cityName: citiesForRequest[0].cityName,
-          countryName: citiesForRequest[0].countryName,
-          numDays,
-          travelStyle: mapTravelGroup(preferences.travelGroup),
-          budgetLevel: mapBudgetStyle(preferences.budgetStyle),
-          pace: mapDailyPace(preferences.dailyPace),
-          dietaryPreferences: preferences.dietaryPreferences.filter(d => d !== 'none'),
-          userPreferences: {
-            ...profile?.travel_preferences,
-            mainInterests: preferences.mainInterests,
-            comfortPreferences: preferences.comfortPreferences,
-            tripVibe: preferences.tripVibe,
-            specialOccasion: preferences.specialOccasion,
-          },
-          cityDescription: citiesForRequest[0].cityDescription,
-          // Provisional start date — Claude uses this for real calendar dates.
-          // The user will confirm / adjust in the date-selection step.
-          startDate: provisionalStartDate,
-          // Flight constraints — used to adjust day start times around arrivals/departures
-          flightDetails,
-        }),
+        cityDescription: citiesForRequest[0].cityDescription,
+        startDate: provisionalStartDate,
       });
+
+      const fetchItinerary = () => fetch(ITINERARY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: requestBody,
+      });
+
+      // Auto-retry: silently retry up to 2× when Gemini is rate-limited (429/503).
+      // Status is shown inline in the loading card — no intrusive toast.
+      let response = await fetchItinerary();
+      if (response.status === 429 || response.status === 503) {
+        setGeneratingStatus('AI is a little busy — retrying shortly…');
+        await new Promise(r => setTimeout(r, 8_000));
+        setGeneratingStatus('');
+        response = await fetchItinerary();
+      }
+      if (response.status === 429 || response.status === 503) {
+        setGeneratingStatus('Still warming up — almost there…');
+        await new Promise(r => setTimeout(r, 12_000));
+        setGeneratingStatus('');
+        response = await fetchItinerary();
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const msg = errorData.error || '';
-        // Provide helpful, specific messages for known error cases
-        if (response.status === 402) {
-          toast.error('AI credits exhausted. Please try again later.', { duration: 8000 });
-          setViewMode('form');
-          setIsGenerating(false);
-          return;
-        }
         if (response.status === 429) {
-          throw new Error('The AI is a little busy right now. Please wait a few seconds and try again.');
+          throw new Error('The AI is still very busy. Please wait 30 seconds and try again.');
         }
         if (response.status === 503) {
-          throw new Error('The AI service is temporarily overloaded. Please try again in a moment.');
+          throw new Error('The AI service is temporarily unavailable. Please try again in a moment.');
         }
         if (response.status === 401) {
           throw new Error('Unable to authenticate with the AI service. Please sign out and back in.');
@@ -379,7 +250,7 @@ const NewTrip = () => {
       const weatherHeader = response.headers.get('X-Weather-Data');
       if (weatherHeader) {
         try {
-          const weather = JSON.parse(decodeURIComponent(weatherHeader));
+          const weather = JSON.parse(weatherHeader);
           setWeatherData(weather);
         } catch (e) {
           console.warn('Failed to parse weather data from header');
@@ -444,6 +315,7 @@ const NewTrip = () => {
       setViewMode('form');
     } finally {
       setIsGenerating(false);
+      setGeneratingStatus('');
     }
   };
 
@@ -560,16 +432,6 @@ const NewTrip = () => {
   }, [parsedItinerary, addDialogDay, addDialogTimeSlot, editActivity]);
 
   const handleProceedToDates = () => {
-    // Compute default trip name from city selection if not already set
-    if (!tripName) {
-      const cityNames = selectedCities
-        .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
-        .filter(Boolean);
-      const defaultName = cityNames.length > 1
-        ? `${cityNames.join(' → ')} Adventure`
-        : `${cityNames[0]} Adventure`;
-      setTripName(defaultName);
-    }
     setViewMode('dates');
   };
 
@@ -580,15 +442,13 @@ const NewTrip = () => {
     const primaryCity = cities?.find(c => c.id === selectedCities[0].cityId);
     if (!primaryCity) return;
 
-    // Use the user-editable trip name (with fallback)
+    // Create trip name based on cities
     const cityNames = selectedCities
       .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
       .filter(Boolean);
-    const finalTripName = tripName.trim() || (
-      cityNames.length > 1
-        ? `${cityNames.join(' → ')} Adventure`
-        : `${cityNames[0]} Adventure`
-    );
+    const tripName = cityNames.length > 1 
+      ? `${cityNames.join(' → ')} Adventure`
+      : `${cityNames[0]} Adventure`;
 
     // Build enriched selectedCities for multi-city leg creation
     const enrichedCities = selectedCities.map(sc => ({
@@ -600,7 +460,7 @@ const NewTrip = () => {
     try {
       await createItinerary.mutateAsync({
         cityId: selectedCities[0].cityId,
-        name: finalTripName,
+        name: tripName,
         numDays,
         startDate,
         endDate,
@@ -611,8 +471,6 @@ const NewTrip = () => {
         days: parsedItinerary.days,
         summary: parsedItinerary.summary,
         selectedCities: enrichedCities,
-        // Persist pre-save flight details to DB
-        flightDetails: previewFlights.length > 0 ? previewFlights : undefined,
       });
       navigate('/trips');
     } catch (err) {
@@ -674,7 +532,7 @@ const NewTrip = () => {
           onPreferencesChange={setPreferences}
           selectedCities={selectedCities}
           onSelectedCitiesChange={setSelectedCities}
-          onSubmit={() => handleGenerate()}
+          onSubmit={handleGenerate}
         />
       </div>
     );
@@ -696,8 +554,6 @@ const NewTrip = () => {
           <DateSelectionStep
             cityName={displayName}
             numDays={numDays}
-            tripName={tripName}
-            onTripNameChange={setTripName}
             onBack={() => setViewMode('itinerary')}
             onSave={handleSaveTrip}
             isSaving={createItinerary.isPending}
@@ -748,10 +604,12 @@ const NewTrip = () => {
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
                 <p className="text-muted-foreground">
-                  Crafting your personalized adventure...
+                  {generatingStatus || 'Crafting your personalized adventure...'}
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  This usually takes 10-20 seconds
+                  {generatingStatus
+                    ? 'This can take up to 30 seconds when AI is busy'
+                    : 'This usually takes 10–20 seconds'}
                 </p>
               </CardContent>
             </Card>
@@ -775,7 +633,7 @@ const NewTrip = () => {
                 summary={parsedItinerary.summary}
               />
 
-              {/* Action Buttons */}
+              {/* Action Buttons – No duplicate "Next" button here */}
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -784,26 +642,15 @@ const NewTrip = () => {
                     setParsedItinerary(null);
                     setRawItinerary('');
                     setWeatherData([]);
-                    setPreviewFlights([]);
-                    setShowFlightPanel(false);
                     setViewMode('form');
                   }}
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Edit Preferences
                 </Button>
-                {/* ✈ Add Flights toggle */}
-                <Button
-                  variant={showFlightPanel ? 'secondary' : 'outline'}
-                  onClick={() => setShowFlightPanel(prev => !prev)}
-                  className="gap-1.5"
-                >
-                  <Plane className="w-4 h-4" />
-                  {previewFlights.length > 0 ? `Flights (${previewFlights.length})` : 'Flights'}
-                </Button>
                 <Button
                   variant="outline"
-                  onClick={() => handleGenerate()}
+                  onClick={handleGenerate}
                   disabled={isGenerating}
                 >
                   {isGenerating ? (
@@ -813,16 +660,6 @@ const NewTrip = () => {
                   )}
                 </Button>
               </div>
-
-              {/* Flight panel (shown inline when toggled) */}
-              {showFlightPanel && (
-                <PreviewFlightPanel
-                  flights={previewFlights}
-                  onChange={setPreviewFlights}
-                  onRegenerate={() => handleGenerate()}
-                  isRegenerating={isGenerating}
-                />
-              )}
 
               {/* Day Cards with city tags for multi-city trips */}
               {parsedItinerary.days.map((day) => {

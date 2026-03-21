@@ -1,9 +1,3 @@
-/**
- * Shared itinerary parser utility.
- * Used by both NewTrip.tsx (pre-save generation) and useRegenerateItinerary
- * (post-save regeneration) so the parsing logic stays in one place.
- */
-
 import { DayData, DayWeather } from '@/components/trip/DayCard';
 import { Activity } from '@/components/trip/ActivityCard';
 
@@ -15,11 +9,7 @@ export interface ParsedItinerary {
   weatherNotes: string;
 }
 
-export const parseItineraryText = (
-  text: string,
-  numDays: number,
-  weatherData?: DayWeather[],
-): ParsedItinerary => {
+export const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[]): ParsedItinerary => {
   const result: ParsedItinerary = {
     summary: '',
     days: [],
@@ -81,20 +71,14 @@ export const parseItineraryText = (
     if (dayData.title.toLowerCase().startsWith('day')) {
       dayData.title = dayData.title.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim();
     }
-    // Remove weekday name only (Monday, Tuesday…) but keep the date (March 3:)
-    dayData.title = dayData.title.replace(/^(monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+/i, '').trim();
     if (!dayData.title || dayData.title.length < 3) {
       dayData.title = `Exploring ${dayNumber === 1 ? 'the City' : 'More Attractions'}`;
     }
 
     if (daySection) {
       const nextDayIndex = daySections.find(d => d.dayNumber === dayNumber + 1)?.startIndex;
-      // Find the start of any trailing top-level section (## Packing, ## Transport, ## Tips…).
-      // Use a lookahead that excludes ### sub-headers.
-      const textFromDay = text.slice(daySection.startIndex);
-      const trailingMatch = textFromDay.search(/\n##(?!#)\s*(Packing|Transport|Tips|Summary|Notes|Additional)/i);
-      const endFromTrailing = trailingMatch > 0 ? daySection.startIndex + trailingMatch : -1;
-      const endIndex = nextDayIndex ?? (endFromTrailing > 0 ? endFromTrailing : text.length);
+      const endOfDays = text.search(/##\s*(Packing|Transport|Tips)/i);
+      const endIndex = nextDayIndex ?? (endOfDays > 0 ? endOfDays : text.length);
       const dayContent = text.slice(daySection.startIndex, endIndex);
 
       // Extract start time
@@ -145,24 +129,29 @@ export const parseItineraryText = (
         const slotContent = slotMatch[1];
 
         // Parse activities: **Name** | type | duration | time
+        // Followed by description line and Why: reasoning
         const activityBlocks = slotContent.split(/(?=[-•]\s*\*\*)/);
 
         activityBlocks.forEach((block, idx) => {
           if (!block.trim()) return;
 
+          // Match the header line: - **Name** | type | duration | time
           const headerMatch = block.match(/[-•]\s*\*\*([^*]+)\*\*\s*\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)$/m);
 
           if (!headerMatch) {
+            // Try simpler pattern
             const simpleMatch = block.match(/[-•]\s*\*\*([^*]+)\*\*/);
             if (simpleMatch) {
               const title = simpleMatch[1].trim();
               if (title.length > 2) {
                 const descMatch = block.match(/\*\*[^*]+\*\*[^\n]*\n\s*([^\n]+)/);
                 const whyMatch = block.match(/Why:\s*([^\n]+)/i);
+
                 const isRestaurant = title.toLowerCase().includes('lunch') ||
-                                     title.toLowerCase().includes('dinner') ||
-                                     title.toLowerCase().includes('restaurant') ||
-                                     title.toLowerCase().includes('café');
+                                    title.toLowerCase().includes('dinner') ||
+                                    title.toLowerCase().includes('restaurant') ||
+                                    title.toLowerCase().includes('café');
+
                 activities.push({
                   id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
                   type: isRestaurant ? 'restaurant' : 'attraction',
@@ -180,23 +169,50 @@ export const parseItineraryText = (
           const duration = headerMatch[3]?.trim() || '';
           const time = headerMatch[4]?.trim() || '';
 
+          // Get description (line after header, before Why: or ⚠️)
           const restOfBlock = block.slice(block.indexOf(headerMatch[0]) + headerMatch[0].length);
-          const descMatch = restOfBlock.match(/^\s*\n?\s*([^\n]+?)(?:\s*\n\s*Why:|$)/);
+          const descMatch = restOfBlock.match(/^\s*\n?\s*([^\n]+?)(?:\s*\n\s*(?:Why:|⚠️)|$)/);
           const whyMatch = restOfBlock.match(/Why:\s*([^\n]+)/i);
+          // Capture booking warning if present
+          const bookingWarningMatch = restOfBlock.match(/⚠️\s*([^\n]+)/);
+
+          // Build description, optionally appending the booking warning
+          let description = descMatch?.[1]?.trim() || undefined;
+          if (bookingWarningMatch) {
+            const warning = `⚠️ ${bookingWarningMatch[1].trim()}`;
+            description = description ? `${description}\n${warning}` : warning;
+          }
 
           if (title && title.length > 2) {
-            const isRestaurant = typeHint.includes('restaurant') ||
-                                 title.toLowerCase().includes('lunch') ||
-                                 title.toLowerCase().includes('dinner') ||
-                                 title.toLowerCase().includes('breakfast') ||
-                                 title.toLowerCase().includes('café') ||
-                                 title.toLowerCase().includes('cafe');
+            // Determine activity type from the explicit pipe value first,
+            // then fall back to title keyword detection
+            let activityType: string;
+            if (typeHint.includes('transport') || title.includes('🚶')) {
+              activityType = 'transport';
+            } else if (typeHint.includes('flex') || title.includes('🗺️')) {
+              activityType = 'flex';
+            } else if (typeHint.includes('prebooked')) {
+              activityType = 'prebooked';
+            } else if (
+              typeHint.includes('restaurant') ||
+              title.toLowerCase().includes('lunch') ||
+              title.toLowerCase().includes('dinner') ||
+              title.toLowerCase().includes('breakfast') ||
+              title.toLowerCase().includes('café') ||
+              title.toLowerCase().includes('cafe')
+            ) {
+              activityType = 'restaurant';
+            } else {
+              activityType = 'attraction';
+            }
 
             activities.push({
               id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
-              type: isRestaurant ? 'restaurant' : 'attraction',
-              title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
-              description: descMatch?.[1]?.trim() || undefined,
+              type: activityType,
+              title: title
+                .replace(/^(Lunch|Dinner|Breakfast):\s*/i, '')
+                .replace(/^🗺️\s*Wander\s*&\s*Explore:\s*/i, '🗺️ '),
+              description,
               duration: duration || undefined,
               time: time || undefined,
               reasoning: whyMatch?.[1]?.trim(),
@@ -218,8 +234,8 @@ export const parseItineraryText = (
                 !title.toLowerCase().includes('note') &&
                 !title.toLowerCase().includes('why')) {
               const isRestaurant = title.toLowerCase().includes('lunch') ||
-                                   title.toLowerCase().includes('dinner') ||
-                                   title.toLowerCase().includes('restaurant');
+                                  title.toLowerCase().includes('dinner') ||
+                                  title.toLowerCase().includes('restaurant');
 
               activities.push({
                 id: `day${dayNumber}-${slotName.toLowerCase()}-fallback-${activities.length}`,
@@ -254,8 +270,8 @@ export const parseItineraryText = (
               !title.toLowerCase().includes('weather')) {
 
             const isRestaurant = title.toLowerCase().includes('lunch') ||
-                                 title.toLowerCase().includes('dinner') ||
-                                 title.toLowerCase().includes('restaurant');
+                                title.toLowerCase().includes('dinner') ||
+                                title.toLowerCase().includes('restaurant');
 
             allActivities.push({
               id: `day${dayNumber}-bold-${allActivities.length}`,
@@ -294,7 +310,7 @@ export const parseItineraryText = (
     }
   }
 
-  // Collect weather notes
+  // Extract first weather note for overall summary
   const weatherNotes: string[] = [];
   result.days.forEach(day => {
     if (day.weatherNote) {
