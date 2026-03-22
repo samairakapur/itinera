@@ -18,7 +18,8 @@ import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { DateSelectionStep } from '@/components/trip/DateSelectionStep';
 import { parseItineraryText, ParsedItinerary } from '@/utils/itineraryParser';
 
-const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoynkubynsfi.supabase.co';
+const ITINERARY_URL = `${SUPABASE_URL}/functions/v1/generate-itinerary`;
 
 // Helper to convert trip length string to number
 const tripLengthToNumDays = (tripLength: string): number => {
@@ -165,13 +166,17 @@ const NewTrip = () => {
     try {
       const { supabase } = await import('@/integrations/supabase/client');
       const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
+      const rawToken = sessionData?.session?.access_token;
 
-      if (!accessToken) {
+      if (!rawToken) {
         toast.error('Session expired. Please sign in again.');
         navigate('/auth');
         return;
       }
+
+      // Strip any non-printable / non-ASCII characters that would cause
+      // "Value is not a valid ByteString" in the Authorization header.
+      const accessToken = rawToken.replace(/[^\x20-\x7E]/g, '').trim();
 
       // Build multi-city request
       const citiesForRequest = cityData.map(cd => ({

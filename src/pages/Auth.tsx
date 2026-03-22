@@ -142,9 +142,25 @@ const Auth = () => {
       }
     }
 
-    // Call Supabase — always show the same message for security
-    // (don't reveal whether the email address is registered)
-    await sendPasswordResetEmail(forgotEmail);
+    // Call Supabase password reset.
+    // Always show the same "check your inbox" message for security
+    // (don't reveal whether the email address is registered).
+    const { error } = await sendPasswordResetEmail(forgotEmail);
+
+    if (error) {
+      console.error('Password reset error:', error.message);
+      // Surface real config/infra errors (redirect URL not in allowlist, etc.)
+      if (
+        error.message.toLowerCase().includes('redirect') ||
+        error.message.toLowerCase().includes('not allowed') ||
+        error.message.toLowerCase().includes('url')
+      ) {
+        toast.error('Password reset is misconfigured. Please contact support or try again later.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     setView('forgot-success');
     setIsSubmitting(false);
   };
