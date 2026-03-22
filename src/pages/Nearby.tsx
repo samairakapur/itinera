@@ -544,9 +544,11 @@ const Nearby = () => {
     let rawPlaces: NearbyPlace[] = [];
 
     try {
-      // Query 30% wider than the radius so we catch places where haversine is
-      // just under the cutoff but the actual road route stays within radius.
-      rawPlaces = await fetchOverpassDirect(lat, lng, radius * 1300);
+      // Query at 30% wider than requested radius for road-distance tolerance,
+      // but enforce a 5 km floor so small radii (1-3 km) still return a useful
+      // result set from OSM. The haversine filter below trims to the real radius.
+      const overpassRadius = Math.max(radius * 1300, 5000);
+      rawPlaces = await fetchOverpassDirect(lat, lng, overpassRadius);
       console.log(`Overpass returned ${rawPlaces.length} places`);
     } catch (overpassErr) {
       console.warn('Overpass direct failed:', overpassErr);
@@ -559,7 +561,7 @@ const Nearby = () => {
         const edgeFnPromise = supabase.functions.invoke('nearby-places', {
           body: {
             lat, lng,
-            radiusMeters: radius * 1000,
+            radiusMeters: Math.max(radius * 1000, 5000),
             category: 'all',
             interests: prefs?.interests ?? [],
             cuisines:  prefs?.preferredCuisines ?? [],

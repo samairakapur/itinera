@@ -261,13 +261,15 @@ serve(async (req) => {
 
     // ── AI provider selection ────────────────────────────────────────────────
     // Priority: Groq (high limits, fast) → Lovable gateway → direct Gemini.
-    // GROQ_API_KEY is already set in Supabase secrets so this is the active path.
-    // .trim() is critical — secrets pasted via dashboard or CLI can carry a
-    // trailing \n which makes Deno's fetch API throw "Value is not a valid
-    // ByteString" when the key is used in an Authorization header.
-    const GROQ_API_KEY      = Deno.env.get("GROQ_API_KEY")?.trim();
-    const LOVABLE_API_KEY   = Deno.env.get("LOVABLE_API_KEY")?.trim();
-    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY")?.trim();
+    // Strip ALL non-printable / non-ASCII characters — Deno's fetch API throws
+    // "Value is not a valid ByteString" if the Authorization header value
+    // contains any byte outside U+0020–U+007E (e.g. trailing \n, \r, or BOM
+    // that some secret stores silently append).
+    const sanitizeKey = (k: string | undefined) =>
+      k?.replace(/[^\x20-\x7E]/g, '').trim() ?? '';
+    const GROQ_API_KEY      = sanitizeKey(Deno.env.get("GROQ_API_KEY"))      || undefined;
+    const LOVABLE_API_KEY   = sanitizeKey(Deno.env.get("LOVABLE_API_KEY"))   || undefined;
+    const GOOGLE_AI_API_KEY = sanitizeKey(Deno.env.get("GOOGLE_AI_API_KEY")) || undefined;
 
     let AI_KEY: string;
     let AI_URL: string;
