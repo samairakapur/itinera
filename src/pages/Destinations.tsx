@@ -3,49 +3,49 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useCities } from '@/hooks/useCities';
 import { usePersonalizedDestinations, ScoredCity } from '@/hooks/usePersonalizedDestinations';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CityCard from '@/components/cities/CityCard';
 import { DestinationFilters } from '@/components/destinations/DestinationFilters';
 import { Search, MapPin, Sparkles, Heart, ArrowRight } from 'lucide-react';
 
-// Personalized city card with match reasons
+// Personalized city card
 const PersonalizedCityCard = ({ city }: { city: ScoredCity }) => {
   const navigate = useNavigate();
-  
+
   return (
-    <Card 
-      className="overflow-hidden cursor-pointer group hover:shadow-lg transition-all border-primary/20 hover:border-primary/40"
+    <div
+      className="group rounded-2xl overflow-hidden bg-white border border-border shadow-card hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
       onClick={() => navigate(`/city/${city.id}`)}
     >
-      <div className="relative aspect-[4/3] overflow-hidden">
+      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         <img
           src={city.image_url || '/placeholder.svg'}
           alt={city.name}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
         <div className="absolute top-3 left-3">
-          <Badge className="bg-primary/90 text-primary-foreground">
+          <Badge className="bg-primary text-white text-xs font-semibold shadow-sm">
             <Heart className="w-3 h-3 mr-1" />
-            Match for you
+            Matched for you
           </Badge>
         </div>
+        <div className="absolute bottom-0 left-0 right-0 p-4">
+          <h3 className="font-display text-xl font-normal text-white">{city.name}</h3>
+          <p className="text-white/75 text-xs mt-0.5">{city.country}</p>
+        </div>
       </div>
-      <CardContent className="p-4">
-        <h3 className="font-display font-semibold text-lg mb-1">{city.name}</h3>
-        <p className="text-sm text-muted-foreground mb-3">{city.country}</p>
-        {city.matchReasons.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {city.matchReasons.slice(0, 2).map((reason, i) => (
-              <Badge key={i} variant="secondary" className="text-xs font-normal">
-                {reason}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {city.matchReasons.length > 0 && (
+        <div className="px-4 py-3 flex flex-wrap gap-1.5">
+          {city.matchReasons.slice(0, 2).map((reason, i) => (
+            <Badge key={i} variant="outline" className="text-xs font-normal border-border text-muted-foreground bg-muted/40">
+              {reason}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -59,19 +59,9 @@ const Destinations = () => {
 
   const filteredCities = useMemo(() => {
     if (!cities) return [];
-
     return cities.filter(city => {
-      // Apply country filter
-      if (selectedCountry !== 'all' && city.country !== selectedCountry) {
-        return false;
-      }
-
-      // Apply city filter
-      if (selectedCity !== 'all' && city.id !== selectedCity) {
-        return false;
-      }
-
-      // Apply search filter
+      if (selectedCountry !== 'all' && city.country !== selectedCountry) return false;
+      if (selectedCity !== 'all' && city.id !== selectedCity) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
@@ -80,7 +70,6 @@ const Destinations = () => {
           city.tags?.some(tag => tag.toLowerCase().includes(query))
         );
       }
-
       return true;
     });
   }, [cities, searchQuery, selectedCountry, selectedCity]);
@@ -91,44 +80,47 @@ const Destinations = () => {
     setSearchQuery('');
   };
 
-  // When city is directly selected from filter, navigate to it
   const handleCityFilterChange = (cityId: string) => {
     setSelectedCity(cityId);
-    if (cityId !== 'all') {
-      navigate(`/city/${cityId}`);
-    }
+    if (cityId !== 'all') navigate(`/city/${cityId}`);
   };
 
   const showPersonalized = hasPersonalization && !searchQuery && selectedCountry === 'all' && selectedCity === 'all';
 
   return (
-    <div className="min-h-screen py-8">
-      <div className="container px-4">
-        {/* Header */}
-        <div className="max-w-2xl mx-auto text-center mb-8">
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Explore Amazing Destinations
-          </h1>
-          <p className="text-muted-foreground mb-6">
-            Discover cities perfect for your next adventure
+    <div className="min-h-screen bg-background">
+
+      {/* ── Page header ── */}
+      <div className="bg-white border-b border-border">
+        <div className="container px-4 py-10 max-w-3xl mx-auto text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-3">
+            104 destinations
           </p>
-          
+          <h1 className="font-display text-4xl md:text-5xl text-foreground mb-4" style={{ fontWeight: 400 }}>
+            Where will you go next?
+          </h1>
+          <p className="text-muted-foreground text-lg font-light mb-8">
+            Every city hand-picked for culture, food, and unforgettable moments.
+          </p>
+
           {/* Search */}
           <div className="relative max-w-md mx-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search cities, countries, or tags..."
+              placeholder="Search city, country, or vibe..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-12 text-base"
+              className="pl-10 h-12 text-base rounded-xl bg-background border-border focus-visible:ring-primary/30"
             />
           </div>
         </div>
+      </div>
 
+      <div className="container px-4 py-10">
         {/* Filters */}
         {cities && cities.length > 0 && (
-          <div className="mb-8">
+          <div className="mb-10">
             <DestinationFilters
               cities={cities}
               selectedCountry={selectedCountry}
@@ -140,32 +132,28 @@ const Destinations = () => {
           </div>
         )}
 
-        {/* Personalized Recommendations Section */}
+        {/* Personalised picks */}
         {showPersonalized && personalizedCities.length > 0 && (
-          <section className="mb-16">
+          <section className="mb-14">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 rounded-sm bg-primary/10 border border-primary/15">
-                <Sparkles className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Sparkles className="w-4.5 h-4.5 text-primary" />
               </div>
               <div>
-                <h2 className="font-display text-xl md:text-2xl font-bold text-foreground">
+                <h2 className="font-display text-2xl font-normal text-foreground">
                   We think you'll love these
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  Personalized based on your travel preferences
-                </p>
+                <p className="text-sm text-muted-foreground">Based on your travel preferences</p>
               </div>
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {personalizedCities.slice(0, 4).map((city) => (
                 <PersonalizedCityCard key={city.id} city={city} />
               ))}
             </div>
-
             {personalizedCities.length > 4 && (
               <div className="mt-6 text-center">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="rounded-xl border-border">
                   View all {personalizedCities.length} personalized picks
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -174,75 +162,72 @@ const Destinations = () => {
           </section>
         )}
 
-        {/* Call to action for non-personalized users */}
+        {/* Profile prompt */}
         {!hasPersonalization && !searchQuery && selectedCountry === 'all' && (
-          <Card className="mb-12 p-6 bg-muted border-white/10">
-            <div className="flex flex-col md:flex-row items-center gap-6">
-              <div className="p-3 rounded-2xl bg-primary/10">
-                <Sparkles className="w-8 h-8 text-primary" />
-              </div>
-              <div className="flex-1 text-center md:text-left">
-                <h3 className="font-display text-lg font-semibold mb-1">
-                  Get personalized recommendations
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                  Complete your travel profile to see destinations matched to your interests and style
-                </p>
-              </div>
-              <Button asChild>
-                <Link to="/profile-setup">
-                  Set Up Profile
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Link>
-              </Button>
+          <div className="mb-12 rounded-2xl border border-border bg-white p-6 flex flex-col md:flex-row items-center gap-6 shadow-card">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-primary" />
             </div>
-          </Card>
+            <div className="flex-1 text-center md:text-left">
+              <h3 className="font-display text-lg font-normal text-foreground mb-1">
+                Get personalised recommendations
+              </h3>
+              <p className="text-muted-foreground text-sm font-light">
+                Complete your travel profile and we'll match destinations to your style and interests.
+              </p>
+            </div>
+            <Button asChild className="rounded-xl shadow-warm shrink-0">
+              <Link to="/profile-setup">
+                Set up profile
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Link>
+            </Button>
+          </div>
         )}
 
-        {/* Popular Destinations Section */}
+        {/* All destinations */}
         <section>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-sm bg-muted border border-white/8">
-              <MapPin className="w-5 h-5 text-muted-foreground" />
-            </div>
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="font-display text-xl md:text-2xl font-bold text-foreground">
-                {showPersonalized ? 'All Destinations' : 'Popular Destinations'}
+              <h2 className="font-display text-2xl font-normal text-foreground">
+                {showPersonalized ? 'All destinations' : 'Popular destinations'}
               </h2>
-              <p className="text-sm text-muted-foreground">
-                {filteredCities.length} cities to explore
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {filteredCities.length} {filteredCities.length === 1 ? 'city' : 'cities'} to explore
               </p>
             </div>
           </div>
 
-          {/* Cities Grid */}
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <Card key={i} className="overflow-hidden animate-pulse">
+                <div key={i} className="rounded-2xl overflow-hidden bg-white border border-border shadow-card animate-pulse">
                   <div className="aspect-[4/3] bg-muted" />
-                  <CardContent className="p-4">
-                    <div className="h-4 bg-muted rounded w-3/4 mb-2" />
-                    <div className="h-3 bg-muted rounded w-1/2" />
-                  </CardContent>
-                </Card>
+                  <div className="p-4">
+                    <div className="h-4 bg-muted rounded-lg w-3/4 mb-2" />
+                    <div className="h-3 bg-muted rounded-lg w-1/2" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : filteredCities.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {filteredCities.map((city) => (
                 <CityCard key={city.id} city={city} />
               ))}
             </div>
           ) : (
-            <div className="text-center py-16">
+            <div className="text-center py-20">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-                <MapPin className="w-8 h-8 text-muted-foreground" />
+                <MapPin className="w-7 h-7 text-muted-foreground/50" />
               </div>
-              <h3 className="font-display text-lg font-semibold mb-2">No destinations found</h3>
-              <p className="text-muted-foreground">
-                Try adjusting your search or filters
+              <h3 className="font-display text-xl font-normal text-foreground mb-2">No destinations found</h3>
+              <p className="text-muted-foreground text-sm">
+                Try adjusting your search or clearing the filters
               </p>
+              <Button variant="outline" size="sm" onClick={handleClearFilters} className="mt-4 rounded-xl border-border">
+                Clear filters
+              </Button>
             </div>
           )}
         </section>

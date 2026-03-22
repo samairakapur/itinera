@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin } from 'lucide-react';
 import { getCityImage } from '@/lib/imageUtils';
@@ -11,7 +10,7 @@ interface CityCardProps {
 }
 
 const CityCard = ({ city }: CityCardProps) => {
-  const tags = city.tags?.slice(0, 3) || [];
+  const tags = city.tags?.slice(0, 2) || [];
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -20,19 +19,20 @@ const CityCard = ({ city }: CityCardProps) => {
     : city.image_url;
 
   return (
-    <Link to={`/city/${city.id}`}>
-      <Card className="group overflow-hidden border-white/5 hover:border-primary/30 transition-all duration-500 hover:shadow-glow bg-card">
+    <Link to={`/city/${city.id}`} className="group block">
+      <div className="rounded-2xl overflow-hidden bg-white border border-border shadow-card hover:shadow-md hover:-translate-y-1 transition-all duration-300">
+
+        {/* Image */}
         <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-          {/* Placeholder while loading */}
           {!imageLoaded && (
             <div className="absolute inset-0 bg-muted flex items-center justify-center animate-pulse">
-              <MapPin className="w-12 h-12 text-muted-foreground/30" />
+              <MapPin className="w-10 h-10 text-muted-foreground/25" />
             </div>
           )}
           <img
             src={imageUrl}
             alt={city.name}
-            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-110 ${
+            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
               imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
             onLoad={() => setImageLoaded(true)}
@@ -42,31 +42,34 @@ const CityCard = ({ city }: CityCardProps) => {
             }}
             loading="lazy"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          {/* Subtle warm gradient overlay at bottom */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+
+          {/* City name on image */}
           <div className="absolute bottom-0 left-0 right-0 p-4">
-            <h3 className="font-display text-2xl font-semibold text-white mb-1 tracking-wide">
-              {city.name}
-            </h3>
-            <div className="flex items-center gap-1 text-white/70 text-sm">
+            <h3 className="font-display text-xl font-normal text-white leading-snug">{city.name}</h3>
+            <div className="flex items-center gap-1 text-white/75 text-xs mt-0.5">
               <MapPin className="w-3 h-3" />
               {city.country}
             </div>
           </div>
         </div>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-1.5">
+
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="px-4 py-3 flex flex-wrap gap-1.5">
             {tags.map((tag) => (
               <Badge
                 key={tag}
                 variant="outline"
-                className="text-xs font-normal border-white/15 text-white/50 bg-transparent"
+                className="text-xs font-normal border-border text-muted-foreground bg-muted/40 capitalize"
               >
                 {tag}
               </Badge>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </Link>
   );
 };
