@@ -1,11 +1,28 @@
-// Variation 1: Dark & Luxe — cinematic hero, editorial typography
+// Itinera Home — Sunlit Wanderer
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCities } from '@/hooks/useCities';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import CityCard from '@/components/cities/CityCard';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles, Map, CalendarDays, Compass } from 'lucide-react';
+
+const features = [
+  {
+    icon: Sparkles,
+    title: 'AI-crafted itineraries',
+    description: 'Tailored to your pace, style, and interests.',
+  },
+  {
+    icon: Map,
+    title: '104 curated destinations',
+    description: 'Every city hand-picked for experience depth.',
+  },
+  {
+    icon: CalendarDays,
+    title: 'Day-by-day planning',
+    description: 'From arrival to departure, nothing left to chance.',
+  },
+];
 
 const HomeVariation1 = () => {
   const { user } = useAuth();
@@ -14,96 +31,154 @@ const HomeVariation1 = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Hero — cinematic full-viewport */}
-      <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-[#0A0A0A]">
-        {/* Cinematic vignette — no blobs, just depth */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0A0A0A]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_hsl(0_0%_4%)_100%)]" />
 
-        <div className="container relative px-4 text-center max-w-4xl">
-          {/* Editorial badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 backdrop-blur-sm border border-primary/20 text-xs font-medium mb-8 tracking-widest uppercase text-primary">
-            <Sparkles className="w-3.5 h-3.5" />
-            AI-Powered Trip Planning
+      {/* ── Hero ── warm gradient, editorial, joyful ── */}
+      <section className="relative overflow-hidden" style={{ background: 'var(--gradient-hero)' }}>
+
+        {/* Decorative blobs — soft warm shapes */}
+        <div className="pointer-events-none absolute -top-32 -right-32 w-[600px] h-[600px] rounded-full opacity-30"
+          style={{ background: 'radial-gradient(circle, hsl(35 78% 72% / 0.5) 0%, transparent 70%)' }} />
+        <div className="pointer-events-none absolute -bottom-20 -left-20 w-[400px] h-[400px] rounded-full opacity-25"
+          style={{ background: 'radial-gradient(circle, hsl(160 45% 60% / 0.45) 0%, transparent 70%)' }} />
+
+        <div className="container relative px-4 pt-20 pb-24 md:pt-28 md:pb-32 text-center max-w-4xl mx-auto">
+
+          {/* Eyebrow pill */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-white/60 backdrop-blur-sm text-xs font-semibold mb-8 tracking-wider uppercase text-primary shadow-sm">
+            <Compass className="w-3.5 h-3.5" />
+            Your world, perfectly planned
           </div>
 
-          <h1 className="font-display text-5xl md:text-7xl font-semibold text-foreground mb-6 tracking-tight leading-[1.1]">
-            Your Perfect Trip,
-            <br />
-            <span
-              className="text-transparent bg-clip-text"
-              style={{ backgroundImage: 'var(--gradient-primary)' }}
-            >
-              Planned in Minutes
-            </span>
+          {/* Headline */}
+          <h1 className="font-display text-5xl md:text-7xl text-foreground mb-6 leading-[1.1]" style={{ fontWeight: 400 }}>
+            Travel that feels like{' '}
+            <em className="not-italic text-gradient-primary">you</em>
           </h1>
 
-          <p className="text-lg text-muted-foreground mb-12 max-w-2xl mx-auto leading-relaxed">
-            Tell us how you travel. We'll create a personalised itinerary that matches your style, pace, and interests.
+          {/* Sub */}
+          <p className="text-lg md:text-xl text-foreground/60 mb-10 max-w-2xl mx-auto leading-relaxed font-light">
+            Tell us how you like to explore. We'll build a beautiful, day-by-day itinerary matched to your pace, interests, and sense of adventure.
           </p>
 
-          {/* Single luxe CTA */}
-          <Button
-            size="lg"
-            asChild
-            className="h-14 px-10 text-base font-medium tracking-widest uppercase rounded-sm shadow-lg shadow-primary/20 hover:shadow-primary/35 transition-all hover:scale-[1.02]"
-          >
-            <Link to={user ? "/planner/new" : "/auth"}>
-              Plan My Trip
-              <ArrowRight className="w-4 h-4 ml-3" />
-            </Link>
-          </Button>
+          {/* CTA row */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button
+              size="lg"
+              asChild
+              className="h-13 px-8 text-base font-semibold rounded-2xl shadow-warm hover:shadow-lg hover:scale-[1.02] transition-all"
+            >
+              <Link to={user ? '/planner/new' : '/auth'}>
+                Plan my trip
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              asChild
+              className="h-13 px-8 text-base rounded-2xl border-border bg-white/70 hover:bg-white transition-all text-foreground/70 hover:text-foreground"
+            >
+              <Link to="/destinations">
+                Browse destinations
+              </Link>
+            </Button>
+          </div>
 
           {!user && (
-            <p className="mt-6 text-sm text-muted-foreground tracking-wide">
+            <p className="mt-5 text-sm text-foreground/45 font-light">
               Free to start · No credit card required
             </p>
           )}
         </div>
       </section>
 
-      {/* Featured Destinations */}
-      <section className="py-24 bg-[#0D0D0D]">
+      {/* ── Feature trio ── */}
+      <section className="py-16 bg-white border-y border-border">
         <div className="container px-4">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl md:text-4xl font-semibold text-foreground mb-4">
-              Popular Destinations
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              Destinations worth the journey
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+            {features.map(({ icon: Icon, title, description }) => (
+              <div key={title} className="flex flex-col items-center text-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-primary/8 flex items-center justify-center">
+                  <Icon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-display text-base font-normal text-foreground mb-1">{title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Featured Destinations ── */}
+      <section className="py-20 bg-background">
+        <div className="container px-4">
+
+          <div className="flex items-end justify-between mb-10">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-2">Popular right now</p>
+              <h2 className="font-display text-3xl md:text-4xl text-foreground" style={{ fontWeight: 400 }}>
+                Destinations worth the journey
+              </h2>
+            </div>
+            <Button variant="ghost" asChild className="hidden md:flex text-muted-foreground hover:text-foreground gap-1.5">
+              <Link to="/destinations">
+                View all
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {[1, 2, 3, 4].map((i) => (
-                <Card key={i} className="overflow-hidden animate-pulse">
-                  <div className="aspect-[4/3] bg-muted" />
-                  <CardContent className="p-4">
-                    <div className="h-4 bg-muted rounded w-3/4 mb-2" />
-                    <div className="h-3 bg-muted rounded w-1/2" />
-                  </CardContent>
-                </Card>
+                <div key={i} className="rounded-2xl overflow-hidden animate-pulse bg-muted">
+                  <div className="aspect-[4/3]" />
+                  <div className="p-4 bg-white">
+                    <div className="h-4 bg-muted rounded-lg w-3/4 mb-2" />
+                    <div className="h-3 bg-muted rounded-lg w-1/2" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {featuredCities.map((city) => (
                 <CityCard key={city.id} city={city} />
               ))}
             </div>
           )}
 
-          <div className="text-center mt-12">
-            <Button variant="outline" size="lg" asChild className="rounded-sm border-white/15 hover:border-primary/40 tracking-widest uppercase text-sm">
+          <div className="text-center mt-10 md:hidden">
+            <Button variant="outline" size="lg" asChild className="rounded-2xl border-border text-foreground/70">
               <Link to="/destinations">
-                View All Destinations
+                View all destinations
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Link>
             </Button>
           </div>
         </div>
       </section>
+
+      {/* ── Bottom CTA banner ── */}
+      <section className="py-16 bg-white border-t border-border">
+        <div className="container px-4 text-center max-w-2xl mx-auto">
+          <h2 className="font-display text-3xl md:text-4xl text-foreground mb-4" style={{ fontWeight: 400 }}>
+            Ready for your next adventure?
+          </h2>
+          <p className="text-muted-foreground mb-8 text-lg leading-relaxed font-light">
+            Join thousands of travellers who've discovered the joy of perfectly planned trips.
+          </p>
+          <Button size="lg" asChild className="h-13 px-10 rounded-2xl shadow-warm hover:shadow-lg hover:scale-[1.02] transition-all font-semibold">
+            <Link to={user ? '/planner/new' : '/auth'}>
+              {user ? 'Plan a new trip' : 'Get started free'}
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
     </div>
   );
 };
