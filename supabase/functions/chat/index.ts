@@ -42,7 +42,13 @@ serve(async (req) => {
 
     const { messages, cityContext } = await req.json();
 
-    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    // Strip non-printable / non-ASCII bytes from the API key.
+    // Deno's fetch throws "Value is not a valid ByteString" if the
+    // Authorization header contains anything outside U+0020–U+007E
+    // (e.g. a trailing \n that paste-from-clipboard silently adds).
+    const rawGroqKey = Deno.env.get("GROQ_API_KEY");
+    const GROQ_API_KEY = rawGroqKey?.replace(/[^\x20-\x7E]/g, '').trim() || undefined;
+
     if (!GROQ_API_KEY) {
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),

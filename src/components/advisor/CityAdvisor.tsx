@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bot, Send, User, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { City } from '@/hooks/useCities';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -16,7 +17,8 @@ interface CityAdvisorProps {
   city: City;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const SUPABASE_BASE = import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoynkubynsfi.supabase.co';
+const CHAT_URL = `${SUPABASE_BASE}/functions/v1/chat`;
 
 const suggestedPrompts = [
   "What's the best one-day itinerary for families?",
@@ -47,13 +49,21 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
     setIsLoading(true);
 
     let assistantContent = '';
-    
+
     try {
+      // Get the user's real session JWT — NOT the anon key — so the edge function
+      // can call supabase.auth.getUser() and verify the caller is authenticated.
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token?.replace(/[^\x20-\x7E]/g, '').trim();
+      if (!accessToken) {
+        throw new Error('Please sign in to use the Travel Advisor.');
+      }
+
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           messages: [...messages, userMsg],
@@ -122,12 +132,10 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
       }
     } catch (error) {
       console.error('Chat error:', error);
+      const msg = error instanceof Error ? error.message : "I'm having trouble connecting right now. Please try again in a moment.";
       setMessages(prev => [
         ...prev,
-        { 
-          role: 'assistant', 
-          content: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment." 
-        }
+        { role: 'assistant', content: msg }
       ]);
     }
 
