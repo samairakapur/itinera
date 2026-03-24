@@ -20,19 +20,128 @@ interface CityAdvisorProps {
 const SUPABASE_BASE = import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoynkubynsfi.supabase.co';
 const CHAT_URL = `${SUPABASE_BASE}/functions/v1/chat`;
 
-const suggestedPrompts = [
-  "What's the best one-day itinerary for families?",
-  "Which attractions are best for toddlers?",
-  "Where can we find kid-friendly restaurants?",
-  "What's the best way to get around with a stroller?",
-  "Any tips for saving money on attractions?",
-];
+// ---------------------------------------------------------------------------
+// City-specific suggested prompts
+// ---------------------------------------------------------------------------
+function getSuggestedPrompts(cityName: string): string[] {
+  const city = cityName.toLowerCase();
+  if (city.includes('tokyo')) {
+    return [
+      'Best ramen near Shinjuku for under ¥1,500?',
+      'Top cherry blossom spots — when and where?',
+      'Izakaya picks in Golden Gai?',
+      'Metro tips — how to get around cheaply?',
+    ];
+  }
+  if (city.includes('barcelona')) {
+    return [
+      'Best tapas in El Born that aren\'t tourist traps?',
+      'How far ahead to book Sagrada Família?',
+      'Hidden viewpoints beyond Tibidabo?',
+      'Pintxos bars in Poble Sec — best ones?',
+    ];
+  }
+  if (city.includes('bangkok')) {
+    return [
+      'Best street food in Chinatown tonight?',
+      'How to get around without hitting traffic?',
+      'Rooftop bars with the best views?',
+      'Temple route for a half day — what order?',
+    ];
+  }
+  if (city.includes('london')) {
+    return [
+      'Best restaurants near Borough Market?',
+      'Free experiences beyond the obvious?',
+      'Day trips: Bath, Cotswolds or Oxford?',
+      'Which areas are best to stay in?',
+    ];
+  }
+  if (city.includes('paris')) {
+    return [
+      'Best bakeries — perfect croissant?',
+      'How do I avoid queues at the Louvre?',
+      'Dinner off the tourist trail?',
+      'Natural wine bars in Saint-Germain?',
+    ];
+  }
+  if (city.includes('bali')) {
+    return [
+      'Ubud or Seminyak — which suits me better?',
+      'Best sunset spots on the island?',
+      'Beach clubs that aren\'t overpriced?',
+      'Temple etiquette — what do I need to know?',
+    ];
+  }
+  if (city.includes('singapore')) {
+    return [
+      'Best hawker centres to visit?',
+      'Where to find the best chilli crab?',
+      'Things to do beyond Orchard Road?',
+      'MRT vs. Grab — which to use?',
+    ];
+  }
+  if (city.includes('rome')) {
+    return [
+      'Best cacio e pepe in Rome — where?',
+      'Vatican without the 3-hour queue?',
+      'Hidden neighbourhoods to explore?',
+      'Best gelato — who does it best?',
+    ];
+  }
+  return [
+    `Best restaurants in ${cityName} by neighbourhood?`,
+    `Hidden gems most tourists miss?`,
+    `How to get around ${cityName} efficiently?`,
+    `What should I know before visiting?`,
+  ];
+}
 
+// ---------------------------------------------------------------------------
+// Lightweight markdown renderer — bold, bullets, line breaks
+// ---------------------------------------------------------------------------
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+
+  lines.forEach((line, lineIdx) => {
+    if (line.trim() === '') {
+      elements.push(<div key={`sp-${lineIdx}`} className="h-1" />);
+      return;
+    }
+    const isBullet = /^\s*[-•]\s/.test(line);
+    const content = isBullet ? line.replace(/^\s*[-•]\s/, '') : line;
+
+    const parts = content.split(/\*\*(.*?)\*\*/g);
+    const rendered = parts.map((part, i) =>
+      i % 2 === 1 ? <strong key={i} className="font-semibold">{part}</strong> : <span key={i}>{part}</span>
+    );
+
+    if (isBullet) {
+      elements.push(
+        <div key={lineIdx} className="flex gap-2 mt-0.5">
+          <span className="text-primary shrink-0 mt-px">•</span>
+          <span>{rendered}</span>
+        </div>
+      );
+    } else {
+      elements.push(<p key={lineIdx} className="mt-0.5">{rendered}</p>);
+    }
+  });
+
+  return <>{elements}</>;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 const CityAdvisor = ({ city }: CityAdvisorProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const suggestedPrompts = getSuggestedPrompts(city.name);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -51,8 +160,6 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
     let assistantContent = '';
 
     try {
-      // Get the user's real session JWT — NOT the anon key — so the edge function
-      // can call supabase.auth.getUser() and verify the caller is authenticated.
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token?.replace(/[^\x20-\x7E]/g, '').trim();
       if (!accessToken) {
@@ -78,13 +185,9 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
       });
 
       if (!resp.ok || !resp.body) {
-        if (resp.status === 402) {
-          throw new Error('AI credits exhausted. Please add credits in Settings → Workspace → Usage.');
-        }
-        if (resp.status === 429) {
-          throw new Error('Too many requests. Please wait a moment and try again.');
-        }
-        throw new Error('Failed to start stream');
+        if (resp.status === 429) throw new Error('Too many requests — please wait a moment and try again.');
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error((errData as { error?: string }).error || 'Failed to reach the AI service.');
       }
 
       const reader = resp.body.getReader();
@@ -94,7 +197,7 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         textBuffer += decoder.decode(value, { stream: true });
 
         let newlineIndex: number;
@@ -117,7 +220,7 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
               setMessages(prev => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
-                  return prev.map((m, i) => 
+                  return prev.map((m, i) =>
                     i === prev.length - 1 ? { ...m, content: assistantContent } : m
                   );
                 }
@@ -132,11 +235,10 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      const msg = error instanceof Error ? error.message : "I'm having trouble connecting right now. Please try again in a moment.";
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: msg }
-      ]);
+      const msg = error instanceof Error
+        ? error.message
+        : "I'm having trouble connecting. Please try again in a moment.";
+      setMessages(prev => [...prev, { role: 'assistant', content: msg }]);
     }
 
     setIsLoading(false);
@@ -149,35 +251,35 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
 
   return (
     <Card className="h-[600px] flex flex-col">
-      <CardHeader className="border-b">
+      <CardHeader className="border-b pb-3">
         <CardTitle className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
             <Bot className="w-4 h-4 text-primary-foreground" />
           </div>
           {city.name} Travel Advisor
         </CardTitle>
       </CardHeader>
-      
+
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4">
+          <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
               <Sparkles className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="font-display text-lg font-semibold mb-2">
-              Ask me anything about {city.name}!
+            <h3 className="font-display text-lg font-semibold mb-1">
+              Your local guide to {city.name}
             </h3>
-            <p className="text-sm text-muted-foreground mb-6">
-              I can help with family-friendly activities, restaurants, transportation, and more.
+            <p className="text-sm text-muted-foreground mb-5 max-w-xs">
+              Ask me anything — restaurants by neighbourhood, hidden gems, transport, booking tips and more.
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {suggestedPrompts.slice(0, 3).map((prompt) => (
+              {suggestedPrompts.map((prompt) => (
                 <Button
                   key={prompt}
                   variant="outline"
                   size="sm"
                   onClick={() => sendMessage(prompt)}
-                  className="text-xs"
+                  className="text-xs h-auto py-1.5 px-3 whitespace-normal text-left"
                 >
                   {prompt}
                 </Button>
@@ -190,27 +292,30 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
               <div
                 key={index}
                 className={cn(
-                  "flex gap-3",
-                  message.role === 'user' ? "justify-end" : "justify-start"
+                  'flex gap-3',
+                  message.role === 'user' ? 'justify-end' : 'justify-start'
                 )}
               >
                 {message.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 mt-0.5">
                     <Bot className="w-4 h-4 text-primary-foreground" />
                   </div>
                 )}
                 <div
                   className={cn(
-                    "max-w-[80%] rounded-2xl px-4 py-2",
+                    'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
                     message.role === 'user'
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted'
                   )}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  {message.role === 'assistant'
+                    ? renderMarkdown(message.content)
+                    : <p>{message.content}</p>
+                  }
                 </div>
                 {message.role === 'user' && (
-                  <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
                     <User className="w-4 h-4 text-secondary-foreground" />
                   </div>
                 )}
@@ -221,8 +326,8 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
                 <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
                   <Bot className="w-4 h-4 text-primary-foreground" />
                 </div>
-                <div className="bg-muted rounded-2xl px-4 py-2">
-                  <div className="flex gap-1">
+                <div className="bg-muted rounded-2xl px-4 py-3">
+                  <div className="flex gap-1 items-center h-4">
                     <div className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '0ms' }} />
                     <div className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '150ms' }} />
                     <div className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -239,11 +344,11 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask about ${city.name}...`}
+            placeholder={`Ask about ${city.name}…`}
             disabled={isLoading}
             className="flex-1"
           />
-          <Button type="submit" disabled={isLoading || !input.trim()}>
+          <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
             <Send className="w-4 h-4" />
           </Button>
         </form>
