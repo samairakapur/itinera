@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Sparkles,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,10 @@ export interface Activity {
   isPrebooked?: boolean;
   bookingReference?: string;
   travelTimeMinutes?: number;
+  /** Scheduling flexibility: firm = fixed time, soft = approximate, flex = fill-in */
+  flexibility?: 'firm' | 'soft' | 'flex';
+  /** Price tier indicator */
+  priceTier?: '€' | '€€' | '€€€' | '€€€€' | '$' | '$$' | '$$$' | '$$$$';
 }
 
 interface ActivityCardProps {
@@ -232,6 +237,17 @@ export const ActivityCard = ({
                     <Badge variant="outline" className="text-xs px-2 py-0.5 bg-primary/10 text-primary border-primary/20">
                       <Ticket className="w-3 h-3 mr-1" />
                       Pre-booked
+                    </Badge>
+                  )}
+                  {activity.flexibility === 'firm' && (
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      <Lock className="w-3 h-3 mr-1" />
+                      Firm
+                    </Badge>
+                  )}
+                  {activity.priceTier && (
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-white/15 text-muted-foreground bg-transparent font-mono">
+                      {activity.priceTier}
                     </Badge>
                   )}
                 </div>

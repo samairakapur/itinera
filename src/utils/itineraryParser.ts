@@ -135,7 +135,8 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
         activityBlocks.forEach((block, idx) => {
           if (!block.trim()) return;
 
-          // Match the header line: - **Name** | type | duration | time
+          // Match the header line: - **Name** | type | flexibility | price | duration | time
+          // (extra pipe-separated fields are flexible — we pick them out below)
           const headerMatch = block.match(/[-•]\s*\*\*([^*]+)\*\*\s*\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)\|?\s*([^|\n]*?)$/m);
 
           if (!headerMatch) {
@@ -184,6 +185,13 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
           }
 
           if (title && title.length > 2) {
+            // All pipe-separated parts of the header line (after the title)
+            const allParts = block
+              .match(/[-•]\s*\*\*[^*]+\*\*(.*)/)?.[1]
+              ?.split('|')
+              .map(p => p.trim())
+              .filter(Boolean) ?? [];
+
             // Determine activity type from the explicit pipe value first,
             // then fall back to title keyword detection
             let activityType: string;
@@ -206,9 +214,20 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
               activityType = 'attraction';
             }
 
+            // Flexibility: 'firm' if any part says firm, or if prebooked
+            const isFirm = activityType === 'prebooked' ||
+              allParts.some(p => /^firm$/i.test(p));
+            const flexibility = isFirm ? 'firm' as const : undefined;
+
+            // Price tier: match €€€, $$$, etc. in any pipe part or description
+            const priceTierRegex = /^(€{1,4}|\${1,4})$/;
+            const priceTierFromParts = allParts.find(p => priceTierRegex.test(p));
+            const priceTierFromDesc = description?.match(/(€{2,4}|\${2,4})/)?.[1];
+            const priceTier = (priceTierFromParts || priceTierFromDesc) as Activity['priceTier'] | undefined;
+
             activities.push({
               id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,
-              type: activityType,
+              type: activityType as Activity['type'],
               title: title
                 .replace(/^(Lunch|Dinner|Breakfast):\s*/i, '')
                 .replace(/^🗺️\s*Wander\s*&\s*Explore:\s*/i, '🗺️ '),
@@ -216,6 +235,8 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
               duration: duration || undefined,
               time: time || undefined,
               reasoning: whyMatch?.[1]?.trim(),
+              flexibility,
+              priceTier,
             });
           }
         });

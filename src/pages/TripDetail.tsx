@@ -5,10 +5,13 @@ import { useFlightDetails } from '@/hooks/useFlightDetails';
 import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
 import { useDayConstraints, calculateDayConstraints, timeToMinutes } from '@/hooks/useSmartScheduling';
 import { useRegenerateItinerary } from '@/hooks/useRegenerateItinerary';
+import { useGroupTrip } from '@/hooks/useGroupTrip';
 import { format, addDays, isSameDay, differenceInDays } from 'date-fns';
-import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check, RefreshCw, Plane, Sparkles, Zap } from 'lucide-react';
+import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check, RefreshCw, Plane, Sparkles, Zap, Users, Activity as ActivityIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TripActivityFeed } from '@/components/group/TripActivityFeed';
+import { VotingPanel } from '@/components/group/VotingPanel';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
@@ -36,9 +39,11 @@ const TripDetail = () => {
   const deleteItinerary = useDeleteItinerary();
   const upsertDayPreference = useUpsertDayPreference();
   const regenerateItinerary = useRegenerateItinerary();
+  const { activityFeed, proposals, isLoading: groupLoading, unreadCount, castVote, myVoteFor, voteCounts } = useGroupTrip(tripId);
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [groupTab, setGroupTab] = useState<'votes' | 'activity'>('votes');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogDay, setAddDialogDay] = useState(1);
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
@@ -463,6 +468,57 @@ const TripDetail = () => {
             budgetLevel={itinerary.budget_level || ''} 
             summary="" 
           />
+
+          {/* Group panel — shown for group trips OR any trip with proposals/activity */}
+          {((itinerary as any).trip_mode || proposals.length > 0 || activityFeed.length > 0) && (
+            <Card>
+              <CardHeader className="pb-3 pt-4 px-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Users className="w-4 h-4 text-primary" />
+                    Group
+                    {unreadCount > 0 && (
+                      <span className="ml-1 bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </CardTitle>
+                  <div className="flex gap-1">
+                    <Button
+                      variant={groupTab === 'votes' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-3 text-xs gap-1.5"
+                      onClick={() => setGroupTab('votes')}
+                    >
+                      Votes {proposals.length > 0 && `(${proposals.length})`}
+                    </Button>
+                    <Button
+                      variant={groupTab === 'activity' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-3 text-xs gap-1.5"
+                      onClick={() => setGroupTab('activity')}
+                    >
+                      <ActivityIcon className="w-3 h-3" />
+                      Activity
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {groupTab === 'votes' ? (
+                  <VotingPanel
+                    proposals={proposals}
+                    myVoteFor={myVoteFor}
+                    voteCounts={voteCounts}
+                    onVote={castVote}
+                    isLoading={groupLoading}
+                  />
+                ) : (
+                  <TripActivityFeed feed={activityFeed} isLoading={groupLoading} />
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Active-trip banner — shows when today falls within the trip dates */}
           {isOngoing && tripStartDate && (

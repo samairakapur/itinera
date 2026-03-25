@@ -49,11 +49,32 @@ interface StepDefinition {
   key: string;
   question: string;
   helper: string;
-  type: 'single' | 'multi' | 'search' | 'multi-city';
+  type: 'single' | 'multi' | 'multi-city' | 'group-setup';
   options?: StepOption[];
 }
 
-const STEPS: StepDefinition[] = [
+// Index 0: planType (always shown)
+// Index 1: groupSetup (only shown if planType === 'group')
+// Index 2+: existing preference steps
+const ALL_STEPS: StepDefinition[] = [
+  {
+    id: 0,
+    key: 'planType',
+    question: 'Who are you planning this trip for?',
+    helper: "We'll tailor the experience accordingly",
+    type: 'single',
+    options: [
+      { value: 'solo', label: 'Just me', description: 'Personal itinerary, all your choices', icon: '🧍' },
+      { value: 'group', label: 'With a group', description: '2–10 people, one organiser or democratic', icon: '👥' },
+    ],
+  },
+  {
+    id: -1,
+    key: 'groupSetup',
+    question: 'Set up your group',
+    helper: 'Tell us about your travel party',
+    type: 'group-setup',
+  },
   {
     id: 1,
     key: 'destinations',
@@ -150,8 +171,6 @@ const STEPS: StepDefinition[] = [
   },
 ];
 
-const TOTAL_STEPS = STEPS.length;
-
 type ExtendedPreferences = TripPreferences & { [key: string]: string | string[] };
 
 export const GuidedTripForm = ({
@@ -163,7 +182,7 @@ export const GuidedTripForm = ({
   selectedCities,
   onSubmit,
 }: GuidedTripFormProps) => {
-  const [currentStep, setCurrentStep] = useState(1);
+  const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(0);
 
   const [extendedPrefs, setExtendedPrefs] = useState<ExtendedPreferences>({
@@ -174,13 +193,33 @@ export const GuidedTripForm = ({
     onPreferencesChange(extendedPrefs as TripPreferences);
   }, [extendedPrefs, onPreferencesChange]);
 
-  const currentStepData = STEPS[currentStep - 1];
+  // Skip groupSetup (index 1) when planning solo
+  const isSolo = extendedPrefs.planType === 'solo';
+  const skipSet = isSolo ? new Set([1]) : new Set<number>();
+
+  const getNextIndex = (current: number): number => {
+    let next = current + 1;
+    while (skipSet.has(next) && next < ALL_STEPS.length) next++;
+    return next;
+  };
+
+  const getPrevIndex = (current: number): number => {
+    let prev = current - 1;
+    while (skipSet.has(prev) && prev >= 0) prev--;
+    return prev;
+  };
+
+  const visibleTotalSteps = ALL_STEPS.length - skipSet.size;
+  const visibleStepNumber = ALL_STEPS.slice(0, stepIndex + 1)
+    .filter((_, i) => !skipSet.has(i)).length;
+
+  const currentStepData = ALL_STEPS[stepIndex];
+  const isLastStep = getNextIndex(stepIndex) >= ALL_STEPS.length;
 
   const updatePreference = (key: string, value: string | string[]) => {
     setExtendedPrefs(prev => ({ ...prev, [key]: value }));
   };
 
-  // Unlimited multi-select (no maxItems limit)
   const toggleMultiSelect = (key: string, value: string) => {
     setExtendedPrefs(prev => {
       const currentArray = (prev[key] as string[]) || [];
@@ -194,36 +233,36 @@ export const GuidedTripForm = ({
 
   const getStepValue = (): string | string[] => {
     const key = currentStepData.key;
-    if (currentStepData.type === 'multi-city') {
-      return selectedCities.length > 0 ? 'has-cities' : '';
+    if (currentStepData.type === 'multi-city') return selectedCities.length > 0 ? 'has-cities' : '';
+    if (currentStepData.type === 'group-setup') {
+      return extendedPrefs.groupSize && extendedPrefs.tripMode ? 'done' : '';
     }
     return extendedPrefs[key] || (currentStepData.type === 'multi' ? [] : '');
   };
 
   const canProceed = (): boolean => {
-    if (currentStepData.type === 'multi-city') {
-      return selectedCities.length > 0;
+    if (currentStepData.type === 'multi-city') return selectedCities.length > 0;
+    if (currentStepData.type === 'group-setup') {
+      return !!(extendedPrefs.groupSize && extendedPrefs.tripMode);
     }
     const value = getStepValue();
-    if (currentStepData.type === 'multi') {
-      return (value as string[]).length > 0;
-    }
+    if (currentStepData.type === 'multi') return (value as string[]).length > 0;
     return !!value;
   };
 
   const handleNext = () => {
-    if (currentStep < TOTAL_STEPS) {
+    if (!isLastStep) {
       setDirection(1);
-      setCurrentStep(prev => prev + 1);
+      setStepIndex(getNextIndex(stepIndex));
     } else {
       onSubmit();
     }
   };
 
   const handleBack = () => {
-    if (currentStep > 1) {
+    if (stepIndex > 0) {
       setDirection(-1);
-      setCurrentStep(prev => prev - 1);
+      setStepIndex(getPrevIndex(stepIndex));
     }
   };
 
@@ -235,35 +274,20 @@ export const GuidedTripForm = ({
     }
   };
 
-  const getOptions = (): StepOption[] => {
-    return currentStepData.options || [];
-  };
-
   const slideVariants = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? 300 : -300,
-      opacity: 0,
-    }),
-    center: {
-      x: 0,
-      opacity: 1,
-    },
-    exit: (direction: number) => ({
-      x: direction > 0 ? -300 : 300,
-      opacity: 0,
-    }),
+    enter: (dir: number) => ({ x: dir > 0 ? 300 : -300, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: number) => ({ x: dir > 0 ? -300 : 300, opacity: 0 }),
   };
 
   return (
     <div className="min-h-[80vh] flex flex-col bg-background">
-      {/* Progress Bar */}
-      <GuidedProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />
+      <GuidedProgressBar currentStep={visibleStepNumber} totalSteps={visibleTotalSteps} />
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col justify-center px-4 py-8">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
-            key={currentStep}
+            key={stepIndex}
             custom={direction}
             variants={slideVariants}
             initial="enter"
@@ -275,29 +299,72 @@ export const GuidedTripForm = ({
             }}
             className="max-w-lg mx-auto w-full"
           >
-            {/* Question */}
             <div className="text-center mb-8">
               <h2 className="font-display text-2xl sm:text-3xl font-bold text-foreground mb-2">
                 {currentStepData.question}
               </h2>
-              <p className="text-muted-foreground">
-                {currentStepData.helper}
-              </p>
+              <p className="text-muted-foreground">{currentStepData.helper}</p>
             </div>
 
-            {/* Step Content */}
-            {currentStepData.type === 'multi-city' ? (
+            {/* Multi-city destination selector */}
+            {currentStepData.type === 'multi-city' && (
               <MultiCitySelector
                 cities={cities}
                 userPreferences={userTravelPreferences}
                 selectedCities={selectedCities}
                 onSelectionChange={onSelectedCitiesChange}
               />
-            ) : (
+            )}
+
+            {/* Group setup step */}
+            {currentStepData.type === 'group-setup' && (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-3">How many people are travelling?</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {[2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => updatePreference('groupSize', String(n))}
+                        className={cn(
+                          'w-12 h-12 rounded-xl border-2 font-semibold text-sm transition-all',
+                          extendedPrefs.groupSize === String(n)
+                            ? 'border-primary bg-primary/10 text-primary shadow-md'
+                            : 'border-border bg-card text-foreground hover:border-primary/50'
+                        )}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-3">How do you make decisions?</p>
+                  <div className="space-y-3">
+                    <GuidedStepCard
+                      icon="👑"
+                      label="One person organises"
+                      description="You plan everything, others just show up"
+                      selected={extendedPrefs.tripMode === 'organizer'}
+                      onClick={() => updatePreference('tripMode', 'organizer')}
+                    />
+                    <GuidedStepCard
+                      icon="🗳️"
+                      label="We vote on big decisions"
+                      description="Democratic — every member gets a say"
+                      selected={extendedPrefs.tripMode === 'democratic'}
+                      onClick={() => updatePreference('tripMode', 'democratic')}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Standard single / multi select */}
+            {(currentStepData.type === 'single' || currentStepData.type === 'multi') && (
               <>
-                {/* Options */}
                 <div className="space-y-3">
-                  {getOptions().map((option) => (
+                  {(currentStepData.options || []).map((option) => (
                     <GuidedStepCard
                       key={option.value}
                       label={option.label}
@@ -312,7 +379,6 @@ export const GuidedTripForm = ({
                     />
                   ))}
                 </div>
-
                 {currentStepData.type === 'multi' && (
                   <p className="text-center text-sm text-muted-foreground mt-4">
                     {(getStepValue() as string[]).length} selected
@@ -325,28 +391,20 @@ export const GuidedTripForm = ({
       </div>
 
       {/* Navigation */}
-      {/* bottom-16 on mobile clears the fixed MobileBottomNav (h-16); bottom-0 on md+ where it is hidden */}
       <div className="sticky bottom-16 md:bottom-0 bg-background/95 backdrop-blur-sm border-t px-4 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
           <Button
             variant="ghost"
             onClick={handleBack}
-            disabled={currentStep === 1}
-            className={cn(
-              'gap-2 transition-opacity',
-              currentStep === 1 && 'opacity-0 pointer-events-none'
-            )}
+            disabled={stepIndex === 0}
+            className={cn('gap-2 transition-opacity', stepIndex === 0 && 'opacity-0 pointer-events-none')}
           >
             <ChevronLeft className="w-4 h-4" />
             Back
           </Button>
 
-          {currentStep < TOTAL_STEPS ? (
-            <Button
-              onClick={handleNext}
-              disabled={!canProceed()}
-              className="gap-2 min-w-[120px]"
-            >
+          {!isLastStep ? (
+            <Button onClick={handleNext} disabled={!canProceed()} className="gap-2 min-w-[120px]">
               Next
               <ChevronRight className="w-4 h-4" />
             </Button>

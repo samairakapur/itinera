@@ -18,8 +18,12 @@ import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { DateSelectionStep } from '@/components/trip/DateSelectionStep';
 import { parseItineraryText, ParsedItinerary } from '@/utils/itineraryParser';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoynkubynsfi.supabase.co';
-const ITINERARY_URL = `${SUPABASE_URL}/functions/v1/generate-itinerary`;
+const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoynkubynsfi.supabase.co'}/functions/v1/generate-itinerary`;
+
+const generateInviteToken = () => {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+};
 
 // Helper to convert trip length string to number
 const tripLengthToNumDays = (tripLength: string): number => {
@@ -462,6 +466,13 @@ const NewTrip = () => {
       daysToSpend: sc.daysToSpend,
     }));
 
+    // Group trip fields from extended preferences
+    const extPrefs = preferences as TripPreferences & { planType?: string; groupSize?: string; tripMode?: string };
+    const isGroupTrip = extPrefs.planType === 'group';
+    const groupSize = isGroupTrip ? parseInt(extPrefs.groupSize || '2', 10) : undefined;
+    const tripMode = isGroupTrip ? (extPrefs.tripMode as 'organizer' | 'democratic' | undefined) : undefined;
+    const inviteToken = isGroupTrip ? generateInviteToken() : undefined;
+
     try {
       await createItinerary.mutateAsync({
         cityId: selectedCities[0].cityId,
@@ -476,7 +487,23 @@ const NewTrip = () => {
         days: parsedItinerary.days,
         summary: parsedItinerary.summary,
         selectedCities: enrichedCities,
+        groupSize,
+        tripMode,
+        inviteToken,
       });
+
+      if (isGroupTrip && inviteToken) {
+        const inviteUrl = `${window.location.origin}/join/${inviteToken}`;
+        toast.success('Group trip created! Share the invite link with your group.', {
+          description: inviteUrl,
+          action: {
+            label: 'Copy link',
+            onClick: () => navigator.clipboard.writeText(inviteUrl),
+          },
+          duration: 10000,
+        });
+      }
+
       navigate('/trips');
     } catch (err) {
       // Error toast already shown in mutation onError

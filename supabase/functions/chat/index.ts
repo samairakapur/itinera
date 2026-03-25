@@ -320,6 +320,105 @@ EXPERIENCES:
 - Jewel Changi Airport: free entry, indoor waterfall — worth a visit even in transit`;
   }
 
+  if (city.includes('vienna') || city.includes('wien')) {
+    return `
+VIENNA EXPERT KNOWLEDGE:
+
+NEIGHBOURHOODS & VIBE:
+- Innere Stadt (1st): imperial core, Stephansdom, Hofburg, Graben promenade, tourist-heavy
+- Naschmarkt / Mariahilf (6th): open-air market, best falafel, Turkish stalls, Saturday antiques
+- Neubau (7th): indie boutiques, hipster cafés, MuseumsQuartier, most creative neighbourhood
+- Leopoldstadt (2nd): vibrant, Jewish heritage, Prater park, Augarten, up-and-coming
+- Alsergrund (9th): university district, local cafés, Sigmund Freud Museum, quiet and authentic
+- Josefstadt (8th): old Viennese charm, theatres, neighbourhood Beisl restaurants
+
+CAFÉS & RESTAURANTS (€):
+Coffee House Culture (UNESCO intangible heritage):
+- Café Central — grand historic coffeehouse, breakfast from €8, touristy but unmissable
+- Café Hawelka — legendary dark bohemian institution since 1939, Buchtel pastry ₩3
+- Café Schwarzes Kameel — art nouveau, open-faced sandwiches €3–5, wines by glass, €25pp
+- Café Landtmann — by the Rathaus, politicians and writers, excellent Melange coffee, €12 breakfast
+
+Austrian Cuisine:
+- Figlmüller (Wollzeile) — famous Schnitzel since 1905, €25–35pp, book 1–2 weeks ahead
+- Gasthaus Pöschl — classic Beisl, Tafelspitz boiled beef €22, authentic and local
+- Zum Wohl — Austrian small plates + wine bar, Neubau, €30–40pp
+- Steirereck im Stadtpark — 2 Michelin stars, €200pp+, book several months ahead
+- Meixner's Gastwirtschaft — Heuriger-style home cooking, no tourists, €20pp
+
+SIGHTS:
+- Kunsthistorisches Museum: world-class art, €21, far less crowded than Louvre
+- Schönbrunn Palace: book timed entry online; gardens free; Grand Tour €23
+- Belvedere (Upper): Klimt's 'The Kiss', €17, pre-book to skip queues
+- Albertina: Monet to Picasso, excellent modern collection, €18
+- Spanish Riding School: morning training €15 (much cheaper than evening shows)
+- Prater / Wiener Riesenrad: giant Ferris wheel €13, free to walk in Prater park
+
+TRANSPORT:
+- Wiener Linien 24h ticket €8 or Vienna City Card €17 (includes museum discounts)
+- U-Bahn extremely efficient — U1, U2, U4 cover all key sights
+- Tram 1 and 2 circle the Ringstrasse — best sightseeing tram, free on City Card
+- Staatsoper (State Opera): standing tickets from €3–15, evening dress not required
+
+BOOKING LEAD TIMES:
+- Figlmüller, Plachutta: 1–2 weeks ahead
+- Steirereck: several months
+- Spanish Riding School performances: book online weeks ahead`;
+  }
+
+  if (city.includes('seoul')) {
+    return `
+SEOUL EXPERT KNOWLEDGE:
+
+NEIGHBOURHOODS & VIBE:
+- Gangnam: upscale, K-beauty, COEX mall, expensive restaurants, less authentic
+- Hongdae: university area, indie music, street art, young crowd, 24h culture
+- Itaewon: international food, LGBTQ+ friendly, Hannam-dong luxury
+- Insadong: traditional tea houses, hanbok rental, galleries, tourist-friendly cultural district
+- Bukchon / Jongno: preserved hanok village, Gyeongbokgung and Changdeokgung palaces
+- Myeongdong: K-beauty shopping, street food only — avoid restaurants here
+- Mangwon: local market, independent cafés, authentic neighbourhood, low tourists
+- Seongsu: Seoul's Brooklyn — industrial + creative, best specialty coffee
+- Ikseon-dong: renovated hanok alley, cocktail bars, photo-worthy, evening scene
+
+FOOD BY NEIGHBOURHOOD & PRICE (₩):
+Korean BBQ:
+- Maple Tree House (Itaewon) — premium galbi, staff cook for you, ₩50,000–80,000pp
+- Palsaik Samgyeopsal (Hongdae) — 8 types of pork belly, visual and fun, ₩20,000pp
+- Local BBQ in Mangwon Market area — authentic, huge portions, ₩15,000pp
+
+Street Food:
+- Gwangjang Market: bindaetteok ₩4,000; mung bean bibimbap ₩8,000; yuk hoe raw beef ₩12,000 — very local
+- Myeongdong: hotteok ₩2,000, tteokbokki ₩3,000–5,000, egg toast ₩3,000
+
+Fine Dining:
+- Jungsik — Korean New Wave, 2 Michelin stars, ₩250,000pp+, book 2–4 weeks ahead
+- Mingles — modern Korean with global technique, 2 Michelin stars, book 3–4 weeks
+- Dooreyoo — Korean ingredients, modern plating, 1 Michelin star, ₩150,000pp
+
+Specialty Coffee (Seongsu, Yeonnam):
+- Fritz Coffee (Mapo) — best espresso in Seoul, roastery café, ₩5,000–7,000
+- Namusairo (Bukchon) — hanok café, matcha and pour-over, ₩7,000–10,000
+
+EXPERIENCES:
+- Gyeongbokgung Palace: free with hanbok rental ₩20,000; sunrise guard change ceremony
+- DMZ Tour: half-day from Seoul ₩50,000–80,000, book through tour operators
+- Namsan / N Seoul Tower: cable car ₩11,000 or hike; city views at sunset
+- Han River Parks: rent bikes ₩3,000/h, picnic, weekend night markets
+- Jjimjilbang (Korean sauna): Dragon Hill Spa ₩15,000, open 24h, essential experience
+
+TRANSPORT:
+- T-money card: ₩2,500–3,000 per metro or bus journey, transfers cheap
+- Kakao T app: taxis fast, fair, and translates for foreigners
+- Airport Express (AREX): Incheon to Seoul Station 43 min, ₩9,500
+- Avoid rush hours 7:30–9:30 AM and 6–8 PM
+
+BOOKING LEAD TIMES:
+- Jungsik, Mingles, Dooreyoo: 2–4 weeks minimum
+- Regular Korean BBQ: walk-in usually fine, short queue on weekends
+- Hanbok rental (Bukchon): walk-in, no reservation needed`;
+  }
+
   // Generic fallback
   return `
 EXPERT TRAVEL ADVICE for ${cityName}:
