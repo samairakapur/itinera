@@ -24,6 +24,8 @@ import {
   Sparkles,
   AlertTriangle,
   Lock,
+  Vote,
+  MessageSquarePlus,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -92,6 +94,12 @@ interface ActivityCardProps {
   groupSize?: number;
   /** Trip start date for booking links */
   tripDate?: string;
+  /** When true, destructive actions (remove/swap) route through proposal flow */
+  isDemocratic?: boolean;
+  /** Called instead of onRemove when isDemocratic is true */
+  onProposeRemove?: (id: string) => void;
+  /** Called instead of onSwap when isDemocratic is true */
+  onProposeSwap?: (id: string) => void;
 }
 
 const typeIcons = {
@@ -129,6 +137,9 @@ export const ActivityCard = ({
   isScheduleOverflow = false,
   groupSize,
   tripDate,
+  isDemocratic = false,
+  onProposeRemove,
+  onProposeSwap,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -297,7 +308,7 @@ export const ActivityCard = ({
                     <MoreHorizontal className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-52">
                   {onEdit && (
                     <DropdownMenuItem onClick={() => onEdit(activity.id)}>
                       <Edit className="w-4 h-4 mr-2" />
@@ -310,12 +321,18 @@ export const ActivityCard = ({
                       {activity.mustDo ? 'Remove Must-Do' : 'Mark as Must-Do'}
                     </DropdownMenuItem>
                   )}
-                  {onSwap && (
+                  {/* Swap: democratic → propose, otherwise direct */}
+                  {isDemocratic && onProposeSwap ? (
+                    <DropdownMenuItem onClick={() => onProposeSwap(activity.id)}>
+                      <Vote className="w-4 h-4 mr-2 text-primary" />
+                      Propose: Swap
+                    </DropdownMenuItem>
+                  ) : onSwap ? (
                     <DropdownMenuItem onClick={() => onSwap(activity.id)}>
                       <RefreshCw className="w-4 h-4 mr-2" />
                       Swap Activity
                     </DropdownMenuItem>
-                  )}
+                  ) : null}
                   {(onMoveUp || onMoveDown) && <DropdownMenuSeparator />}
                   {onMoveUp && !isFirst && (
                     <DropdownMenuItem onClick={() => onMoveUp(activity.id)}>
@@ -329,15 +346,37 @@ export const ActivityCard = ({
                       Move Down
                     </DropdownMenuItem>
                   )}
-                  {onRemove && (
+                  {/* Remove: democratic → propose, otherwise direct */}
+                  {isDemocratic && onProposeRemove ? (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
+                        onClick={() => onProposeRemove(activity.id)}
+                        className="text-primary focus:text-primary"
+                      >
+                        <Vote className="w-4 h-4 mr-2" />
+                        Propose: Remove
+                      </DropdownMenuItem>
+                    </>
+                  ) : onRemove ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
                         onClick={() => onRemove(activity.id)}
                         className="text-destructive focus:text-destructive"
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Remove
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                  {/* Suggest to organiser — shown in organiser-mode trips for non-owners */}
+                  {!isDemocratic && onProposeRemove && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => onProposeRemove(activity.id)}>
+                        <MessageSquarePlus className="w-4 h-4 mr-2 text-muted-foreground" />
+                        Suggest to organiser
                       </DropdownMenuItem>
                     </>
                   )}

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, isPast } from 'date-fns';
-import { ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle2, XCircle, Plus } from 'lucide-react';
 
 interface VotingPanelProps {
   proposals: Proposal[];
@@ -11,6 +11,8 @@ interface VotingPanelProps {
   voteCounts: (proposalId: string) => { yes: number; no: number; neutral: number; total: number };
   onVote: (proposalId: string, vote: 'yes' | 'no' | 'neutral') => Promise<void>;
   isLoading?: boolean;
+  /** When provided, renders a "+ New Proposal" button in the empty/top area */
+  onCreateProposal?: () => void;
 }
 
 const proposalTypeLabel: Record<string, string> = {
@@ -136,6 +138,7 @@ export const VotingPanel = ({
   voteCounts,
   onVote,
   isLoading,
+  onCreateProposal,
 }: VotingPanelProps) => {
   if (isLoading) {
     return (
@@ -153,14 +156,38 @@ export const VotingPanel = ({
 
   if (proposals.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground text-center py-6">
-        No open proposals right now.
-      </p>
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground text-center py-4">
+          No open proposals right now.
+        </p>
+        {onCreateProposal && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 border-dashed"
+            onClick={onCreateProposal}
+          >
+            <Plus className="w-4 h-4" />
+            New Proposal
+          </Button>
+        )}
+      </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      {onCreateProposal && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full gap-2 border-dashed"
+          onClick={onCreateProposal}
+        >
+          <Plus className="w-4 h-4" />
+          New Proposal
+        </Button>
+      )}
       {proposals.map(proposal => (
         <ProposalCard
           key={proposal.id}

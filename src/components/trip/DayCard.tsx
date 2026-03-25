@@ -18,6 +18,7 @@ import {
   Edit3,
   Settings2,
   AlertTriangle,
+  Vote,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,14 @@ interface DayCardProps {
   onCarryOverActivities?: (fromDay: number, activityIds: string[]) => void;
   onStartTimeChange?: (dayNumber: number, newTime: string, affectedActivities: Activity[]) => void;
   onDayEditorSave?: (dayNumber: number, config: { startTime: string; pace: string; activitiesToMove: string[]; targetDay: number }) => void;
+  /** When true, destructive activity actions route through the proposal flow */
+  isDemocratic?: boolean;
+  /** Called to open a "propose time change" dialog for this day */
+  onProposeTimeChange?: (dayNumber: number) => void;
+  /** Called to open "propose: remove" dialog */
+  onProposeRemove?: (dayNumber: number, activityId: string) => void;
+  /** Called to open "propose: swap" dialog */
+  onProposeSwap?: (dayNumber: number, activityId: string) => void;
 }
 
 const getWeatherIcon = (condition: string) => {
@@ -112,6 +121,9 @@ const TimeSlot = ({
   onEdit,
   onAdd,
   onToggleComplete,
+  isDemocratic,
+  onProposeRemove,
+  onProposeSwap,
 }: {
   icon: React.ElementType;
   label: string;
@@ -130,6 +142,9 @@ const TimeSlot = ({
   onEdit?: (id: string) => void;
   onAdd?: () => void;
   onToggleComplete?: (id: string) => void;
+  isDemocratic?: boolean;
+  onProposeRemove?: (id: string) => void;
+  onProposeSwap?: (id: string) => void;
 }) => {
   // Calculate travel time between consecutive activities
   const getTravelInfo = (index: number): { minutes: number; mode: 'walk' | 'metro' | 'taxi' | 'bus'; fromTitle: string; toTitle: string } | null => {
@@ -199,6 +214,9 @@ const TimeSlot = ({
                   isLast={index === activities.length - 1}
                   computedStartTime={scheduleById?.get(activity.id)?.computedStart}
                   isScheduleOverflow={scheduleById?.get(activity.id)?.isOverflow}
+                  isDemocratic={isDemocratic}
+                  onProposeRemove={onProposeRemove}
+                  onProposeSwap={onProposeSwap}
                 />
               </div>
             );
@@ -243,6 +261,10 @@ export const DayCard = ({
   onCarryOverActivities,
   onStartTimeChange,
   onDayEditorSave,
+  isDemocratic = false,
+  onProposeTimeChange,
+  onProposeRemove,
+  onProposeSwap,
 }: DayCardProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [checkInOpen, setCheckInOpen] = useState(false);
@@ -295,6 +317,13 @@ export const DayCard = ({
     : undefined;
   const handleAddEvening = onAddActivity
     ? () => onAddActivity(day.dayNumber, 'evening')
+    : undefined;
+  // Democratic proposal handlers — bound to this day's number
+  const handleProposeRemove = onProposeRemove
+    ? (id: string) => onProposeRemove(day.dayNumber, id)
+    : undefined;
+  const handleProposeSwap = onProposeSwap
+    ? (id: string) => onProposeSwap(day.dayNumber, id)
     : undefined;
   const handleToggleComplete = onToggleActivityComplete
     ? (id: string) => onToggleActivityComplete(day.dayNumber, id)
@@ -383,6 +412,21 @@ export const DayCard = ({
                   >
                     <Settings2 className="w-3.5 h-3.5" />
                     Edit Day
+                  </Button>
+                )}
+                {/* Propose time change — visible in democratic mode */}
+                {isDemocratic && onProposeTimeChange && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 h-8 px-3 text-xs text-primary border-primary/30 hover:bg-primary/5"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onProposeTimeChange(day.dayNumber);
+                    }}
+                  >
+                    <Vote className="w-3.5 h-3.5" />
+                    Propose
                   </Button>
                 )}
                 <div className="flex items-center gap-3">
@@ -475,6 +519,9 @@ export const DayCard = ({
                 onEdit={handleEdit}
                 onAdd={handleAddMorning}
                 onToggleComplete={handleToggleComplete}
+                isDemocratic={isDemocratic}
+                onProposeRemove={handleProposeRemove}
+                onProposeSwap={handleProposeSwap}
               />
               <TimeSlot
                 icon={Sun}
@@ -493,6 +540,9 @@ export const DayCard = ({
                 onEdit={handleEdit}
                 onAdd={handleAddAfternoon}
                 onToggleComplete={handleToggleComplete}
+                isDemocratic={isDemocratic}
+                onProposeRemove={handleProposeRemove}
+                onProposeSwap={handleProposeSwap}
               />
               <TimeSlot
                 icon={Sunset}
@@ -511,6 +561,9 @@ export const DayCard = ({
                 onEdit={handleEdit}
                 onAdd={handleAddEvening}
                 onToggleComplete={handleToggleComplete}
+                isDemocratic={isDemocratic}
+                onProposeRemove={handleProposeRemove}
+                onProposeSwap={handleProposeSwap}
               />
 
               {/* ── Reflow overflow banner ──────────────────────────────────

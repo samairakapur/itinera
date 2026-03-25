@@ -52,6 +52,8 @@ export const useGroupTrip = (tripId: string | undefined) => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Proposals that just transitioned to 'approved' — consumed by TripDetail to auto-apply changes
+  const [approvedProposals, setApprovedProposals] = useState<Proposal[]>([]);
 
   const fetchOpenProposals = useCallback(async () => {
     if (!tripId) return;
@@ -111,7 +113,20 @@ export const useGroupTrip = (tripId: string | undefined) => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'trip_proposals', filter: `trip_id=eq.${tripId}` },
-        () => { fetchOpenProposals(); }
+        (payload) => {
+          // Detect proposals that just became approved — surface them for auto-apply
+          if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Proposal;
+            if (updated.status === 'approved') {
+              setApprovedProposals(prev => {
+                // Avoid duplicates
+                if (prev.some(p => p.id === updated.id)) return prev;
+                return [...prev, updated];
+              });
+            }
+          }
+          fetchOpenProposals();
+        }
       )
       .subscribe();
 
@@ -193,14 +208,21 @@ export const useGroupTrip = (tripId: string | undefined) => {
     };
   };
 
+  /** Call this after you've handled an approved proposal to clear it from the queue */
+  const dismissApprovedProposal = (proposalId: string) => {
+    setApprovedProposals(prev => prev.filter(p => p.id !== proposalId));
+  };
+
   return {
     activityFeed,
     proposals,
     votes,
     isLoading,
     unreadCount,
+    approvedProposals,
     castVote,
     createProposal,
+    dismissApprovedProposal,
     myVoteFor,
     voteCounts,
   };

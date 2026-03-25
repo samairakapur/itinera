@@ -5,13 +5,15 @@ import { useFlightDetails } from '@/hooks/useFlightDetails';
 import { useTripLegs, getCityForDay } from '@/hooks/useTripLegs';
 import { useDayConstraints, calculateDayConstraints, timeToMinutes } from '@/hooks/useSmartScheduling';
 import { useRegenerateItinerary } from '@/hooks/useRegenerateItinerary';
-import { useGroupTrip } from '@/hooks/useGroupTrip';
+import { useGroupTrip, Proposal } from '@/hooks/useGroupTrip';
+import { useAuth } from '@/contexts/AuthContext';
 import { format, addDays, isSameDay, differenceInDays } from 'date-fns';
 import { ArrowLeft, Calendar, Loader2, Trash2, Save, Check, RefreshCw, Plane, Sparkles, Zap, Users, Activity as ActivityIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TripActivityFeed } from '@/components/group/TripActivityFeed';
 import { VotingPanel } from '@/components/group/VotingPanel';
+import { ProposeChangeDialog } from '@/components/group/ProposeChangeDialog';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
@@ -31,6 +33,7 @@ import { toast } from 'sonner';
 const TripDetail = () => {
   const { tripId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: itinerary, isLoading } = useItinerary(tripId);
   const { data: dayPreferences = [] } = useDayPreferences(tripId);
   const { data: flights = [] } = useFlightDetails(tripId);
@@ -39,7 +42,18 @@ const TripDetail = () => {
   const deleteItinerary = useDeleteItinerary();
   const upsertDayPreference = useUpsertDayPreference();
   const regenerateItinerary = useRegenerateItinerary();
-  const { activityFeed, proposals, isLoading: groupLoading, unreadCount, castVote, myVoteFor, voteCounts } = useGroupTrip(tripId);
+  const {
+    activityFeed,
+    proposals,
+    isLoading: groupLoading,
+    unreadCount,
+    approvedProposals,
+    castVote,
+    createProposal,
+    dismissApprovedProposal,
+    myVoteFor,
+    voteCounts,
+  } = useGroupTrip(tripId);
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -51,6 +65,16 @@ const TripDetail = () => {
   const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [flightJustSaved, setFlightJustSaved] = useState(false);
+  // Proposal creation dialog state
+  const [proposalDialog, setProposalDialog] = useState<{
+    open: boolean;
+    type: Proposal['proposal_type'];
+    activityTitle?: string;
+    activityId?: string;
+    dayNumber?: number;
+    dayLabel?: string;
+    currentTime?: string;
+  }>({ open: false, type: 'add_activity' });
 
   // Calculate flight-aware constraints for each day
   const startDate = itinerary?.start_date ? new Date(itinerary.start_date) : undefined;
@@ -351,6 +375,146 @@ const TripDetail = () => {
     deleteItinerary.mutate(tripId, { onSuccess: () => navigate('/trips') });
   };
 
+  // ── Proposal creation handlers ───────────────────────────────────────────
+
+  const handleProposeRemove = useCallback((dayNumber: number, activityId: string) => {
+    const day = days.find(d => d.dayNumber === dayNumber);
+    const activity = day
+      ? [...day.morning, ...day.afternoon, ...day.evening].find(a => a.id === activityId)
+      : null;
+    setProposalDialog({
+      open: true,
+      type: 'remove_activity',
+      activityTitle: activity?.title,
+      activityId,
+      dayNumber,
+    });
+  }, [days]);
+
+  const handleProposeSwap = useCallback((dayNumber: number, activityId: string) => {
+    const day = days.find(d => d.dayNumber === dayNumber);
+    const activity = day
+      ? [...day.morning, ...day.afternoon, ...day.evening].find(a => a.id === activityId)
+      : null;
+    setProposalDialog({
+      open: true,
+      type: 'swap_activity',
+      activityTitle: activity?.title,
+      activityId,
+      dayNumber,
+    });
+  }, [days]);
+
+  const handleProposeTimeChange = useCallback((dayNumber: number) => {
+    const day = days.find(d => d.dayNumber === dayNumber);
+    setProposalDialog({
+      open: true,
+      type: 'change_time',
+      dayNumber,
+      dayLabel: day ? getDayTitle(day) : undefined,
+      currentTime: day?.startTime,
+    });
+  }, [days, getDayTitle]);
+
+  const handleProposalSubmit = useCallback(async (
+    type: Proposal['proposal_type'],
+    data: Record<string, unknown>,
+    deadlineHours: number
+  ) => {
+    const error = await createProposal(type, data, deadlineHours);
+    if (!error) {
+      toast.success('Proposal created! Your group can now vote.');
+      setGroupTab('votes');
+    } else {
+      toast.error('Failed to create proposal. Please try again.');
+      throw error; // Re-throw so the dialog stays open
+    }
+  }, [createProposal]);
+
+  // ── Auto-apply approved proposals ───────────────────────────────────────
+  useEffect(() => {
+    if (approvedProposals.length === 0) return;
+
+    approvedProposals.forEach(proposal => {
+      const d = proposal.proposal_data as Record<string, unknown>;
+
+      if (proposal.proposal_type === 'add_activity' && d.title && d.dayNumber) {
+        const dayNum = Number(d.dayNumber);
+        const slot = (d.timeSlot as string) || 'morning';
+        const newActivity: Activity = {
+          id: `proposed-${proposal.id}`,
+          type: 'custom',
+          title: String(d.title),
+          description: d.reason ? String(d.reason) : undefined,
+        };
+        setDays(prev => {
+          const updated = prev.map(day => {
+            if (day.dayNumber !== dayNum) return day;
+            return {
+              ...day,
+              morning: slot === 'morning' ? [...day.morning, newActivity] : day.morning,
+              afternoon: slot === 'afternoon' ? [...day.afternoon, newActivity] : day.afternoon,
+              evening: slot === 'evening' ? [...day.evening, newActivity] : day.evening,
+            };
+          });
+          saveChanges(updated, false);
+          return updated;
+        });
+        toast.success(`"${d.title}" was approved and added to Day ${dayNum}!`);
+
+      } else if (proposal.proposal_type === 'remove_activity' && d.activityId) {
+        const actId = String(d.activityId);
+        setDays(prev => {
+          const updated = prev.map(day => ({
+            ...day,
+            morning: day.morning.filter(a => a.id !== actId),
+            afternoon: day.afternoon.filter(a => a.id !== actId),
+            evening: day.evening.filter(a => a.id !== actId),
+          }));
+          saveChanges(updated, false);
+          return updated;
+        });
+        toast.success(`Removal of "${d.title || 'activity'}" approved and applied.`);
+
+      } else if (proposal.proposal_type === 'swap_activity' && d.activityId && d.newTitle) {
+        const actId = String(d.activityId);
+        const replacement: Activity = {
+          id: `proposed-${proposal.id}`,
+          type: 'custom',
+          title: String(d.newTitle),
+        };
+        setDays(prev => {
+          const updated = prev.map(day => ({
+            ...day,
+            morning: day.morning.map(a => a.id === actId ? replacement : a),
+            afternoon: day.afternoon.map(a => a.id === actId ? replacement : a),
+            evening: day.evening.map(a => a.id === actId ? replacement : a),
+          }));
+          saveChanges(updated, false);
+          return updated;
+        });
+        toast.success(`Swapped "${d.title}" → "${d.newTitle}"`);
+
+      } else if (
+        (proposal.proposal_type === 'change_time' || proposal.proposal_type === 'change_day_start')
+        && d.dayNumber && d.newTime
+      ) {
+        const dayNum = Number(d.dayNumber);
+        const newTime = String(d.newTime);
+        if (tripId) {
+          upsertDayPreference.mutate({ itinerary_id: tripId, day_number: dayNum, start_time: newTime });
+        }
+        setDays(prev =>
+          prev.map(day => day.dayNumber === dayNum ? { ...day, startTime: newTime } : day)
+        );
+        toast.success(`Day ${dayNum} start time updated to ${newTime}`);
+      }
+
+      dismissApprovedProposal(proposal.id);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvedProposals]);
+
   // Generate engaging day titles based on activities - must be before early returns
   const getDayTitle = useCallback((day: DayData): string => {
     const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
@@ -376,6 +540,13 @@ const TripDetail = () => {
 
   if (isLoading) return <div className="min-h-screen py-8"><div className="container px-4 max-w-2xl mx-auto"><Card><CardContent className="py-12 text-center"><Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" /></CardContent></Card></div></div>;
   if (!itinerary) return <div className="min-h-screen py-8"><div className="container px-4"><p>Trip not found</p></div></div>;
+
+  // Group trip mode detection
+  const tripMode = (itinerary as any).trip_mode as string | null;
+  const isDemocratic = tripMode === 'democratic';
+  const isOwner = (itinerary as any).user_id === user?.id;
+  // Non-owners in organiser-mode trips get a "Suggest to organiser" flow (also uses proposals)
+  const showSuggestToOrganiser = tripMode === 'organizer' && !isOwner;
 
   const tripStartDate = itinerary.start_date ? new Date(itinerary.start_date) : null;
   const endDate = itinerary.end_date ? new Date(itinerary.end_date) : null;
@@ -512,6 +683,7 @@ const TripDetail = () => {
                     voteCounts={voteCounts}
                     onVote={castVote}
                     isLoading={groupLoading}
+                    onCreateProposal={isDemocratic ? () => setProposalDialog({ open: true, type: 'add_activity' }) : undefined}
                   />
                 ) : (
                   <TripActivityFeed feed={activityFeed} isLoading={groupLoading} />
@@ -721,8 +893,8 @@ const TripDetail = () => {
                   <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
                 ))}
                 
-                <DayCard 
-                  day={dayWithTitle} 
+                <DayCard
+                  day={dayWithTitle}
                   cityName={cityForDay}
                   startDate={startDate || undefined}
                   showCheckIn={isOngoing}
@@ -730,13 +902,17 @@ const TripDetail = () => {
                   itineraryId={tripId}
                   totalDays={itinerary.num_days}
                   constraints={dayConstraint}
-                  onActivityRemove={handleActivityRemove} 
+                  onActivityRemove={handleActivityRemove}
                   onActivityEdit={handleActivityEdit}
                   onAddActivity={handleAddActivity}
                   onToggleActivityComplete={handleToggleActivityComplete}
                   onCarryOverActivities={handleCarryOverActivities}
                   onStartTimeChange={handleStartTimeChange}
                   onDayEditorSave={handleDayEditorSave}
+                  isDemocratic={isDemocratic}
+                  onProposeTimeChange={isDemocratic ? handleProposeTimeChange : undefined}
+                  onProposeRemove={(isDemocratic || showSuggestToOrganiser) ? handleProposeRemove : undefined}
+                  onProposeSwap={(isDemocratic || showSuggestToOrganiser) ? handleProposeSwap : undefined}
                 />
 
                 {/* Departure flights at end of day */}
@@ -781,6 +957,20 @@ const TripDetail = () => {
         </div>
       </div>
       <AddActivityDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onSave={handleSaveActivity} dayNumber={addDialogDay} timeSlot={addDialogTimeSlot} editActivity={editActivity} />
+
+      {/* Proposal creation dialog — democratic mode */}
+      <ProposeChangeDialog
+        open={proposalDialog.open}
+        onOpenChange={(open) => setProposalDialog(prev => ({ ...prev, open }))}
+        proposalType={proposalDialog.type}
+        activityTitle={proposalDialog.activityTitle}
+        activityId={proposalDialog.activityId}
+        dayNumber={proposalDialog.dayNumber}
+        dayLabel={proposalDialog.dayLabel}
+        currentTime={proposalDialog.currentTime}
+        totalDays={itinerary.num_days}
+        onSubmit={handleProposalSubmit}
+      />
 
       {/* Regeneration confirmation dialog */}
       <AlertDialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
