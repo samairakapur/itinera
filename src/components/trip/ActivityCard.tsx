@@ -192,11 +192,13 @@ export const ActivityCard = ({
   };
 
   // OpenTable deep-link: search by name + city, pre-fill party size
+  // Format: /s?term=...&covers=...&dateTime=YYYY-MM-DDTHH:MM
   const getOpenTableUrl = () => {
     const term = encodeURIComponent(activity.title + (cityName ? ` ${cityName}` : ''));
     const covers = groupSize ?? 2;
     const dateStr = tripDate ? tripDate : new Date().toISOString().split('T')[0];
-    return `https://www.opentable.com/s/?covers=${covers}&datetime=${dateStr}T19%3A00&term=${term}`;
+    const dateTime = encodeURIComponent(`${dateStr}T19:00`);
+    return `https://www.opentable.com/s?term=${term}&covers=${covers}&dateTime=${dateTime}`;
   };
 
   // Viator deep-link: search by activity title + city
