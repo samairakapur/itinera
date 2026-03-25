@@ -88,6 +88,10 @@ interface ActivityCardProps {
   computedStartTime?: string;
   /** True when this activity overflows the day's flight-constraint window */
   isScheduleOverflow?: boolean;
+  /** Group size — enables booking CTAs and group-size warnings */
+  groupSize?: number;
+  /** Trip start date for booking links */
+  tripDate?: string;
 }
 
 const typeIcons = {
@@ -123,6 +127,8 @@ export const ActivityCard = ({
   isLast,
   computedStartTime,
   isScheduleOverflow = false,
+  groupSize,
+  tripDate,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -173,6 +179,25 @@ export const ActivityCard = ({
   const handleOpenMaps = () => {
     window.open(getGoogleMapsUrl(), '_blank', 'noopener,noreferrer');
   };
+
+  // OpenTable deep-link: search by name + city, pre-fill party size
+  const getOpenTableUrl = () => {
+    const term = encodeURIComponent(activity.title + (cityName ? ` ${cityName}` : ''));
+    const covers = groupSize ?? 2;
+    const dateStr = tripDate ? tripDate : new Date().toISOString().split('T')[0];
+    return `https://www.opentable.com/s/?covers=${covers}&datetime=${dateStr}T19%3A00&term=${term}`;
+  };
+
+  // Viator deep-link: search by activity title + city
+  const getViatorUrl = () => {
+    const q = encodeURIComponent((activity.title + (cityName ? ` ${cityName}` : '')).trim());
+    return `https://www.viator.com/search?text=${q}${groupSize ? `&pax=${groupSize}` : ''}`;
+  };
+
+  const isRestaurant = activity.type === 'restaurant';
+  const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
+  const showGroupWarning = isRestaurant && groupSize && groupSize >= 7;
+  const showCallWarning = isRestaurant && groupSize && groupSize >= 9;
 
   // Split description and booking warning (⚠️ line)
   const rawDesc = activity.description || '';
@@ -355,6 +380,49 @@ export const ActivityCard = ({
                     {activity.location}
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* Booking CTAs */}
+            {isRestaurant && (
+              <div className="mt-3 space-y-2">
+                {showGroupWarning && (
+                  <div className={cn(
+                    'flex items-start gap-1.5 text-xs rounded-sm px-2 py-1.5 border',
+                    showCallWarning
+                      ? 'bg-destructive/10 border-destructive/20 text-destructive'
+                      : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+                  )}>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    <span>
+                      {showCallWarning
+                        ? `Group of ${groupSize} — call the restaurant directly to confirm availability`
+                        : `Group of ${groupSize} — contact restaurant to ensure they can accommodate`}
+                    </span>
+                  </div>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                  onClick={() => window.open(getOpenTableUrl(), '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Check availability on OpenTable
+                </Button>
+              </div>
+            )}
+            {isAttraction && !activity.isPrebooked && (
+              <div className="mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                  onClick={() => window.open(getViatorUrl(), '_blank', 'noopener,noreferrer')}
+                >
+                  <Ticket className="w-3.5 h-3.5" />
+                  Find tours on Viator
+                </Button>
               </div>
             )}
 
