@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { RequireProfile } from "@/components/auth/RequireProfile";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Layout from "@/components/layout/Layout";
 import Home from "@/pages/Home";
 import Auth from "@/pages/Auth";
@@ -20,6 +21,7 @@ import Profile from "@/pages/Profile";
 import ResetPassword from "@/pages/ResetPassword";
 import PublicTripView from "@/pages/PublicTripView";
 import NotFound from "@/pages/NotFound";
+import AcceptInvite from "@/pages/AcceptInvite";
 
 const queryClient = new QueryClient();
 
@@ -39,7 +41,7 @@ const App = () => (
               <Route path="/destinations" element={<RequireProfile><Destinations /></RequireProfile>} />
               <Route path="/city/:cityId" element={<RequireProfile><CityDetail /></RequireProfile>} />
               <Route path="/trips" element={<RequireProfile><Trips /></RequireProfile>} />
-              <Route path="/trips/:tripId" element={<RequireProfile><TripDetail /></RequireProfile>} />
+              <Route path="/trips/:tripId" element={<RequireProfile><ErrorBoundary><TripDetail /></ErrorBoundary></RequireProfile>} />
               <Route path="/trips/:tripId/day" element={<RequireProfile><TripDayMode /></RequireProfile>} />
               <Route path="/planner/new" element={<RequireProfile><NewTrip /></RequireProfile>} />
               <Route path="/nearby" element={<RequireProfile><Nearby /></RequireProfile>} />
@@ -47,6 +49,8 @@ const App = () => (
             </Route>
             {/* Public share link — no auth required */}
             <Route path="/trip/share/:publicLinkId" element={<PublicTripView />} />
+            {/* Invite link — shows join page, redirects to auth if not logged in */}
+            <Route path="/invite/:token" element={<AcceptInvite />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

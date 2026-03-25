@@ -375,6 +375,23 @@ const TripDetail = () => {
     deleteItinerary.mutate(tripId, { onSuccess: () => navigate('/trips') });
   };
 
+  // ── getDayTitle must be defined BEFORE proposal handlers that use it ──────
+  const getDayTitle = useCallback((day: DayData): string => {
+    const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
+    if (allActivities.length === 0) return 'Free Day';
+    const attractions = allActivities.filter(a => a.type === 'attraction');
+    const restaurants = allActivities.filter(a => a.type === 'restaurant');
+    if (attractions.length >= 2) return 'Cultural Discovery';
+    if (restaurants.length >= 2) return 'Culinary Journey';
+    if (attractions.length >= 1 && restaurants.length >= 1) return 'City Highlights';
+    if (allActivities.length >= 4) return 'Full Day Adventure';
+    const mainActivity = allActivities[0];
+    if (mainActivity.type === 'attraction') return 'Sightseeing';
+    if (mainActivity.type === 'restaurant') return 'Local Flavors';
+    if (mainActivity.type === 'prebooked') return 'Special Experience';
+    return 'Exploring';
+  }, []);
+
   // ── Proposal creation handlers ───────────────────────────────────────────
 
   const handleProposeRemove = useCallback((dayNumber: number, activityId: string) => {
@@ -414,7 +431,9 @@ const TripDetail = () => {
       dayLabel: day ? getDayTitle(day) : undefined,
       currentTime: day?.startTime,
     });
-  }, [days, getDayTitle]);
+  // getDayTitle is stable (useCallback with [] deps) so no need in deps array
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
 
   const handleProposalSubmit = useCallback(async (
     type: Proposal['proposal_type'],
@@ -514,29 +533,6 @@ const TripDetail = () => {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedProposals]);
-
-  // Generate engaging day titles based on activities - must be before early returns
-  const getDayTitle = useCallback((day: DayData): string => {
-    const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
-    if (allActivities.length === 0) return 'Free Day';
-    
-    // Find highlights by type
-    const attractions = allActivities.filter(a => a.type === 'attraction');
-    const restaurants = allActivities.filter(a => a.type === 'restaurant');
-    
-    if (attractions.length >= 2) return 'Cultural Discovery';
-    if (restaurants.length >= 2) return 'Culinary Journey';
-    if (attractions.length >= 1 && restaurants.length >= 1) return 'City Highlights';
-    if (allActivities.length >= 4) return 'Full Day Adventure';
-    
-    // Use first activity as inspiration
-    const mainActivity = allActivities[0];
-    if (mainActivity.type === 'attraction') return 'Sightseeing';
-    if (mainActivity.type === 'restaurant') return 'Local Flavors';
-    if (mainActivity.type === 'prebooked') return 'Special Experience';
-    
-    return 'Exploring';
-  }, []);
 
   if (isLoading) return <div className="min-h-screen py-8"><div className="container px-4 max-w-2xl mx-auto"><Card><CardContent className="py-12 text-center"><Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" /></CardContent></Card></div></div>;
   if (!itinerary) return <div className="min-h-screen py-8"><div className="container px-4"><p>Trip not found</p></div></div>;

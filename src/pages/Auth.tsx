@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,8 @@ type View = 'auth' | 'forgot' | 'forgot-success';
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
   const { user, signIn, signUp, sendPasswordResetEmail, loading } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [view, setView] = useState<View>('auth');
@@ -43,9 +45,9 @@ const Auth = () => {
 
   useEffect(() => {
     if (user && !loading) {
-      navigate('/');
+      navigate(redirectTo);
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, redirectTo]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

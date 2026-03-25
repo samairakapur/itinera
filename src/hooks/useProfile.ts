@@ -17,7 +17,7 @@ export interface TravelPreferences {
   preferredCuisines?: string[];
   dietaryRestrictions?: string[];
   willingnessToTryNew?: string;
-  diningStyle?: string;
+  diningStyle?: string[];
 }
 
 export interface Profile {

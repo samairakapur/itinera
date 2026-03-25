@@ -493,7 +493,7 @@ const NewTrip = () => {
       });
 
       if (isGroupTrip && inviteToken) {
-        const inviteUrl = `${window.location.origin}/join/${inviteToken}`;
+        const inviteUrl = `${window.location.origin}/invite/${inviteToken}`;
         toast.success('Group trip created! Share the invite link with your group.', {
           description: inviteUrl,
           action: {

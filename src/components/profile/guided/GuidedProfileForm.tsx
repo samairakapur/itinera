@@ -21,7 +21,7 @@ interface ProfilePreferences {
   preferredCuisines: string[];
   dietaryRestrictions: string[];
   willingnessToTryNew: string;
-  diningStyle: string;
+  diningStyle: string[];
 }
 
 interface GuidedProfileFormProps {
@@ -167,7 +167,7 @@ const STEPS: StepDefinition[] = [
     id: 10,
     key: 'preferredCuisines',
     question: 'Which cuisines do you love?',
-    helper: 'Select your favorites (up to 6)',
+    helper: 'Pick your favourites — select up to 6',
     type: 'multi',
     maxSelect: 6,
     options: [
@@ -176,36 +176,40 @@ const STEPS: StepDefinition[] = [
       { value: 'Mexican', label: 'Mexican', icon: '🌮' },
       { value: 'Indian', label: 'Indian', icon: '🍛' },
       { value: 'Thai', label: 'Thai', icon: '🍜' },
-      { value: 'French', label: 'French', icon: '🥐' },
       { value: 'Chinese', label: 'Chinese', icon: '🥟' },
-      { value: 'American', label: 'American', icon: '🍔' },
-      { value: 'Greek', label: 'Greek', icon: '🫒' },
-      { value: 'Spanish', label: 'Spanish', icon: '🥘' },
-      { value: 'Middle Eastern', label: 'Middle Eastern', icon: '🥙' },
       { value: 'Korean', label: 'Korean', icon: '🫕' },
-      { value: 'Mediterranean', label: 'Mediterranean', icon: '🐟' },
       { value: 'Vietnamese', label: 'Vietnamese', icon: '🍲' },
-      { value: 'Caribbean', label: 'Caribbean', icon: '🌴' },
+      { value: 'French', label: 'French', icon: '🥐' },
+      { value: 'American', label: 'American', icon: '🍔' },
+      { value: 'Mediterranean', label: 'Mediterranean', icon: '🫒' },
+      { value: 'Middle Eastern', label: 'Middle Eastern', icon: '🥙' },
+      { value: 'Greek', label: 'Greek', icon: '🍋' },
+      { value: 'Spanish / Tapas', label: 'Spanish / Tapas', icon: '🥘' },
+      { value: 'Turkish', label: 'Turkish', icon: '🧆' },
+      { value: 'Latin American', label: 'Latin American', icon: '🫔' },
       { value: 'African', label: 'African', icon: '🫙' },
-      { value: 'Vegetarian', label: 'Vegetarian', icon: '🥗' },
-      { value: 'Vegan', label: 'Vegan', icon: '🌱' },
+      { value: 'Caribbean', label: 'Caribbean', icon: '🌴' },
+      { value: 'British / Pub Food', label: 'British / Pub Food', icon: '🍺' },
+      { value: 'Seafood', label: 'Seafood', icon: '🦞' },
+      { value: 'BBQ / Grill', label: 'BBQ / Grill', icon: '🥩' },
     ],
   },
   {
     id: 11,
     key: 'dietaryRestrictions',
-    question: 'Any dietary restrictions?',
-    helper: "We'll filter restaurants accordingly",
+    question: 'Any dietary requirements?',
+    helper: "We'll make sure restaurants can accommodate you",
     type: 'multi',
-    maxSelect: 3,
+    maxSelect: 4,
     options: [
-      { value: 'None', label: 'None', icon: '✅' },
+      { value: 'None', label: 'No restrictions', icon: '✅' },
       { value: 'Vegetarian', label: 'Vegetarian', icon: '🥗' },
       { value: 'Vegan', label: 'Vegan', icon: '🌱' },
-      { value: 'Halal', label: 'Halal', icon: '🍖' },
+      { value: 'Pescatarian', label: 'Pescatarian', icon: '🐟' },
+      { value: 'Halal', label: 'Halal', icon: '🌙' },
       { value: 'Kosher', label: 'Kosher', icon: '✡️' },
-      { value: 'Gluten-free', label: 'Gluten-free', icon: '🌾' },
-      { value: 'Dairy-free', label: 'Dairy-free', icon: '🥛' },
+      { value: 'Gluten-Free', label: 'Gluten-Free', icon: '🌾' },
+      { value: 'Dairy-Free', label: 'Dairy-Free', icon: '🥛' },
     ],
   },
   {
@@ -223,13 +227,17 @@ const STEPS: StepDefinition[] = [
   {
     id: 13,
     key: 'diningStyle',
-    question: "What's your dining style?",
-    helper: 'Your preferred restaurant atmosphere',
-    type: 'single',
+    question: 'How do you like to eat?',
+    helper: 'Select all that apply (up to 3)',
+    type: 'multi',
+    maxSelect: 3,
     options: [
-      { value: 'Casual', label: 'Casual', description: 'Relaxed, laid-back vibes', icon: '🍕' },
-      { value: 'Mixed', label: 'Mixed', description: 'Variety is good', icon: '🍽️' },
-      { value: 'Fine dining', label: 'Fine Dining', description: 'Special occasions & elegance', icon: '🥂' },
+      { value: 'Street Food & Markets', label: 'Street Food & Markets', description: 'Night markets, food stalls', icon: '🥡' },
+      { value: 'Casual / Bistro', label: 'Casual / Bistro', description: 'Relaxed, laid-back vibes', icon: '🍕' },
+      { value: 'Fine Dining', label: 'Fine Dining', description: 'Special occasions & elegance', icon: '🥂' },
+      { value: 'Cafés & Brunch', label: 'Cafés & Brunch', description: 'Coffee culture, lazy mornings', icon: '☕' },
+      { value: 'Local / Hole-in-the-Wall', label: 'Local / Hidden Gems', description: 'Where locals actually eat', icon: '🔍' },
+      { value: 'Food Tours & Experiences', label: 'Food Tours & Experiences', description: 'Tastings, cooking classes', icon: '🎟️' },
     ],
   },
 ];

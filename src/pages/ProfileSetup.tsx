@@ -22,7 +22,7 @@ export default function ProfileSetup() {
     preferredCuisines: string[];
     dietaryRestrictions: string[];
     willingnessToTryNew: string;
-    diningStyle: string;
+    diningStyle: string[];
   }) => {
     const travelPreferences: TravelPreferences = {
       ageRange: preferences.ageRange,
