@@ -69,6 +69,10 @@ export interface CreateItineraryInput {
   summary?: string;
   /** For multi-city trips, array of city selections in order */
   selectedCities?: CitySelection[];
+  /** Group trip fields */
+  groupSize?: number;
+  tripMode?: 'organizer' | 'democratic';
+  inviteToken?: string;
 }
 
 export const useItineraries = () => {
@@ -210,6 +214,9 @@ export const useCreateItinerary = () => {
         pace: input.pace ?? null,
         travel_style: input.travelStyle ?? null,
         dietary_preferences: input.dietaryPreferences ?? null,
+        group_size: input.groupSize ?? null,
+        trip_mode: input.tripMode ?? 'organizer',
+        invite_token: input.inviteToken ?? null,
       };
 
       console.log('[useCreateItinerary] itineraryPayload:', itineraryPayload);
