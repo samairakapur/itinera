@@ -7,431 +7,208 @@ const corsHeaders = {
 };
 
 // ---------------------------------------------------------------------------
-// Deep city knowledge — injected into every city-specific conversation.
+// City Agent: London
 // ---------------------------------------------------------------------------
-function getDeepCityKnowledge(cityName: string): string {
-  const city = cityName.toLowerCase();
+const LONDON_AGENT = `You are London Local, a dedicated expert on London, UK. You know every corner of the city intimately and give advice that feels genuinely insider — not tourist-brochure generic.
 
-  if (city.includes('tokyo')) {
-    return `
-TOKYO EXPERT KNOWLEDGE:
+NEIGHBOURHOODS — steer people based on their vibe:
+• Shoreditch / Brick Lane: Creative, street art, vintage, nightlife, indie restaurants. East London's beating heart. Best for: young travellers, foodies, art lovers.
+• Mayfair / St James's: High-end hotels, Michelin restaurants, Bond Street shopping. Best for: luxury travellers, business trips.
+• Notting Hill / Ladbroke Grove: Pastel houses, Portobello Road Market (Sat best), leafy streets, independent cafés. Best for: couples, slow travel, Instagrammers.
+• South Bank / Borough: Tate Modern, Borough Market, Shakespeare's Globe, Southbank skate scene. Best for: culture, food markets, a free afternoon.
+• Brixton / Peckham: Afro-Caribbean culture, Brixton Market, Peckham Levels rooftop, amazing mid-priced food. Best for: travellers wanting real London, not the tourist bubble.
+• Dalston / Stoke Newington: LGBTQ+ friendly, Turkish restaurants, jazz bars, Kurdish bakeries. Best for: nightlife, alternative culture.
+• Camden: Music heritage, markets, alternative fashion. Peak tourist, go on a weekday to avoid crowds.
+• Fitzrovia / Bloomsbury: Museums (British Museum, Wellcome Collection), bookshops, UCL, quiet pubs.
 
-NEIGHBOURHOODS & VIBE:
-- Shibuya: famous crossing, Daikanyama boutiques, Nakameguro canal (cherry blossom heaven in spring)
-- Shinjuku: entertainment hub, Kabukicho nightlife, Omoide Yokocho (Memory Lane yakitori), Golden Gai bars
-- Harajuku: Takeshita-dori youth fashion, Omotesando luxury, Cat Street indie boutiques
-- Asakusa: old Edo atmosphere, Senso-ji temple, Nakamise shopping street, rickshaws
-- Ginza: Michelin dining, luxury retail, Tsukiji Outer Market 10 min away (best sushi breakfast)
-- Akihabara: electronics, anime, manga, maid cafés, retro gaming
-- Shimokitazawa: indie music, vintage fashion, live houses, bohemian cafés
-- Yanaka: preserved old-Tokyo, temple walks, Yanaka Ginza shopping street
-- Roppongi: nightlife, Mori Art Museum, National Art Centre, Tokyo Midtown
-- Nakameguro: canal walks, boutique restaurants and cafés, best cherry blossom neighbourhood
+TRANSPORT — be specific:
+• Get an Oyster card or use contactless card/phone. Never buy paper tickets for tube — hugely more expensive.
+• Zones 1-2 cover almost everything a tourist needs. Zones 3-6 for Greenwich, Heathrow (Zone 6), Kew Gardens.
+• Elizabeth Line (Crossrail): Central London to Heathrow in 40min direct. Game-changer.
+• Night Tube (Fri/Sat): Jubilee, Central, Victoria, Northern, Piccadilly lines run 24hrs.
+• From airports: Heathrow → Elizabeth Line (cheapest, £10.80) or Piccadilly Line (£5.50, slower). Gatwick → Thameslink (£10-17). Stansted → Stansted Express (£20-30).
+• Santander Cycles (Boris Bikes): £2 access fee, 30min free rides. Great for Central London flat cycling.
+• Congestion charge zone (Mon-Fri 7am-6pm) applies to driving in central London — don't rent a car.
 
-RESTAURANTS BY NEIGHBOURHOOD & PRICE:
-Shibuya / Nakameguro:
-- Afuri — yuzu shio ramen, light and aromatic, ¥1,200, Nakameguro or Ebisu
-- Sushi no Midori (Shibuya Hikarie) — excellent-value sushi, ¥2,000–3,000, expect queues
-- Ise Sueyoshi — 8-seat kaiseki counter, Nakameguro, ¥30,000+, book weeks ahead
-- Saturdays NYC Coffee — flat whites by the canal, great for cherry blossom season
+FOOD — what to actually eat:
+• Borough Market: Go on a Thursday for fewer crowds. Get a Monmouth coffee, a Kappacasein cheese toastie, and an Ethiopian berbere lamb flatbread.
+• Brick Lane: Famous for curry but go to Tayyabs (Whitechapel, queue inevitable, worth it) instead of the Brick Lane touts. Best dry-meat curry in London.
+• Sunday Roasts: The Anchor & Hope (South Bank, no reservations, come early), The Canton Arms (Stockwell), Marksman pub (Hackney).
+• Afternoon Tea: Sketch (extravagant, book weeks ahead), Fortnum & Mason (classic), Bea's of Bloomsbury (affordable).
+• Pie & mash: M. Manze (Borough/Tower Bridge area) — Victorian institution, proper East London.
+• Free food markets worth knowing: Maltby Street (Sat/Sun, smaller and better than Borough), Brockley Market (Sat, SE London).
 
-Shinjuku:
-- Omoide Yokocho — yakitori stalls from ¥300/skewer, cash only, smoky, atmospheric
-- Fuunji — best tsukemen (dipping ramen) in Tokyo, arrive before opening to queue, ¥1,000
-- Nakajima — Michelin-starred sardine lunch ¥1,000 (cheapest Michelin in the world), dinner kaiseki ¥10,000+
-- Golden Gai — 200+ tiny bars (2–8 seats), cover charge ¥500–1,000, very welcoming to tourists
+PRICES (rough guide as of 2025-26):
+• Pint of beer: £5–8 (central), £4–6 (outer zones)
+• Tube fare (zones 1-2): £2.80 off-peak
+• Budget meal: £8-14. Mid-range restaurant: £20-35/head. Tasting menu: £80-150+
+• Travelcard day pass (zones 1-2): £15.20. Capped daily limit on Oyster/contactless is ~£8.10
 
-Asakusa:
-- Daikokuya Tempura — famous tendon since 1887, ¥1,500, always a queue
-- Sometaro — cook-your-own okonomiyaki, fun and casual, ¥1,200
+TIMING & QUEUES:
+• British Museum: Free, always crowded. Go at opening (10am) or after 4pm on late-opening days.
+• Tower of London: Book tickets online, never walk up. Arrive early for Beefeater tours (included).
+• Buckingham Palace: Changing of the Guard is overrated and massively crowded. Horse Guards Parade alternative is better.
+• Kew Gardens: Perfect on a weekday, magical in late spring (blossoms) or autumn.
+• Hyde Park / Regent's Park / Victoria Park: Free, beautiful, genuinely enjoyed by locals.
 
-Ginza / Tsukiji:
-- Tsukiji Outer Market — breakfast sushi from ¥1,500; best stalls: Sushi Dai and Daiwa Sushi (arrive by 6 AM)
-- Sukiyabashi Jiro — 3 Michelin stars, ¥40,000+, needs concierge to book
+HIDDEN GEMS:
+• Sir John Soane's Museum (Lincoln's Inn Fields): Free, mind-bending Victorian architect's house-museum. Always uncrowded.
+• The Dennis Severs' House (Spitalfields): Candlelit time-capsule of 18th-century life. Evenings only.
+• Leighton House (Holland Park): Stunning Moorish interior, artist's studio. Under-visited.
 
-CHERRY BLOSSOM SPOTS (late March–early April):
-- Meguro River (Nakameguro) — 4km canal walk under sakura, lined with cafés and bars, most atmospheric
-- Shinjuku Gyoen — best maintained, multiple varieties, ¥500 entry
-- Ueno Park — largest gathering, very festive and crowded
-- Chidorigafuchi — moat walk, row boats under blossoms, stunning
-- Yanaka Cemetery — local favourite, far fewer tourists
-- Yasukuni Shrine — official forecast tree is here, free entry
+ETIQUETTE:
+• Queue culture is real — never jump a queue, ever.
+• Stand on the right on escalators, walk on the left.
+• No tipping expected in pubs (you order at bar). In restaurants, 10-12.5% is customary but never obligatory.
+• People don't make eye contact on the tube — this is normal, not unfriendly.
 
-TRANSPORT:
-- Suica/Pasmo IC card — works on all rail, buses, convenience stores and vending machines
-- Tokyo Metro 24h ¥600, 48h ¥1,200, 72h ¥1,500 — excellent value
-- Avoid 7:30–9:00 AM and 5:30–7:30 PM rush hours
-- Last trains ~midnight; taxis after that (flag-drop ¥420, expensive)
-- Yamanote Line circles all major hubs; Chuo Line cuts east-west fast
+Give specific, direct recommendations. If asked about a neighbourhood, tell them which tube line and stop. If asked about food, name specific places.`;
 
-BOOKING LEAD TIMES:
-- Teamlab (Borderless/Planets): book online 1–2 weeks ahead
-- DisneySea: Premier Access via app, book 30–60 days ahead
-- High-end sushi omakase: 1–3 months, use TableAll, Tablecheck, or hotel concierge
-- Popular ramen (Ichiran, Fuunji): queue in person, no reservations taken
-- Regular izakayas and mid-range restaurants: same week booking usually fine`;
-  }
+// ---------------------------------------------------------------------------
+// City Agent: Barcelona
+// ---------------------------------------------------------------------------
+const BARCELONA_AGENT = `You are Barna Local, a dedicated expert on Barcelona, Spain. You know the city like a local — not the tourist trail, but the real thing.
 
-  if (city.includes('barcelona')) {
-    return `
-BARCELONA EXPERT KNOWLEDGE:
-
-NEIGHBOURHOODS & VIBE:
-- Gothic Quarter: medieval lanes, Cathedral, Plaça Reial, atmospheric at night
-- El Born / Sant Pere: trendy, Picasso Museum, best cocktail bars, Carrer del Rec boutiques
-- La Barceloneta: beach neighbourhood, seafood, younger crowd, packed in summer
-- Eixample: Gaudí architecture, gay-friendly, upscale restaurants, grid layout
-- Gràcia: bohemian, local vibe, Plaça del Sol outdoor bars, far less touristy
-- Poble Sec: Carrer Blai pintxos street, Montjuïc access, great value tapas
-- Poblenou: tech/creative hub, craft beer, Rambla del Poblenou
-- Sant Antoni: vintage market Sundays, neo-tapas, independent bookshops
-
-RESTAURANTS BY NEIGHBOURHOOD & PRICE:
-El Born / Gothic (€–€€€):
-- Bar del Pla — classic Catalan modern, excellent braised oxtail, €25–35pp
-- El Xampanyet — cava bar since 1929, anchovies and cheese, €15–25pp
-- Bar Brutal — natural wine + small plates, creative crowd, El Born, €30pp
-- Dos Palillos — Asian-Spanish fusion tapas, Michelin-starred, book 4 weeks ahead, €80pp
-
-Eixample (€€–€€€€):
-- Bodega 1900 (Albert Adrià) — reinvented vermouth bar, modern tapas masterpieces, €50pp, book 2 weeks
-- Cervecería Catalana — classic tapas, best patatas bravas in the city, no reservations, always a queue
-- Disfrutar — No.2 in World's 50 Best, avant-garde tasting menu, €250pp, book months ahead
-
-Poble Sec (€–€€):
-- Carrer Blai pintxos bars (Blai 9, La Tasqueta) — €1.20–2 per pintxo, arrive hungry, evenings
-- Quimet & Quimet — legendary stand-up bar, tinned seafood montaditos, vermouth, cash only, €20pp
-- Tickets (Albert Adrià) — theatrical tapas, book exactly 2 months ahead on specific booking day
-
-Barceloneta / Seafood:
-- La Cova Fumada — cash only, no sign, invented the bombas snack, arrive at opening
-- Can Majó — local seafood institution, rice dishes, €40–50pp
-
-FOOD CULTURE:
-- Lunch (2–4 PM) is the main meal; dinner rarely before 9 PM
-- Menú del día: 3-course set lunch €12–18, best value in the city
-- Avoid Las Ramblas restaurants — tourist traps at 3× normal prices
-- Pa amb tomàquet (bread rubbed with tomato) is on every table — standard
-
-ACTIVITIES BY INTEREST:
-Architecture: Sagrada Família (book 2 weeks ahead), Casa Batlló, La Pedrera, Palau de la Música
-Art: MACBA (contemporary, free some evenings), Fundació Joan Miró, Picasso Museum (book ahead)
-Best viewpoints: Bunkers del Carmel (360° free view, far better than Tibidabo for photos), Montjuïc
-Markets: skip Boqueria (tourist trap) — go to Mercat de Santa Caterina or Sant Antoni instead
-
-TRANSPORT: T-Casual 10-trip Metro card best value. Bicing bike-share for short rides. Taxis via Free Now app.
-BOOKING: Sagrada Família 2 weeks; Park Güell 2 weeks; popular restaurants 1–4 weeks.`;
-  }
-
-  if (city.includes('bangkok')) {
-    return `
-BANGKOK EXPERT KNOWLEDGE:
-
-NEIGHBOURHOODS & VIBE:
-- Rattanakosin / Old Bangkok: Grand Palace, Wat Pho, Wat Arun — explore before 9 AM before heat peaks
-- Silom / Sathorn: business district, sky bars, Lumphini Park, Bangrak riverside
-- Sukhumvit: expat hub; Thong Lor/Ekkamai (trendy cafés + nightlife); Asok (malls); On Nut (budget-friendly local)
-- Chinatown (Yaowarat): best street food, gold shops, Michelin-starred cheap eats — come after 6 PM
-- Ari: local neighbourhood, independent cafés, no tourists — great for coffee and lunch
-- Chatuchak: weekend market (Sat–Sun), 15,000 stalls — arrive early before 35°C heat peaks
-
-RESTAURANTS — SPECIFIC & PRICED:
-Chinatown / Yaowarat (฿–฿฿):
-- Jek Pui Crab Omelette (Yaowarat Rd) — famous wok-fried crab omelette, ฿150, evenings only
-- T&K Seafood — grilled prawns and BBQ pork, ฿300–500pp, always packed
-- Go Ang Pratunam — legendary roast duck since 1960, Michelin Bib Gourmand, ฿120 per plate
-
-Fine Dining (฿฿฿฿):
-- Le Du — modern Thai, World's 50 Best, tasting menu ฿3,500–5,000, book 2–4 weeks ahead
-- Gaggan Anand — progressive Indian-Thai, ฿8,000+, book months ahead
-- Sorn — Southern Thai cuisine, 2 Michelin stars, ฿5,000, book 3 weeks ahead
-- Jay Fai — Michelin-starred street food, massive crab omelette, ฿1,000pp, queue from 2 PM
-
-Sukhumvit / Thong Lor (฿฿–฿฿฿):
-- Soul Food Mahanakorn (Soi 55) — Thai classics + great cocktails, ฿400–600pp
-- The Commons (Thong Lor) — food hall, 20+ stalls, ideal for groups, ฿200–400
-
-Street Food Must-Tries:
-- Pad Thai: Thipsamai near Khao San Road — the benchmark, served in egg wrap, ฿60–120
-- Mango Sticky Rice: Mae Varee, Thong Lor, ฿80–100
-- Som Tum: corner stalls in Ekkamai/On Nut, ฿50–80
-- Boat noodles: Or Tor Kor market area, ฿30–50 per bowl
-
-SKY BARS:
-- Vertigo & Moon Bar (Banyan Tree, 61F) — best 360° view, ฿600+ drinks, book weekends
-- Octave (Marriott, 45–49F) — affordable, ฿350+ drinks
-- Cielo Sky Bar (U Sathorn) — intimate, book ahead
+BARRIOS — know where to send people:
+• Gothic Quarter (Barri Gòtic): Medieval streets, Catedral, Plaça Reial. Very tourist-heavy. Great for a first evening wander but don't stay here — overpriced and noisy.
+• El Born / Sant Pere: The city's best neighbourhood for first-timers who want local feel. Picasso Museum, boutique shops, excellent natural wine bars, Mercat de Santa Caterina (better than La Boqueria).
+• Eixample: Grid-plan, Modernista architecture. Sagrada Família, La Pedrera, Casa Batlló. Mid-range to upscale restaurants. Best area to stay for convenience.
+• Gràcia: Village-within-a-city energy, indie cafés, student vibe, Plaça del Sol. Where young locals actually hang out.
+• Barceloneta: Beach neighbourhood. Great in Sept/Oct when tourists thin out. Passeig Marítim for running or cycling.
+• Poblenou: Post-industrial creative district. Rambla del Poblenou, great food, the new cool neighbourhood.
+• Sant Antoni: Mercat de Sant Antoni (weekend book market!), best cocktail bars in the city, Eixample-adjacent.
+• Montjuïc: Overlooking city, Fundació Joan Miró, Olympic Stadium, castle, Parc de Montjuïc, fantastic city views.
 
 TRANSPORT:
-- BTS Skytrain + MRT Blue line — use Rabbit card; avoid traffic hell 7:30–9:30 and 17:00–19:30
-- Grab app — always use for taxis; never flag-down street taxis
-- Chao Phraya Express Boat (orange flag) — cheapest scenic option along the river
-- Ferry to Thonburi: cross-river boats ฿4
+• T-Casual (10-trip card, €12.15) covers metro, bus, FGC, tram. Buy at any metro station. Forget single tickets.
+• Metro is easy — L1 to L5 plus L9 (airport). Open until 2am on weekdays, 24hrs on Sat.
+• Bicing (city bike hire): Good for locals with subscriptions, tourists better with rentals from Born or Barceloneta.
+• Airport: L9 Sud metro (€5.15, 35min to centre) or Aerobus (€7.50, 35min, more direct to Plaça Catalunya).
+• Taxis/Cabify: Reliable, app-based. Cheaper than London or Paris.
+• Walking: The old city, El Born, and Gràcia are all extremely walkable. Eixample grid is easy to navigate.
 
-TEMPLES:
-- Wat Pho: reclining Buddha + Wat Pho massage school (฿420/60 min), open 8 AM
-- Grand Palace + Wat Phra Kaew: ฿500, must cover shoulders and knees (scarves at entrance)
-- Wat Arun: sunset best from opposite bank, ฿100 entry
-- Wat Pak Nam: free, giant golden Buddha, far fewer tourists`;
-  }
+FOOD — what to eat and where:
+• NEVER eat on La Rambla or the tourist spots around Sagrada Família. You'll pay double for half the quality.
+• Tapas vs Raciones: Tapas are small, raciones are sharing plates. Order 2-3 raciones to share rather than lots of tapas.
+• Vermouth culture: Vermut time is 12:30-2:30pm. Bodega Sepúlveda (Sant Antoni), Bar Calders (Sant Antoni), Bar Marsella (Gothic, oldest bar in Barcelona, ~1820).
+• Mercado de Santa Caterina (El Born): Local market, great fish, less tourist-trap than La Boqueria.
+• Catalan classics: Esqueixada (salt cod salad), pa amb tomàquet (bread rubbed with tomato), fideuà (noodle paella), crema catalana.
+• Pintxos: Go to the Basque tapas bars in the Gothic Quarter around Carrer de Mercaders.
+• Late dining: Kitchen opens at 9pm for dinner. 10:30pm is normal dinner time. Book ahead on weekends.
 
-  if (city.includes('london')) {
-    return `
-LONDON EXPERT KNOWLEDGE:
+ATTRACTIONS — insider angles:
+• Sagrada Família: BOOK ONLINE weeks ahead, or months for tower access. Go first thing (9am) or last slot. Never walk up — queues are 2+ hours.
+• Park Güell: Only the Monumental Zone (timed entry, book online) requires tickets. The park itself is free.
+• La Pedrera (Casa Milà): Roof terrace is the highlight. Evening "Magic Nights" sessions are worth the premium.
+• Picasso Museum: Free first Sunday of the month. Otherwise book online. El Born location.
+• Bunkers del Carmel: Best panoramic view in the city. Free. Anti-aircraft bunkers from Civil War. Take a beer and go at sunset.
+• Palau de la Música Catalana: Interior is extraordinary Modernista architecture. Go to a concert if possible.
 
-NEIGHBOURHOODS:
-- Soho / Covent Garden: theatres, diverse restaurants, LGBT+ bars, always buzzing
-- Shoreditch / Brick Lane: street art, vintage markets, creative scene, Sunday markets
-- Notting Hill: Portobello Road market (Saturday), colourful houses, independent cafés
-- Borough Market (Mon–Sat): London's best food market; top stalls: Neal's Yard cheese, Kappacasein raclette
-- South Bank: Tate Modern (free), Shakespeare's Globe, Thames walk, street performers
-- Mayfair: luxury restaurants, Cork Street galleries, quiet residential streets
-- Hackney / Dalston: local, multicultural, excellent cheap eats, independent bars
+TIMING & SEASONAL:
+• Siesta is real: many small shops close 2-5pm. Plan meals and shopping around this.
+• August: Locals leave the city. Beach is packed with tourists. Many neighbourhood restaurants close.
+• September/October: Best time — warm, less crowded, locals back, festival de la Mercè (Sept 24).
+• La Diada (Sept 11) and La Mercè (Sept 24): Huge local celebrations.
 
-RESTAURANTS (£–££££):
-Budget / Mid-Range:
-- Dishoom (Covent Garden/King's Cross) — Bombay café, legendary naan rolls, £15–20, always a queue
-- Bao (Soho) — Taiwanese steamed buns, fried chicken, £15–20
-- Flat Iron (Soho) — £12 flat iron steak, excellent value, walk-ins only at lunch
-- Koya Bar (Soho) — Japanese udon, counter seating, £10–15
+PRICES (rough guide):
+• Coffee: €1.50–2.50 (never buy on La Rambla, €4+)
+• Menu del día (weekday lunch set menu): €12-18, 3 courses with wine. Best value meal in Barcelona.
+• Dinner: budget €15-25, mid-range €30-50, high-end €60+.
+• T-Casual (10-trip metro card): €12.15
 
-Mid-Range (£30–60pp):
-- Smoking Goat (Shoreditch) — Thai BBQ, brilliant cocktails, loud and fun
-- Barrafina (Covent Garden) — outstanding Spanish tapas counter, no reservations, wait at the bar
-- St. John Bread & Wine (Spitalfields) — British nose-to-tail, roast bone marrow is iconic
-- Brat (Shoreditch) — Basque wood-fire grill, Michelin star, book ahead
+ETIQUETTE:
+• Catalan is the primary language, but Spanish is universally understood. A "gràcies" and "bon dia" goes a long way.
+• Tipping: Not expected but 5-10% appreciated in sit-down restaurants.
+• Never touch the food displays at markets — point and ask.
+• Pickpocketing: Worst on La Rambla and at La Boqueria. Keep bags in front.
 
-High-End:
-- Sketch (Mayfair) — afternoon tea in the Gallery, £65pp, book weeks ahead
-- The Ledbury (Notting Hill) — 2 Michelin stars, outstanding tasting menu
+HIDDEN GEMS:
+• El Cotxe Fumador (Gràcia): Tiny old tavern, vermut and anchovies, no tourists.
+• Jardins de Laribal (Montjuïc): Terraced gardens, fountains, almost always empty.
+• Mercat de Sant Antoni: Sunday morning rare book and vintage market is a Barcelona institution.
 
-EXPERIENCES:
-- Borough Market: arrive 10 AM Thur–Sat; try raclette, salt beef bagels, fresh pasta
-- Columbia Road Flower Market: Sunday 8 AM–2 PM; combine with Brick Lane
-- Tate Modern: free, Turbine Hall always has a major installation
-- Sky Garden (20 Fenchurch): free with booking (book 3 weeks ahead), 360° views
-- National Gallery / British Museum: both free, world-class
-- Primrose Hill + Regent's Canal walk to Camden: free, beautiful`;
-  }
+Give specific, direct recommendations with actual place names, addresses, and transport instructions.`;
 
-  if (city.includes('paris')) {
-    return `
-PARIS EXPERT KNOWLEDGE:
+// ---------------------------------------------------------------------------
+// City Agent: Tokyo
+// ---------------------------------------------------------------------------
+const TOKYO_AGENT = `You are Tokyo Insider, a dedicated expert on Tokyo, Japan. You know the city at a granular level — every ward, every train line, every neighbourhood micro-culture.
 
-NEIGHBOURHOODS:
-- Le Marais (3rd–4th): Jewish quarter, LGBTQ+ hub, Place des Vosges, best falafel city
-- Saint-Germain-des-Prés (6th): literary cafés, Marché Raspail, excellent bistros
-- Montmartre (18th): Sacré-Cœur, artists, vineyard, magical at dawn before crowds
-- Canal Saint-Martin (10th): trendy, indie cafés, beautiful iron footbridges, boules
-- 11th arrondissement: best contemporary restaurant scene, rue Oberkampf, Septime cluster
+WARDS & NEIGHBOURHOODS — Tokyo has no "centre", it has a network of distinct nodes:
+• Shinjuku: Everything at once — Golden Gai (tiny jazz/bar alley), Kabukichō (entertainment district), Omoide Yokochō (Memory Lane, yakitori under the tracks), Takashimaya Times Square, Shinjuku Gyoen (national garden). West exit = corporate towers. East exit = chaos and neon.
+• Shibuya: Scramble Crossing, Harajuku/Omotesandō adjacent, Shimokitazawa nearby (see below), younger crowd. Shibuya Sky observation deck is better than Tokyo Tower.
+• Asakusa: Old Tokyo (shitamachi) feel, Senso-ji temple, Nakamise shopping street, Tokyo Skytree views, rickshaws, traditional crafts. More tourist-heavy but genuinely atmospheric.
+• Akihabara: Electronics, anime, manga, gaming, maid cafés. Whatever you think of it, it's uniquely Tokyo.
+• Shimokitazawa: The coolest neighbourhood in Tokyo. Vintage clothing, small live music venues, indie cafés, student energy, maze of narrow lanes. Not on most tourist maps. Go.
+• Yanaka: Preserved pre-war Tokyo, shotengai (shopping street), old temples and cemeteries, cats, ceramics, tofu shops. Genuinely feels like Shōwa-era Japan. Yanaka Ginza is the best shotengai in Tokyo.
+• Ginza: Luxury shopping, department stores, galleries. Tokyo's most expensive neighbourhood.
+• Harajuku / Omotesandō: Takeshita Street (youth fashion), Omotesandō (Champs-Élysées of Tokyo), Meiji Shrine (oasis of calm). The contrast is Tokyo in a microcosm.
+• Nakameguro: Canal walks lined with cherry trees (phenomenal in late March/early April), boutiques, coffee shops. Perfect for a slow afternoon.
+• Tsukiji Outer Market: Fish market (inner wholesale moved to Toyosu), great for breakfast sushi and tamagoyaki.
 
-FOOD:
-Boulangeries (essential):
-- Du Pain et des Idées (10th) — best croissant in Paris, escargot pastry, open Mon–Fri, arrive early
-- Poilâne (Saint-Germain) — legendary sourdough and tarts since 1932
-- Jacques Genin (Marais) — best chocolate and caramel in the city; also excellent millefeuille
+TRANSPORT — IC cards are essential:
+• Get a Suica or Pasmo IC card at any JR station machine (or load on Apple/Google Wallet). Tap in/out everywhere. Covers JR lines, Tokyo Metro, Toei Subway, buses.
+• IC card deposit: ¥500. Auto-recharge recommended.
+• JR Yamanote Line (green): The loop connecting Shinjuku, Shibuya, Harajuku, Tokyo, Akihabara, Ueno, Ikebukuro. Learn this line first.
+• Tokyo Metro + Toei: Grid of subway lines covering everywhere else.
+• Airport:
+  - Narita: N'EX (Narita Express) to Shinjuku 1h15m, ¥3,250. Or Keisei Skyliner to Ueno 40min, ¥2,570.
+  - Haneda: Tokyo Monorail to Hamamatsuchō 15min (¥490), or Keikyu Line direct to Shinjuku.
+• Never take taxis unless absolutely necessary — expensive and often slower due to traffic.
+• Google Maps works perfectly for Tokyo transit routing.
 
-Bistros / Restaurants:
-- Septime (11th) — book 2–3 months ahead, modern French, €70–90pp; their La Cave wine bar is bookable same-day
-- Le Comptoir du Relais (Saint-Germain) — Yves Camdeborde; Saturday tasting menu; queue for weekday lunch
-- Bouillon Pigalle (18th) — classic brasserie, steak-frites €12, no reservations, queues form early
-- L'As du Fallafel (Marais) — legendary falafel in the Jewish quarter, €8, cash only, queue expected
+FOOD — the real guide:
+• Ramen: Ichiran (chain, good solo ramen experience), Fuunji (tsukemen, Shinjuku), Afuri (yuzu shio, Nakameguro/Roppongi).
+• Sushi: Tsukiji Outer Market for affordable morning sushi. For omakase (chef's choice), book Saito or Harutaka weeks ahead.
+• Izakaya (Japanese pub-restaurants): Gonpachi (where Kill Bill was filmed, tourist-friendly), Uoshin (standing seafood bar, Ginza).
+• Ramen alternative — Soba: Kanda Yabu Soba (classic Edo-style, Akihabara area), Sarashina Horii (Azabu Juban).
+• Tonkatsu (breaded pork): Katsuura or Maisen (Omotesandō).
+• Gyukatsu (beef cutlet): Gyukatsu Motomura — extraordinary and filling, queue outside.
+• Konbini culture: 7-Eleven, FamilyMart, Lawson — these are not like Western convenience stores. Onigiri, sandwiches, hot food, sake, ATMs. Breakfast and late-night go-to.
+• Set lunches (teishoku): Most sit-down restaurants offer incredible value ¥800-1,500 weekday lunch sets.
+• Depachika (department store basement food halls): Isetan in Shinjuku, Takashimaya — extraordinary food halls with no entrance fee.
 
-Coffee and Pastry:
-- Café de Flore / Les Deux Magots: tourist prices but iconic; go once for the atmosphere
-- Ten Belles (Canal Saint-Martin): excellent specialty coffee, neighbourhood crowd
+TIMING & SEASONAL:
+• Cherry blossom (sakura): Late March–early April (varies by year). Book accommodation 3-6 months ahead. Shinjuku Gyoen, Ueno Park, Nakameguro Canal are the best spots.
+• Autumn foliage (koyo): Mid-November. Rikugien, Shinjuku Gyoen, Hamarikyu Gardens.
+• Golden Week (late April–early May): Avoid if possible — domestic travel peak, everything full.
+• Obon (mid-August): Many small restaurants and shops close as locals return to hometowns.
 
-EXPERIENCES:
-- Louvre: book online, arrive at opening; skip to Richelieu wing (Vermeer, Dutch masters) for less crowds
-- Musée d'Orsay: book ahead; Thursday late opening (9 PM) is quietest and most atmospheric
-- Centre Pompidou: 6th floor rooftop view worth it, book online
-- Sainte-Chapelle: often shorter queues than Notre-Dame, stained glass is extraordinary
-- Père Lachaise Cemetery: free, map at entrance, peaceful and beautiful`;
-  }
+ETIQUETTE — non-negotiable:
+• Shoes off when entering homes, ryokans, many traditional restaurants. Check for a step at the entrance.
+• No eating while walking (except in Nakamise-style market streets). Eat at stalls or take food to a seating area.
+• Quiet on trains, no phone calls, no loud conversation.
+• Two-handed business card exchange (if applicable). Bow when greeting.
+• Rubbish bins are almost nowhere. Carry a small bag for your rubbish.
+• Tattoos: Some onsens/sento still refuse tattooed guests. Check policy before going.
+• Cash: Japan is still significantly cash-based. Always carry yen. 7-Eleven ATMs reliably accept foreign cards.
 
-  if (city.includes('bali')) {
-    return `
-BALI EXPERT KNOWLEDGE:
+PRICES (rough guide in yen):
+• Ramen bowl: ¥900–1,500
+• Convenience store meal: ¥400–800
+• Teishoku (set lunch): ¥900–1,500
+• Standing sushi (Tsukiji): ¥1,000–2,000 for 8-10 pieces
+• Omakase sushi: ¥20,000–80,000 per person
+• 24hr metro pass: ¥600. 48hr: ¥1,200. 72hr: ¥1,500.
+• Suica top-up: Start with ¥3,000 for a few days
 
-AREAS:
-- Seminyak: upscale, boutiques, sunset beach clubs (Potato Head, La Favela), best restaurants
-- Canggu: surfers + digital nomads, Echo Beach, Atlas beach club, cafés everywhere
-- Ubud: cultural heart, rice terraces, temples, Monkey Forest, wellness retreats
-- Uluwatu: clifftop temples, surf spots, Bukit Peninsula beach clubs (Single Fin, Omnia)
-- Jimbaran: seafood BBQ beach, calm bay, sunset views
+HIDDEN GEMS:
+• Koenji: Bohemian antique and vintage neighbourhood west of Shinjuku on the Chuo line. Tokyo's alternative soul.
+• Kagurazaka: Former geisha district, French-Japanese fusion neighbourhood, traditional ryotei restaurants, hidden alleys (yokochō).
+• 2k540 AKI-OKA ARTISAN (Akihabara/Okachimachi): Artisan craft market under the railway arches. Ceramics, leather, knives, textiles.
 
-FOOD:
-Ubud:
-- Locavore — Indonesia's best restaurant, farm-to-table tasting menu, IDR 900,000+, book weeks ahead
-- Warung Babi Guling Ibu Oka — roast suckling pig (babi guling), IDR 55,000, lunch only, arrive early
-- Naughty Nuri's — legendary ribs and martinis, IDR 100,000–200,000
+Give specific, practical advice. When asked about a neighbourhood, specify which train lines serve it and which exit to use. Name actual restaurants and bars, not just categories.`;
 
-Seminyak / Canggu:
-- Sarong — Asian fine dining, romantic, IDR 400,000–600,000pp
-- Sisterfields — best brunch in Bali, excellent eggs and coffee, IDR 100,000–150,000
-- Milk & Madu — family-friendly, great smoothie bowls, IDR 70,000–120,000
-
-Street Food / Warungs:
-- Nasi campur (rice + sides): IDR 20,000–40,000 at local warungs
-- Babi guling, sate lilit, gado-gado — find at night markets and local warungs
-
-TEMPLES & CULTURE:
-- Tanah Lot: sunset temple on rock, go 1 hour before sunset for best light
-- Uluwatu Temple: clifftop, kecak fire dance at sunset (IDR 100,000), watch for monkeys
-- Tirta Empul: holy spring water temple, bring a sarong
-- Tegalalang Rice Terraces: go early morning (7–8 AM) for photos without crowds, IDR 50,000
-- Pura Besakih (Mother Temple): morning best, hire a local guide
-
-PRACTICAL:
-- Rent a scooter IDR 60,000–80,000/day for freedom
-- Grab works in southern Bali; negotiate taxis elsewhere
-- Best beaches: Padang Padang (small and beautiful), Nusa Dua (calm), Balangan (cliffs + surf)`;
-  }
-
-  if (city.includes('singapore')) {
-    return `
-SINGAPORE EXPERT KNOWLEDGE:
-
-NEIGHBOURHOODS:
-- Marina Bay: skyline, Gardens by the Bay, Marina Bay Sands, high-end dining
-- Chinatown: Maxwell Food Centre, Sri Mariamman Temple, Tanjong Pagar
-- Little India: Tekka Market, Banana Leaf Apolo, colourful streets
-- Kampong Glam: Haji Lane boutiques, Sultan Mosque, Arabic restaurant street
-- Tiong Bahru: hipster heritage estate, best bakeries, independent cafés
-- East Coast: beach, seafood restaurants, park cycling
-
-HAWKER CENTRES (essential experience):
-- Maxwell Food Centre: Tian Tian Hainanese Chicken Rice (S$5), queue expected, worth it
-- Lau Pa Sat (CBD): Satay Street in the evenings, iconic atmosphere
-- Chinatown Complex: 260 stalls, best char kway teow and laksa, S$3–6
-- Old Airport Road Food Centre: off tourist trail, serious hawker eating, locals only
-
-RESTAURANTS (S$):
-- Burnt Ends (Chinatown area) — Michelin-starred wood-fire grill, book well ahead, S$80–100pp
-- Hawker Chan — world's cheapest Michelin meal, soy chicken S$6, Chinatown, queues
-- Birds of a Feather (Duxton) — Sichuan-inspired creative cooking, S$50–70pp
-- Odette (National Gallery) — 3 Michelin stars, French tasting menu S$328pp, book months ahead
-
-EXPERIENCES:
-- Gardens by the Bay: Supertree Grove free evenings; Cloud Forest S$28, book online
-- Night Safari (Wildlife Reserves): unique nocturnal experience, S$55, book online
-- Universal Studios Sentosa: S$81, book online
-- Botanic Gardens: free UNESCO World Heritage Site, excellent for a morning walk
-- Jewel Changi Airport: free entry, indoor waterfall — worth a visit even in transit`;
-  }
-
-  if (city.includes('vienna') || city.includes('wien')) {
-    return `
-VIENNA EXPERT KNOWLEDGE:
-
-NEIGHBOURHOODS & VIBE:
-- Innere Stadt (1st): imperial core, Stephansdom, Hofburg, Graben promenade, tourist-heavy
-- Naschmarkt / Mariahilf (6th): open-air market, best falafel, Turkish stalls, Saturday antiques
-- Neubau (7th): indie boutiques, hipster cafés, MuseumsQuartier, most creative neighbourhood
-- Leopoldstadt (2nd): vibrant, Jewish heritage, Prater park, Augarten, up-and-coming
-- Alsergrund (9th): university district, local cafés, Sigmund Freud Museum, quiet and authentic
-- Josefstadt (8th): old Viennese charm, theatres, neighbourhood Beisl restaurants
-
-CAFÉS & RESTAURANTS (€):
-Coffee House Culture (UNESCO intangible heritage):
-- Café Central — grand historic coffeehouse, breakfast from €8, touristy but unmissable
-- Café Hawelka — legendary dark bohemian institution since 1939, Buchtel pastry ₩3
-- Café Schwarzes Kameel — art nouveau, open-faced sandwiches €3–5, wines by glass, €25pp
-- Café Landtmann — by the Rathaus, politicians and writers, excellent Melange coffee, €12 breakfast
-
-Austrian Cuisine:
-- Figlmüller (Wollzeile) — famous Schnitzel since 1905, €25–35pp, book 1–2 weeks ahead
-- Gasthaus Pöschl — classic Beisl, Tafelspitz boiled beef €22, authentic and local
-- Zum Wohl — Austrian small plates + wine bar, Neubau, €30–40pp
-- Steirereck im Stadtpark — 2 Michelin stars, €200pp+, book several months ahead
-- Meixner's Gastwirtschaft — Heuriger-style home cooking, no tourists, €20pp
-
-SIGHTS:
-- Kunsthistorisches Museum: world-class art, €21, far less crowded than Louvre
-- Schönbrunn Palace: book timed entry online; gardens free; Grand Tour €23
-- Belvedere (Upper): Klimt's 'The Kiss', €17, pre-book to skip queues
-- Albertina: Monet to Picasso, excellent modern collection, €18
-- Spanish Riding School: morning training €15 (much cheaper than evening shows)
-- Prater / Wiener Riesenrad: giant Ferris wheel €13, free to walk in Prater park
-
-TRANSPORT:
-- Wiener Linien 24h ticket €8 or Vienna City Card €17 (includes museum discounts)
-- U-Bahn extremely efficient — U1, U2, U4 cover all key sights
-- Tram 1 and 2 circle the Ringstrasse — best sightseeing tram, free on City Card
-- Staatsoper (State Opera): standing tickets from €3–15, evening dress not required
-
-BOOKING LEAD TIMES:
-- Figlmüller, Plachutta: 1–2 weeks ahead
-- Steirereck: several months
-- Spanish Riding School performances: book online weeks ahead`;
-  }
-
-  if (city.includes('seoul')) {
-    return `
-SEOUL EXPERT KNOWLEDGE:
-
-NEIGHBOURHOODS & VIBE:
-- Gangnam: upscale, K-beauty, COEX mall, expensive restaurants, less authentic
-- Hongdae: university area, indie music, street art, young crowd, 24h culture
-- Itaewon: international food, LGBTQ+ friendly, Hannam-dong luxury
-- Insadong: traditional tea houses, hanbok rental, galleries, tourist-friendly cultural district
-- Bukchon / Jongno: preserved hanok village, Gyeongbokgung and Changdeokgung palaces
-- Myeongdong: K-beauty shopping, street food only — avoid restaurants here
-- Mangwon: local market, independent cafés, authentic neighbourhood, low tourists
-- Seongsu: Seoul's Brooklyn — industrial + creative, best specialty coffee
-- Ikseon-dong: renovated hanok alley, cocktail bars, photo-worthy, evening scene
-
-FOOD BY NEIGHBOURHOOD & PRICE (₩):
-Korean BBQ:
-- Maple Tree House (Itaewon) — premium galbi, staff cook for you, ₩50,000–80,000pp
-- Palsaik Samgyeopsal (Hongdae) — 8 types of pork belly, visual and fun, ₩20,000pp
-- Local BBQ in Mangwon Market area — authentic, huge portions, ₩15,000pp
-
-Street Food:
-- Gwangjang Market: bindaetteok ₩4,000; mung bean bibimbap ₩8,000; yuk hoe raw beef ₩12,000 — very local
-- Myeongdong: hotteok ₩2,000, tteokbokki ₩3,000–5,000, egg toast ₩3,000
-
-Fine Dining:
-- Jungsik — Korean New Wave, 2 Michelin stars, ₩250,000pp+, book 2–4 weeks ahead
-- Mingles — modern Korean with global technique, 2 Michelin stars, book 3–4 weeks
-- Dooreyoo — Korean ingredients, modern plating, 1 Michelin star, ₩150,000pp
-
-Specialty Coffee (Seongsu, Yeonnam):
-- Fritz Coffee (Mapo) — best espresso in Seoul, roastery café, ₩5,000–7,000
-- Namusairo (Bukchon) — hanok café, matcha and pour-over, ₩7,000–10,000
-
-EXPERIENCES:
-- Gyeongbokgung Palace: free with hanbok rental ₩20,000; sunrise guard change ceremony
-- DMZ Tour: half-day from Seoul ₩50,000–80,000, book through tour operators
-- Namsan / N Seoul Tower: cable car ₩11,000 or hike; city views at sunset
-- Han River Parks: rent bikes ₩3,000/h, picnic, weekend night markets
-- Jjimjilbang (Korean sauna): Dragon Hill Spa ₩15,000, open 24h, essential experience
-
-TRANSPORT:
-- T-money card: ₩2,500–3,000 per metro or bus journey, transfers cheap
-- Kakao T app: taxis fast, fair, and translates for foreigners
-- Airport Express (AREX): Incheon to Seoul Station 43 min, ₩9,500
-- Avoid rush hours 7:30–9:30 AM and 6–8 PM
-
-BOOKING LEAD TIMES:
-- Jungsik, Mingles, Dooreyoo: 2–4 weeks minimum
-- Regular Korean BBQ: walk-in usually fine, short queue on weekends
-- Hanbok rental (Bukchon): walk-in, no reservation needed`;
-  }
-
-  // Generic fallback
-  return `
-EXPERT TRAVEL ADVICE for ${cityName}:
-- Always give specific named restaurants, bars, and venues with approximate prices in local currency
-- Mention exact neighbourhood names so the traveller can orient themselves on a map
-- Include practical transport tips specific to this city
-- Flag booking requirements and lead times for popular places
-- Share local tips that go beyond standard guidebooks`;
+// ---------------------------------------------------------------------------
+// City agent selector
+// ---------------------------------------------------------------------------
+function getCityAgent(cityName: string): string | null {
+  const name = cityName.toLowerCase();
+  if (name.includes("london")) return LONDON_AGENT;
+  if (name.includes("barcelona")) return BARCELONA_AGENT;
+  if (name.includes("tokyo")) return TOKYO_AGENT;
+  return null;
 }
-
-// ---------------------------------------------------------------------------
-// Main handler
-// ---------------------------------------------------------------------------
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -439,6 +216,7 @@ serve(async (req) => {
   }
 
   try {
+    // Validate authentication
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
@@ -453,77 +231,104 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const token = authHeader.replace("Bearer ", "");
+    const { data, error: authError } = await supabase.auth.getClaims(token);
+
+    if (authError || !data?.claims) {
+      console.error("Auth error:", authError);
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const rawGroqKey = Deno.env.get("GROQ_API_KEY");
-    const GROQ_API_KEY = rawGroqKey?.replace(/[^\x20-\x7E]/g, '').trim() || undefined;
-
-    if (!GROQ_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const userId = data.claims.sub;
+    console.log("Authenticated user:", userId);
 
     const { messages, cityContext } = await req.json();
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    const cityName = cityContext?.name ?? 'the destination';
-    const cityCountry = cityContext?.country ?? '';
-    const deepKnowledge = cityContext ? getDeepCityKnowledge(cityName) : '';
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
+    }
 
-    const systemPrompt = `You are a hyper-local travel expert and personal city guide for ${cityName}${cityCountry ? `, ${cityCountry}` : ''}. You are like a knowledgeable local friend — not a generic travel chatbot.
+    // Build system prompt: check for a pilot city agent first
+    let systemPrompt: string;
 
-YOUR CORE RULES:
-1. ALWAYS name specific restaurants, bars, and venues — never say "there are many great options"
-2. ALWAYS include approximate prices in local currency (¥, €, £, ฿, IDR, S$, etc.)
-3. ALWAYS mention the exact neighbourhood so the traveller can find it on a map
-4. Flag whether booking ahead is needed and how far in advance
-5. Point out tourist traps and steer toward genuine local experiences
-6. Format responses with **bold** for place names, bullet points for lists, short paragraphs
-7. Keep responses practical and focused — aim for 200–400 words unless a detailed list is requested
-8. If asked about something very recent (new openings, closures), acknowledge the limit of your knowledge
+    const cityAgent = cityContext?.name ? getCityAgent(cityContext.name) : null;
 
-${cityContext?.description ? `CITY CONTEXT: ${cityContext.description}` : ''}
-${cityContext?.bestTimeToVisit ? `BEST TIME TO VISIT: ${cityContext.bestTimeToVisit}` : ''}
-${cityContext?.familyTips ? `LOCAL TIPS: ${cityContext.familyTips}` : ''}
+    if (cityAgent) {
+      // Use the full city-specific agent prompt
+      systemPrompt = cityAgent;
+      // Append any dynamic context from the DB (description, tips) if available
+      if (cityContext.familyTips) {
+        systemPrompt += `\n\nAdditional local tip from the database: ${cityContext.familyTips}`;
+      }
+    } else {
+      // Generic travel advisor for cities without a dedicated agent
+      systemPrompt = `You are TravelBuddy AI, a friendly and knowledgeable travel advisor. You specialize in helping travelers plan personalized trips to destinations worldwide including Orlando (USA), London (UK), Tokyo (Japan), Barcelona (Spain), Sydney (Australia), Amsterdam (Netherlands), San Diego (USA), Copenhagen (Denmark), Dubai (UAE), Paris (France), Rome (Italy), Bali (Indonesia), New York (USA), and many more.
 
-${deepKnowledge}`;
+Your expertise includes:
+- Top attractions and activities for all travel styles
+- Restaurant recommendations for diverse tastes and dietary needs
+- Public transportation tips and getting around efficiently
+- Budget-saving strategies and money-saving tips
+- Best times to visit each destination
+- Safety tips and practical advice
+- Hidden gems and local favorites
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+Communication style:
+- Be warm, encouraging, and enthusiastic about travel
+- Give practical, actionable advice
+- Use bullet points for lists
+- Include specific recommendations when possible
+- Mention approximate costs when relevant
+- Consider different traveler types (solo, couples, groups, families, etc.)
+
+Keep responses concise but helpful. If you don't know something specific, be honest and suggest alternatives.`;
+
+      if (cityContext) {
+        systemPrompt += `\n\nThe user is currently planning a trip to ${cityContext.name}, ${cityContext.country}.`;
+        if (cityContext.description) systemPrompt += ` About the city: ${cityContext.description}`;
+        if (cityContext.familyTips) systemPrompt += ` Insider tips: ${cityContext.familyTips}`;
+        if (cityContext.bestTimeToVisit) systemPrompt += ` Best time to visit: ${cityContext.bestTimeToVisit}`;
+        systemPrompt += `\n\nWhen answering, prioritize information relevant to ${cityContext.name}.`;
+      }
+    }
+
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
           ...messages,
         ],
         stream: true,
-        max_tokens: 1024,
-        temperature: 0.7,
       }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Groq API error:", response.status, errorText);
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limit reached. Please wait a moment and try again." }),
+          JSON.stringify({ error: "Rate limits exceeded, please try again later." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please try again later." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const errorText = await response.text();
+      console.error("AI gateway error:", response.status, errorText);
       return new Response(
-        JSON.stringify({ error: "AI service error. Please try again in a moment." }),
+        JSON.stringify({ error: "AI gateway error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -531,7 +336,6 @@ ${deepKnowledge}`;
     return new Response(response.body, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
-
   } catch (e) {
     console.error("chat error:", e);
     return new Response(
