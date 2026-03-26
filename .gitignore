@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code internals (worktrees, settings)
+.claude/
+
+# Nested repo (not part of this project)
+itinera/
