@@ -215,9 +215,10 @@ export const useGroupTrip = (tripId: string | undefined) => {
 
   /**
    * Log an event to the trip activity feed.
-   * Pass `userName` as the display name of the actor.
+   * Wrapped in useCallback so consumers get a stable reference and don't
+   * accidentally include it as a changing useCallback/useMemo dependency.
    */
-  const logFeedEvent = async (
+  const logFeedEvent = useCallback(async (
     activityType: ActivityFeedItem['activity_type'],
     activityData: Record<string, unknown>
   ) => {
@@ -228,7 +229,7 @@ export const useGroupTrip = (tripId: string | undefined) => {
       activity_type: activityType,
       activity_data: activityData,
     });
-  };
+  }, [tripId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     activityFeed,

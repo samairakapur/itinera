@@ -27,13 +27,14 @@ import { toast } from 'sonner';
 
 interface InviteCollaboratorDialogProps {
   itineraryId: string;
-  tripName?: string;  // city/trip name e.g. "Seoul"
-  cityName?: string;  // full city + country e.g. "Seoul, South Korea"
+  tripName?: string;    // city/trip name e.g. "Seoul"
+  cityName?: string;    // full city + country e.g. "Seoul, South Korea"
+  inviteToken?: string; // from itineraries.invite_token — enables shareable link
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName }: InviteCollaboratorDialogProps) => {
+export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName, inviteToken }: InviteCollaboratorDialogProps) => {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -74,8 +75,14 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName }: In
     await removeCollaborator.mutateAsync({ id, itineraryId });
   };
 
-  // Build the trip share URL — currently requires the recipient to be logged in
-  const shareUrl = `${window.location.origin}/trips/${itineraryId}`;
+  // Invite token URL lets anyone join without being pre-invited.
+  // Falls back to the direct trip URL if no token exists.
+  const shareUrl = inviteToken
+    ? `${window.location.origin}/invite/${inviteToken}`
+    : `${window.location.origin}/trips/${itineraryId}`;
+  const tripLabel = tripName ? `"${tripName}"` : 'a trip on Itinera';
+  const whatsAppUrl = `https://wa.me/?text=${encodeURIComponent(`Join me on ${tripLabel}! 🌍\n${shareUrl}`)}`;
+  const emailUrl = `mailto:?subject=${encodeURIComponent(`Join me on ${tripLabel}`)}&body=${encodeURIComponent(`Hey!\n\nI'm planning a trip${cityName ? ` to ${cityName}` : ''} on Itinera and would love for you to join.\n\nClick this link to view the itinerary and join the trip:\n${shareUrl}\n\nSee you there! ✈️`)}`;
 
   const handleCopyLink = async () => {
     try {
@@ -264,10 +271,12 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName }: In
           <TabsContent value="link" className="space-y-4 mt-4">
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Share this link with people you've invited. Once they sign in to Itinera,
-                they'll be able to view your trip immediately.
+                {inviteToken
+                  ? 'Anyone with this link can join your trip — no pre-invite needed. Share it via WhatsApp, iMessage, or email.'
+                  : 'Share this link with people you\'ve invited. They\'ll need an Itinera account to view the trip.'}
               </p>
 
+              {/* Copyable link */}
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -290,12 +299,49 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName }: In
                 </Button>
               </div>
 
+              {/* Share buttons */}
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={handleCopyLink}
+                >
+                  {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(whatsAppUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  WhatsApp
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(emailUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  Email
+                </Button>
+              </div>
+
               <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground">🔒 Account required</p>
-                <p>
-                  Recipients must sign in to Itinera to view this trip. To give someone editing access,
-                  use the <strong>Invite</strong> tab instead.
-                </p>
+                {inviteToken ? (
+                  <>
+                    <p className="font-medium text-foreground">🔗 Open invite link</p>
+                    <p>Anyone who opens this link can join the trip. They'll be asked to sign in or create an account first.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-foreground">🔒 Account required</p>
+                    <p>Recipients must sign in to Itinera to view this trip. To give editing access, use the <strong>Invite</strong> tab.</p>
+                  </>
+                )}
               </div>
             </div>
           </TabsContent>

@@ -78,6 +78,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const sendPasswordResetEmail = async (email: string) => {
+    // redirectTo MUST be in Supabase Dashboard → Authentication → URL Configuration → Redirect URLs.
+    // For production, add: https://itinera-hazel.vercel.app/auth/reset-password
+    // For local dev, add:  http://localhost:8080/auth/reset-password  (or your local port)
     const redirectTo = `${window.location.origin}/auth/reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     return { error: error as Error | null };

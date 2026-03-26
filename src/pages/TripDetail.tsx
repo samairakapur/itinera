@@ -77,8 +77,13 @@ const TripDetail = () => {
     currentTime?: string;
   }>({ open: false, type: 'add_activity' });
 
-  // Calculate flight-aware constraints for each day
-  const startDate = itinerary?.start_date ? new Date(itinerary.start_date) : undefined;
+  // Memoize startDate so useDayConstraints doesn't see a new Date object on every render.
+  // Without this, useDayConstraints returns a new array reference every render, which triggers
+  // the itinerary-parsing useEffect, which calls setDays(), which re-renders — infinite loop.
+  const startDate = useMemo(
+    () => itinerary?.start_date ? new Date(itinerary.start_date) : undefined,
+    [itinerary?.start_date]
+  );
   const dayConstraints = useDayConstraints(
     itinerary?.num_days || 0,
     startDate,
@@ -600,6 +605,7 @@ const TripDetail = () => {
                   itineraryId={tripId}
                   tripName={itinerary.name || itinerary.cities?.name}
                   cityName={[itinerary.cities?.name, itinerary.cities?.country].filter(Boolean).join(', ')}
+                  inviteToken={(itinerary as any).invite_token || undefined}
                 />
               )}
               {tripId && (
