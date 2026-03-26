@@ -27,7 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { Activity } from './ActivityCard';
+import type { Activity } from './ActivityCard';
 
 // ---------------------------------------------------------------------------
 // Region helpers (reuse same set as ActivityCard)
