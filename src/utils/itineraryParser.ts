@@ -159,6 +159,7 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
                   title: title.replace(/^(Lunch|Dinner|Breakfast):\s*/i, ''),
                   description: descMatch?.[1]?.trim().replace(/^Why:.*$/i, '').trim() || undefined,
                   reasoning: whyMatch?.[1]?.trim(),
+                  priceTier: '€€',
                 });
               }
             }
@@ -222,8 +223,14 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
             // Price tier: match €€€, $$$, etc. in any pipe part or description
             const priceTierRegex = /^(€{1,4}|\${1,4})$/;
             const priceTierFromParts = allParts.find(p => priceTierRegex.test(p));
-            const priceTierFromDesc = description?.match(/(€{2,4}|\${2,4})/)?.[1];
-            const priceTier = (priceTierFromParts || priceTierFromDesc) as Activity['priceTier'] | undefined;
+            const priceTierFromDesc = description?.match(/(€{1,4}|\${1,4})/)?.[1];
+            // Default price tier by type so every activity shows something
+            const defaultPriceTier = ((): Activity['priceTier'] => {
+              if (activityType === 'transport' || activityType === 'flex') return '€';
+              if (activityType === 'restaurant') return '€€';
+              return '€€'; // attractions default to mid-range
+            })();
+            const priceTier = (priceTierFromParts || priceTierFromDesc || defaultPriceTier) as Activity['priceTier'];
 
             activities.push({
               id: `day${dayNumber}-${slotName.toLowerCase()}-${idx}`,

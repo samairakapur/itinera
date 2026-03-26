@@ -51,6 +51,7 @@ const TripDetail = () => {
     castVote,
     createProposal,
     dismissApprovedProposal,
+    logFeedEvent,
     myVoteFor,
     voteCounts,
   } = useGroupTrip(tripId);
@@ -169,11 +170,16 @@ const TripDetail = () => {
   }, [days, saveChanges]);
 
   const handleActivityRemove = useCallback((dayNumber: number, activityId: string) => {
+    const day = days.find(d => d.dayNumber === dayNumber);
+    const removed = day ? [...day.morning, ...day.afternoon, ...day.evening].find(a => a.id === activityId) : null;
     const newDays = days.map(day => day.dayNumber !== dayNumber ? day : { ...day, morning: day.morning.filter(a => a.id !== activityId), afternoon: day.afternoon.filter(a => a.id !== activityId), evening: day.evening.filter(a => a.id !== activityId) });
     setDays(newDays);
     setHasUnsavedChanges(true);
     saveChanges(newDays, false);
-  }, [days, saveChanges]);
+    if (removed) {
+      logFeedEvent('activity_removed', { title: removed.title, day_number: dayNumber, user_name: user?.email?.split('@')[0] });
+    }
+  }, [days, saveChanges, logFeedEvent, user]);
 
   const handleAddActivity = useCallback((dayNumber: number, timeSlot: 'morning' | 'afternoon' | 'evening') => {
     setEditActivity(null);
@@ -200,6 +206,7 @@ const TripDetail = () => {
   }, [days]);
 
   const handleSaveActivity = useCallback((activityData: Omit<Activity, 'id'>) => {
+    const isNew = !editActivity;
     const newDays = days.map(day => {
       if (day.dayNumber !== addDialogDay) return day;
       const newActivity: Activity = { ...activityData, id: editActivity?.id || `custom-${Date.now()}` };
@@ -210,7 +217,10 @@ const TripDetail = () => {
     });
     setDays(newDays);
     saveChanges(newDays);
-  }, [days, addDialogDay, addDialogTimeSlot, editActivity, saveChanges]);
+    if (isNew) {
+      logFeedEvent('activity_added', { title: activityData.title, day_number: addDialogDay, time_slot: addDialogTimeSlot, user_name: user?.email?.split('@')[0] });
+    }
+  }, [days, addDialogDay, addDialogTimeSlot, editActivity, saveChanges, logFeedEvent, user]);
 
   const handleToggleActivityComplete = useCallback((dayNumber: number, activityId: string) => {
     setCompletedActivityIds(prev => {
@@ -256,15 +266,16 @@ const TripDetail = () => {
       }
     } else {
       // Just update the start time display
-      const newDays = days.map(day => 
-        day.dayNumber === dayNumber 
+      const newDays = days.map(day =>
+        day.dayNumber === dayNumber
           ? { ...day, startTime: newTime.slice(0, 5) }
           : day
       );
       setDays(newDays);
       toast.success('Start time updated');
     }
-  }, [days, saveChanges]);
+    logFeedEvent('schedule_changed', { day_number: dayNumber, new_time: newTime, user_name: user?.email?.split('@')[0] });
+  }, [days, saveChanges, logFeedEvent, user]);
 
   const handleCarryOverActivities = useCallback((fromDay: number, activityIds: string[]) => {
     const nextDayNumber = fromDay + 1;
@@ -528,6 +539,13 @@ const TripDetail = () => {
         );
         toast.success(`Day ${dayNum} start time updated to ${newTime}`);
       }
+
+      // Log the resolution to the activity feed
+      logFeedEvent('vote_resolved', {
+        proposal_type: proposal.proposal_type,
+        ...d,
+        user_name: user?.email?.split('@')[0],
+      });
 
       dismissApprovedProposal(proposal.id);
     });

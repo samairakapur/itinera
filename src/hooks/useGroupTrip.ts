@@ -213,6 +213,23 @@ export const useGroupTrip = (tripId: string | undefined) => {
     setApprovedProposals(prev => prev.filter(p => p.id !== proposalId));
   };
 
+  /**
+   * Log an event to the trip activity feed.
+   * Pass `userName` as the display name of the actor.
+   */
+  const logFeedEvent = async (
+    activityType: ActivityFeedItem['activity_type'],
+    activityData: Record<string, unknown>
+  ) => {
+    if (!tripId || !user) return;
+    await supabase.from('trip_activity_feed').insert({
+      trip_id: tripId,
+      user_id: user.id,
+      activity_type: activityType,
+      activity_data: activityData,
+    });
+  };
+
   return {
     activityFeed,
     proposals,
@@ -223,6 +240,7 @@ export const useGroupTrip = (tripId: string | undefined) => {
     castVote,
     createProposal,
     dismissApprovedProposal,
+    logFeedEvent,
     myVoteFor,
     voteCounts,
   };

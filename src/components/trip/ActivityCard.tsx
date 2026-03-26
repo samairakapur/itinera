@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
+const BookingPanel = lazy(() => import('./BookingPanel').then(m => ({ default: m.BookingPanel })));
 import {
   Utensils,
   Landmark,
@@ -94,6 +95,10 @@ interface ActivityCardProps {
   groupSize?: number;
   /** Trip start date for booking links */
   tripDate?: string;
+  /** Trip ID — used to record bookings in the DB */
+  tripId?: string;
+  /** Called after user confirms a booking */
+  onBookingConfirmed?: (activityId: string, ref?: string) => void;
   /** When true, destructive actions (remove/swap) route through proposal flow */
   isDemocratic?: boolean;
   /** Called instead of onRemove when isDemocratic is true */
@@ -110,6 +115,28 @@ const typeIcons = {
   prebooked: Ticket,
   flex: Sparkles,
 };
+
+// Cities where OpenTable has meaningful coverage (US/UK/Europe majors)
+// For all other cities, show Google Maps search instead
+const OPENTABLE_CITIES = new Set([
+  // North America
+  'new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'boston',
+  'washington', 'seattle', 'las vegas', 'houston', 'dallas', 'denver', 'atlanta',
+  'toronto', 'vancouver', 'montreal',
+  // UK
+  'london', 'manchester', 'edinburgh', 'birmingham', 'bristol',
+  // Western Europe
+  'paris', 'amsterdam', 'rome', 'barcelona', 'madrid', 'berlin', 'vienna',
+  'lisbon', 'dublin', 'brussels', 'zurich', 'milan', 'florence', 'venice',
+  'munich', 'hamburg', 'cologne', 'prague', 'budapest',
+]);
+
+/** Returns true if the city has substantial OpenTable restaurant coverage */
+function cityHasOpenTable(city?: string): boolean {
+  if (!city) return false;
+  const normalized = city.toLowerCase().trim();
+  return [...OPENTABLE_CITIES].some(c => normalized.includes(c) || c.includes(normalized));
+}
 
 const typeColors = {
   attraction: 'bg-primary/8 text-primary border-primary/15',
@@ -140,9 +167,12 @@ export const ActivityCard = ({
   isDemocratic = false,
   onProposeRemove,
   onProposeSwap,
+  tripId,
+  onBookingConfirmed,
 }: ActivityCardProps) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [bookingPanelOpen, setBookingPanelOpen] = useState(false);
   const Icon = typeIcons[activity.type] || Star;
   const colorClass = typeColors[activity.type] || typeColors.custom;
 
@@ -201,10 +231,20 @@ export const ActivityCard = ({
     return `https://www.opentable.com/s?term=${term}&covers=${covers}&dateTime=${dateTime}`;
   };
 
-  // Viator deep-link: search by activity title + city
+  // Google Maps restaurant search — works globally
+  const getGoogleMapsRestaurantUrl = () => {
+    const parts = [activity.title];
+    if (cityName) parts.push(cityName);
+    return `https://www.google.com/maps/search/${encodeURIComponent(parts.join(' '))}`;
+  };
+
+  const showOpenTable = isRestaurant && cityHasOpenTable(activity.cityName || cityName);
+
+  // Viator affiliate search link — /searchResults/all avoids 404, mcid is our partner tracking ID
   const getViatorUrl = () => {
     const q = encodeURIComponent((activity.title + (cityName ? ` ${cityName}` : '')).trim());
-    return `https://www.viator.com/search?text=${q}${groupSize ? `&pax=${groupSize}` : ''}`;
+    const pax = groupSize ? `&pax=${groupSize}` : '';
+    return `https://www.viator.com/searchResults/all?text=${q}${pax}&mcid=P00294080`;
   };
 
   const isRestaurant = activity.type === 'restaurant';
@@ -221,6 +261,7 @@ export const ActivityCard = ({
   const isFlexActivity = activity.type === 'flex';
 
   return (
+    <>
     <Card className={cn(
       "border shadow-sm hover:shadow-md transition-all duration-200",
       isFlexActivity && "border-white/10",
@@ -442,15 +483,27 @@ export const ActivityCard = ({
                     </span>
                   </div>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-                  onClick={() => window.open(getOpenTableUrl(), '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Check availability on OpenTable
-                </Button>
+                {showOpenTable ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                    onClick={() => window.open(getOpenTableUrl(), '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Reserve on OpenTable
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                    onClick={() => window.open(getGoogleMapsRestaurantUrl(), '_blank', 'noopener,noreferrer')}
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    Find on Google Maps
+                  </Button>
+                )}
               </div>
             )}
             {isAttraction && !activity.isPrebooked && (
@@ -563,6 +616,35 @@ export const ActivityCard = ({
           </div>
         </div>
       </CardContent>
+
+      {/* Book CTA — shown for restaurants and bookable attractions */}
+      {(isRestaurant || (isAttraction && !activity.isPrebooked)) && (
+        <div className="px-4 pb-4 pt-0">
+          <Button
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5"
+            onClick={() => setBookingPanelOpen(true)}
+          >
+            <Ticket className="w-3.5 h-3.5" />
+            {activity.flexibility === 'firm' ? 'Booked ✓' : 'Book this'}
+          </Button>
+        </div>
+      )}
     </Card>
+
+    {/* Booking Panel (lazy-loaded bottom sheet) */}
+    <Suspense fallback={null}>
+      <BookingPanel
+        open={bookingPanelOpen}
+        onOpenChange={setBookingPanelOpen}
+        activity={activity}
+        cityName={cityName}
+        groupSize={groupSize}
+        tripDate={tripDate}
+        tripId={tripId}
+        onBookingConfirmed={onBookingConfirmed}
+      />
+    </Suspense>
+    </>
   );
 };

@@ -25,7 +25,7 @@ interface TravelPreferences {
   preferredCuisines?: string[];
   dietaryRestrictions?: string[];
   willingnessToTryNew?: string;
-  diningStyle?: string;
+  diningStyle?: string | string[];
 }
 
 interface CityLeg {
@@ -124,8 +124,7 @@ async function fetchWeather(cityName: string, numDays: number): Promise<DayWeath
 // ---------------------------------------------------------------------------
 
 /**
- * Pace affects start time and energy level.
- * No hard cap on activity count — the AI uses judgement based on pace.
+ * Pace affects start time, activity count, and hard end-time cap.
  */
 function getSightseeingCount(pace: string): number {
   if (pace === 'light') return 2;
@@ -139,6 +138,28 @@ function getDefaultStartTime(pace: string): string {
     case 'full':   return '8:30 AM';
     default:       return '9:00 AM';
   }
+}
+
+/** Hard end-time cap per pace — the day MUST wrap up by this time */
+function getDayEndTime(pace: string): string {
+  if (pace === 'light')  return '6:30 PM';
+  if (pace === 'full')   return '10:00 PM';
+  return '8:30 PM'; // moderate
+}
+
+/**
+ * Returns the total available hours in the day based on start + end times.
+ * Used to inject a concrete hour budget into the prompt.
+ */
+function getAvailableHours(startTime: string, endTime: string): number {
+  const parse = (t: string) => {
+    const [timePart, meridiem] = t.split(' ');
+    let [h, m] = timePart.split(':').map(Number);
+    if (meridiem === 'PM' && h !== 12) h += 12;
+    if (meridiem === 'AM' && h === 12) h = 0;
+    return h + (m || 0) / 60;
+  };
+  return Math.round(parse(endTime) - parse(startTime));
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +357,7 @@ serve(async (req) => {
       if (userPreferences.preferredCuisines?.length)   parts.push(`Preferred cuisines: ${userPreferences.preferredCuisines.join(', ')}`);
       if (userPreferences.dietaryRestrictions?.length) parts.push(`Dietary restrictions: ${userPreferences.dietaryRestrictions.join(', ')}`);
       if (userPreferences.willingnessToTryNew)   parts.push(`Try new foods: ${userPreferences.willingnessToTryNew}`);
-      if (userPreferences.diningStyle)           parts.push(`Dining style: ${userPreferences.diningStyle}`);
+      if (userPreferences.diningStyle)           parts.push(`Dining style: ${Array.isArray(userPreferences.diningStyle) ? userPreferences.diningStyle.join(', ') : userPreferences.diningStyle}`);
       if (parts.length) userProfileContext = `\n\nUser Profile:\n${parts.join('\n')}`;
     }
 
@@ -361,6 +382,8 @@ serve(async (req) => {
     // ── Pace / slot settings ────────────────────────────────────────────────
     const sightseeingCount = getSightseeingCount(pace);
     const startTime = preferredStartTime || getDefaultStartTime(pace);
+    const endTime = getDayEndTime(pace);
+    const availableHours = getAvailableHours(startTime, endTime);
 
     const cuisineContext = userPreferences?.preferredCuisines?.length
       ? `Preferred cuisines: ${userPreferences.preferredCuisines.join(', ')}. `
@@ -391,6 +414,22 @@ serve(async (req) => {
 ${calendarContext}
 ${flightConstraintContext}
 
+TIME BUDGET — HARD RULE (enforce before writing any activities):
+- Day starts: ${startTime}
+- Day MUST end by: ${endTime} (last activity including dinner must FINISH by this time)
+- Total available: ~${availableHours} hours
+- Pace "${pace}" allows ~${sightseeingCount} sightseeing activities. This is a MAXIMUM — use fewer if time runs short.
+- As you write each activity, keep a running cumulative total: activity duration + travel time to next stop.
+- When the running total reaches the end time budget, STOP adding activities. Do NOT exceed the end time.
+- If you run out of time before dinner: shorten or skip the flex block, then shorten the evening attraction. Dinner is mandatory.
+- A focused day that ends on time is ALWAYS better than an overloaded day that overflows.
+
+PRICE TIERS — MANDATORY:
+- Every activity MUST include a price tier in the pipe fields: € (free/very cheap), €€ (moderate, €5–25 entry or mid-range meal), €€€ (premium, €25–80), €€€€ (luxury/exclusive)
+- Use local currency symbol appropriate to the destination (€ for Europe, $ for Americas, etc.)
+- Restaurants: € = street food/casual (<€15/head), €€ = bistro (€15–40/head), €€€ = fine dining (€40–80/head), €€€€ = Michelin/tasting menu (€80+/head)
+- Attractions: € = free or <€5, €€ = €5–20, €€€ = €20–50, €€€€ = >€50
+
 OUTPUT FORMAT — follow this structure EXACTLY for every day:
 
 ${isMultiCity ? `## Leg N: CityName, Country
@@ -405,38 +444,38 @@ Rain: [e.g., 15%]
 Note: [One practical sentence — recommend indoor alternatives on rainy days]
 
 ### Morning
-- **[Breakfast: Café/Restaurant Name]** | restaurant | [Duration, e.g., 45 min] | [Time, e.g., 8:30 AM]
+- **[Breakfast: Café/Restaurant Name]** | restaurant | €€ | [Duration, e.g., 45 min] | [Time, e.g., 8:30 AM]
   [1-2 sentence description. Specific neighbourhood/address hint.]
   Why: [Why this breakfast spot suits today's itinerary and traveller profile]
-- **[Activity Name]** | attraction | [Duration] | [Time]
+- **[Activity Name]** | attraction | €€ | [Duration] | [Time]
   [Description]
   Why: [Reasoning — crowds, lighting, proximity to next stop, etc.]
-- **🚶 Travel to [Next Place]** | transport | [N min] | [Time]
+- **🚶 Travel to [Next Place]** | transport | € | [N min] | [Time]
   [Walk/Metro/Bus/Taxi — specific line or route if known]
   Why: [Most efficient or scenic route]
 
 ### Afternoon
-- **[Activity Name]** | attraction | [Duration] | [Time]
+- **[Activity Name]** | attraction | €€ | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
-- **🚶 Travel to [Next Place]** | transport | [N min] | [Time]
+- **🚶 Travel to [Next Place]** | transport | € | [N min] | [Time]
   [Route description]
   Why: [Why this mode]
-- **[Lunch: Restaurant Name]** | restaurant | [Duration] | [Time]
+- **[Lunch: Restaurant Name]** | restaurant | €€ | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
-- **🗺️ Wander & Explore: [Neighbourhood/Area Name]** | flex | [Duration, e.g., 45 min] | [Time]
+- **🗺️ Wander & Explore: [Neighbourhood/Area Name]** | flex | € | [Duration, e.g., 45 min] | [Time]
   [Brief description of what makes this neighbourhood worth wandering — markets, street art, cafés, architecture, vibe. Be specific.]
   Why: [Why this neighbourhood fits here — proximity, character, relaxed pace after structured activity]
 
 ### Evening
-- **[Activity Name]** | attraction | [Duration] | [Time]
+- **[Activity Name]** | attraction | €€ | [Duration] | [Time]
   [Description]
   Why: [Reasoning]
-- **🚶 Travel to [Restaurant]** | transport | [N min] | [Time]
+- **🚶 Travel to [Restaurant]** | transport | € | [N min] | [Time]
   [Route]
   Why: [Reasoning]
-- **[Dinner: Restaurant Name]** | restaurant | [Duration] | [Time]
+- **[Dinner: Restaurant Name]** | restaurant | €€€ | [Duration] | [Time]
   [Description]
   ⚠️ Book [X] weeks ahead · [How to book — website, phone, or walk-in]
   Why: [Reasoning]
@@ -482,18 +521,20 @@ STRICT RULES:
 7. MUST include "Why:" reasoning for EVERY item including travel blocks and flex blocks
 8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
 9. Group nearby attractions — minimise unnecessary travel
-10. PACE-DRIVEN ACTIVITY COUNT — let pace set the density:
-    - light: ~2 sightseeing activities/day — slow mornings, long lunches, early evenings; leave plenty of buffer
-    - moderate: ~3 sightseeing activities/day — comfortable rhythm with time to breathe between stops
-    - full: ~4 sightseeing activities/day — energetic but not frantic; every slot filled without doubling back
-    All paces include breakfast + lunch + dinner + 1 flex block. Transport blocks are connectors and don't count.
-    A realistic, enjoyable day always beats an overloaded one — when in doubt, do less.
+10. PACE AND TIME BUDGET — non-negotiable:
+    - light (~2 sightseeing/day): day ends by 6:30 PM — slow mornings, long lunches, early evenings
+    - moderate (~3 sightseeing/day): day ends by 8:30 PM — comfortable rhythm with breathing room
+    - full (~4 sightseeing/day): day ends by 10:00 PM — energetic but not frantic
+    CRITICAL: track cumulative time as you plan. Each activity's duration PLUS travel to the next stop counts against the budget.
+    When the budget runs out → STOP adding activities. Shorten the flex block first if needed; never overflow.
+    A focused day that ends on time is ALWAYS better than an overloaded day.
 11. Use REAL places that exist — no invented names
 12. Insert booking warnings (⚠️) for ALL activities that typically require advance reservation
 13. Insert exactly 1 flex block per day (🗺️ Wander & Explore format)
-${isMultiCity ? `14. Use "## Leg N: CityName" header before each city section
-15. Start each new city leg with transit/arrival logistics` : ''}
-${flightConstraintContext ? '16. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
+14. EVERY activity including restaurants, transport, and flex blocks MUST have a price tier in the pipe fields (€, €€, €€€, or €€€€). This field is mandatory — never omit it.
+${isMultiCity ? `15. Use "## Leg N: CityName" header before each city section
+16. Start each new city leg with transit/arrival logistics` : ''}
+${flightConstraintContext ? '17. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
 
     const userPrompt = `Create a ${numDays}-day itinerary for ${destinationsList}.
 ${legContext}
@@ -519,7 +560,9 @@ Every day requires ALL of the following:
 - Dinner (evening)
 - Exactly 1 flex block (🗺️ Wander & Explore [neighbourhood])
 - ⚠️ booking warnings on any activity that typically needs advance reservation
+- A price tier (€/€€/€€€/€€€€) in the pipe fields of EVERY activity
 Activity density follows the "${pace}" pace setting (~${sightseeingCount} sightseeing activities/day).
+TIME CONSTRAINT: Day starts ${startTime} and MUST end by ${endTime} (~${availableHours} hours available). Track cumulative time as you write — stop adding activities the moment you run out of budget.
 Every item — including travel and flex blocks — must have a "Why:" line.
 ${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
