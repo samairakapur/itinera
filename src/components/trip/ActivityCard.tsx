@@ -176,6 +176,10 @@ export const ActivityCard = ({
   const Icon = typeIcons[activity.type] || Star;
   const colorClass = typeColors[activity.type] || typeColors.custom;
 
+  // ── Type flags — declared first so all downstream consts can reference them ──
+  const isRestaurant = activity.type === 'restaurant';
+  const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
+
   const getGoogleMapsUrl = () => {
     if (activity.latitude && activity.longitude) {
       return `https://www.google.com/maps/dir/?api=1&destination=${activity.latitude},${activity.longitude}&destination_place_id=`;
@@ -247,8 +251,6 @@ export const ActivityCard = ({
     return `https://www.viator.com/searchResults/all?text=${q}${pax}&mcid=P00294080`;
   };
 
-  const isRestaurant = activity.type === 'restaurant';
-  const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
   const showGroupWarning = isRestaurant && groupSize && groupSize >= 7;
   const showCallWarning = isRestaurant && groupSize && groupSize >= 9;
 
