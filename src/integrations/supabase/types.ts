@@ -384,8 +384,11 @@ export type Database = {
           dietary_preferences: string[] | null
           end_date: string | null
           estimated_daily_cost: number | null
+          group_size: number | null
           home_base: string | null
           id: string
+          invite_link_active: boolean
+          invite_token: string | null
           is_flight_aware: boolean
           is_link_shared: boolean
           name: string
@@ -394,6 +397,7 @@ export type Database = {
           public_link_id: string | null
           start_date: string | null
           travel_style: string | null
+          trip_mode: string
           updated_at: string
           user_id: string
         }
@@ -404,8 +408,11 @@ export type Database = {
           dietary_preferences?: string[] | null
           end_date?: string | null
           estimated_daily_cost?: number | null
+          group_size?: number | null
           home_base?: string | null
           id?: string
+          invite_link_active?: boolean
+          invite_token?: string | null
           is_flight_aware?: boolean
           is_link_shared?: boolean
           name: string
@@ -414,6 +421,7 @@ export type Database = {
           public_link_id?: string | null
           start_date?: string | null
           travel_style?: string | null
+          trip_mode?: string
           updated_at?: string
           user_id: string
         }
@@ -424,8 +432,11 @@ export type Database = {
           dietary_preferences?: string[] | null
           end_date?: string | null
           estimated_daily_cost?: number | null
+          group_size?: number | null
           home_base?: string | null
           id?: string
+          invite_link_active?: boolean
+          invite_token?: string | null
           is_flight_aware?: boolean
           is_link_shared?: boolean
           name?: string
@@ -434,6 +445,7 @@ export type Database = {
           public_link_id?: string | null
           start_date?: string | null
           travel_style?: string | null
+          trip_mode?: string
           updated_at?: string
           user_id?: string
         }

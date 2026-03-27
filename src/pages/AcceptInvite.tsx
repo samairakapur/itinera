@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, MapPin, Users, Calendar, CheckCircle2, LogIn, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -20,6 +19,7 @@ interface TripInfo {
   group_size: number | null;
   trip_mode: string | null;
   invite_link_active: boolean;
+  owner_id: string;
 }
 
 const AcceptInvite = () => {
@@ -32,7 +32,7 @@ const AcceptInvite = () => {
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
 
-  // Lookup trip by invite token
+  // Lookup trip by invite token via Edge Function (bypasses RLS)
   useEffect(() => {
     if (!token) {
       setLoadState('invalid');
@@ -40,58 +40,44 @@ const AcceptInvite = () => {
     }
 
     const lookup = async () => {
-      const { data, error } = await supabase
-        .from('itineraries')
-        .select(`
-          id, name, num_days, start_date, end_date,
-          group_size, trip_mode, invite_link_active,
-          cities ( name, country )
-        `)
-        .eq('invite_token', token)
-        .eq('invite_link_active', true)
-        .single();
+      try {
+        const { data, error } = await supabase.functions.invoke('get-invite-trip', {
+          body: { action: 'lookup', token },
+        });
 
-      if (error || !data) {
+        if (error || !data?.trip) {
+          setLoadState('invalid');
+          return;
+        }
+
+        const tripData: TripInfo = data.trip;
+        setTrip(tripData);
+
+        // Check if current user is already a member
+        if (user) {
+          if (user.id === tripData.owner_id) {
+            setLoadState('already_member');
+            return;
+          }
+
+          const { data: existing } = await supabase
+            .from('trip_collaborators')
+            .select('id')
+            .eq('itinerary_id', tripData.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (existing) {
+            setLoadState('already_member');
+            return;
+          }
+        }
+
+        setLoadState('found');
+      } catch (err) {
+        console.error('Invite lookup error:', err);
         setLoadState('invalid');
-        return;
       }
-
-      const info: TripInfo = {
-        id: data.id,
-        name: data.name,
-        city: (data.cities as any)?.name ?? null,
-        country: (data.cities as any)?.country ?? null,
-        num_days: data.num_days,
-        start_date: data.start_date,
-        end_date: data.end_date,
-        group_size: data.group_size,
-        trip_mode: data.trip_mode,
-        invite_link_active: data.invite_link_active,
-      };
-      setTrip(info);
-
-      // Check if current user is already a collaborator
-      if (user) {
-        const { data: existing } = await supabase
-          .from('trip_collaborators')
-          .select('id')
-          .eq('itinerary_id', data.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (existing) {
-          setLoadState('already_member');
-          return;
-        }
-
-        // Also check if they're the owner
-        if ((data as any).user_id === user.id) {
-          setLoadState('already_member');
-          return;
-        }
-      }
-
-      setLoadState('found');
     };
 
     if (!authLoading) {
@@ -101,7 +87,6 @@ const AcceptInvite = () => {
 
   const handleJoin = async () => {
     if (!user) {
-      // Redirect to auth, come back here after login
       navigate(`/auth?redirect=/invite/${token}`);
       return;
     }
@@ -109,28 +94,19 @@ const AcceptInvite = () => {
 
     setJoining(true);
     try {
-      // Add as collaborator
-      const { error } = await supabase.from('trip_collaborators').insert({
-        itinerary_id: trip.id,
-        user_id: user.id,
-        email: user.email ?? '',
-        role: 'editor',
-        invited_by: trip.id, // self-join via link
-        accepted_at: new Date().toISOString(),
+      const { data, error } = await supabase.functions.invoke('get-invite-trip', {
+        body: {
+          action: 'join',
+          token,
+          userId: user.id,
+          email: user.email ?? '',
+        },
       });
 
-      if (error && error.code !== '23505') {
-        // 23505 = unique violation (already joined) — treat as success
-        throw error;
+      if (error) throw new Error(error.message ?? 'Join failed');
+      if (data?.error && data.error !== 'already_member') {
+        throw new Error(data.error);
       }
-
-      // Log to activity feed
-      await supabase.from('trip_activity_feed').insert({
-        trip_id: trip.id,
-        user_id: user.id,
-        activity_type: 'member_joined',
-        activity_data: { email: user.email },
-      });
 
       setJoined(true);
       toast.success('Welcome to the trip! 🎉');

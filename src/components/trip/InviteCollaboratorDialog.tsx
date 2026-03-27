@@ -131,7 +131,7 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName, invi
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="invite">
+        <Tabs defaultValue="link">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="invite" className="gap-2">
               <Mail className="w-4 h-4" />
@@ -185,7 +185,7 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName, invi
                 <p className="text-xs text-destructive pl-1">{emailError}</p>
               )}
               <p className="text-xs text-muted-foreground pl-1">
-                Invited members must have an account to accept. Editors can modify the itinerary.
+                We'll save the invitation. Share the link in the <strong>Share Link</strong> tab to notify them — no email is sent automatically.
               </p>
             </form>
 
