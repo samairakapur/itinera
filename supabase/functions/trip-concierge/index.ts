@@ -94,7 +94,8 @@ Deno.serve(async (req: Request) => {
         .select('role, content')
         .eq('trip_id', tripId)
         .order('created_at', { ascending: true })
-        .limit(20),
+        .limit(20)
+        .throwOnError(false),
     ]);
 
     const trip = tripRes.data;
@@ -160,13 +161,17 @@ YOUR ROLE:
 - If asked about transport between activities, give specific directions
 - Format responses clearly — use bullet points for lists`;
 
-    // ── Save user message ──────────────────────────────────────────────────
-    await supabase.from('trip_messages').insert({
-      trip_id: tripId,
-      user_id: userId,
-      role: 'user',
-      content: message,
-    });
+    // ── Save user message (best-effort — skip if table doesn't exist yet) ─
+    try {
+      await supabase.from('trip_messages').insert({
+        trip_id: tripId,
+        user_id: userId,
+        role: 'user',
+        content: message,
+      });
+    } catch (e) {
+      console.warn('[trip-concierge] could not save user message:', e);
+    }
 
     // ── Build messages array with history ─────────────────────────────────
     const messages = [
@@ -193,19 +198,29 @@ YOUR ROLE:
     if (!aiRes.ok) {
       const errText = await aiRes.text();
       console.error('[trip-concierge] AI error:', aiRes.status, errText);
-      return json({ error: 'AI service error' }, 502);
+      if (aiRes.status === 401 || aiRes.status === 403) {
+        return json({ error: 'AI API key is invalid or missing. Check Supabase Edge Function secrets (GROQ_API_KEY / LOVABLE_API_KEY / GOOGLE_AI_API_KEY).' }, 502);
+      }
+      if (aiRes.status === 429) {
+        return json({ error: 'AI service is busy right now. Please wait a few seconds and try again.' }, 429);
+      }
+      return json({ error: `AI service returned ${aiRes.status}. Please try again.` }, 502);
     }
 
     const aiData = await aiRes.json();
     const reply: string = aiData.choices?.[0]?.message?.content ?? 'Sorry, I couldn\'t generate a response.';
 
-    // ── Save assistant reply ───────────────────────────────────────────────
-    await supabase.from('trip_messages').insert({
-      trip_id: tripId,
-      user_id: null, // assistant messages have no user_id
-      role: 'assistant',
-      content: reply,
-    });
+    // ── Save assistant reply (best-effort) ────────────────────────────────
+    try {
+      await supabase.from('trip_messages').insert({
+        trip_id: tripId,
+        user_id: null,
+        role: 'assistant',
+        content: reply,
+      });
+    } catch (e) {
+      console.warn('[trip-concierge] could not save assistant reply:', e);
+    }
 
     return json({ reply });
   } catch (err) {
