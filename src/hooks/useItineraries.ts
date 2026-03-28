@@ -7,6 +7,7 @@ import { addDays, format } from 'date-fns';
 
 export interface SavedItinerary {
   id: string;
+  user_id: string;
   name: string;
   city_id: string;
   start_date: string | null;
@@ -84,6 +85,8 @@ export const useItineraries = () => {
     queryFn: async () => {
       if (!user) return [];
 
+      // No .eq('user_id') filter — RLS returns both owned trips and trips where
+      // the current user is a collaborator (via RLS policies on itineraries).
       const { data, error } = await supabase
         .from('itineraries')
         .select(`
@@ -94,7 +97,6 @@ export const useItineraries = () => {
             image_url
           )
         `)
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -149,6 +151,7 @@ export const useActiveTripToday = () => {
       const today = new Date();
       const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
 
+      // No .eq('user_id') — RLS returns both owned and collaborated trips
       const { data, error } = await supabase
         .from('itineraries')
         .select(`
@@ -162,7 +165,6 @@ export const useActiveTripToday = () => {
             country
           )
         `)
-        .eq('user_id', user.id)
         .lte('start_date', todayStr)
         .gte('end_date', todayStr)
         .order('start_date', { ascending: false })

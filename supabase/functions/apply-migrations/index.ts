@@ -86,6 +86,140 @@ Deno.serve(async (req: Request) => {
           WHERE invite_token IS NULL;
         `,
       },
+      // -----------------------------------------------------------------------
+      // 20260328: Fix collaborator RLS so joined members see itinerary content
+      // -----------------------------------------------------------------------
+      {
+        name: 'collaborator RLS — update is_itinerary_collaborator to check user_id OR email',
+        ddl: `
+          CREATE OR REPLACE FUNCTION public.is_itinerary_collaborator(itinerary_uuid UUID)
+          RETURNS BOOLEAN
+          LANGUAGE plpgsql
+          SECURITY DEFINER
+          SET search_path = public
+          AS $$
+          BEGIN
+            RETURN EXISTS (
+              SELECT 1
+              FROM public.trip_collaborators
+              WHERE itinerary_id = itinerary_uuid
+                AND (
+                  user_id = auth.uid()
+                  OR email = auth.email()
+                )
+            );
+          END;
+          $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — trip_days SELECT policy for collaborators',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'trip_days'
+                AND policyname = 'Collaborators can view shared trip days'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared trip days"
+              ON public.trip_days
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — ensure itinerary_items collaborator SELECT exists',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'itinerary_items'
+                AND policyname = 'Collaborators can view shared itinerary items'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared itinerary items"
+              ON public.itinerary_items
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — ensure itineraries collaborator SELECT exists',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'itineraries'
+                AND policyname = 'Collaborators can view shared itineraries'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared itineraries"
+              ON public.itineraries
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — ensure trip_legs collaborator SELECT exists',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'trip_legs'
+                AND policyname = 'Collaborators can view shared trip legs'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared trip legs"
+              ON public.trip_legs
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — ensure day_preferences collaborator SELECT exists',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'day_preferences'
+                AND policyname = 'Collaborators can view shared day preferences'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared day preferences"
+              ON public.day_preferences
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
+        name: 'collaborator RLS — ensure flight_details collaborator SELECT exists',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'flight_details'
+                AND policyname = 'Collaborators can view shared flight details'
+            ) THEN
+              CREATE POLICY "Collaborators can view shared flight details"
+              ON public.flight_details
+              FOR SELECT
+              USING (public.is_itinerary_collaborator(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
     ];
 
     for (const m of migrations) {

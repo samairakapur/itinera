@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Clock, Trash2, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Clock, Trash2, ChevronRight, Users } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { useAuth } from '@/contexts/AuthContext';
 import type { SavedItinerary } from '@/hooks/useItineraries';
 
 interface SavedTripCardProps {
@@ -25,10 +26,12 @@ interface SavedTripCardProps {
 
 export const SavedTripCard = ({ trip, onDelete, isDeleting }: SavedTripCardProps) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const startDate = trip.start_date ? new Date(trip.start_date) : null;
   const endDate = trip.end_date ? new Date(trip.end_date) : null;
 
+  const isOwner = trip.user_id === user?.id;
   const isUpcoming = startDate && startDate > new Date();
   const isOngoing = startDate && endDate && startDate <= new Date() && endDate >= new Date();
 
@@ -47,13 +50,19 @@ export const SavedTripCard = ({ trip, onDelete, isDeleting }: SavedTripCardProps
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         
         {/* Status Badge */}
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex gap-1.5">
           {isOngoing ? (
             <Badge className="bg-primary/90 text-primary-foreground text-xs uppercase tracking-widest">Ongoing</Badge>
           ) : isUpcoming ? (
             <Badge variant="outline" className="border-primary/30 text-primary/80 text-xs uppercase tracking-widest bg-black/50">Upcoming</Badge>
           ) : (
             <Badge variant="outline" className="border-white/20 text-white/60 text-xs uppercase tracking-widest bg-black/50">Past</Badge>
+          )}
+          {!isOwner && (
+            <Badge className="bg-blue-500/80 text-white text-xs gap-1 tracking-widest">
+              <Users className="w-3 h-3" />
+              Shared
+            </Badge>
           )}
         </div>
 
@@ -102,30 +111,32 @@ export const SavedTripCard = ({ trip, onDelete, isDeleting }: SavedTripCardProps
             View Trip
             <ChevronRight className="w-4 h-4 ml-1" />
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" size="icon" disabled={isDeleting}>
-                <Trash2 className="w-4 h-4 text-destructive" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete this trip?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete your trip to {trip.cities?.name}. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => onDelete(trip.id)}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {isOwner && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="icon" disabled={isDeleting}>
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this trip?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete your trip to {trip.cities?.name}. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => onDelete(trip.id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </CardContent>
     </Card>
