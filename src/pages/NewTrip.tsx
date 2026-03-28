@@ -132,7 +132,7 @@ const NewTrip = () => {
   // Parse itinerary when raw text changes
   useEffect(() => {
     if (rawItinerary && rawItinerary.length > 100) {
-      const parsed = parseItineraryText(rawItinerary, numDays, weatherData);
+      const parsed = parseItineraryText(rawItinerary, numDays, weatherData, preferences.dailyPace);
       setParsedItinerary(parsed);
       setViewMode('itinerary');
     }

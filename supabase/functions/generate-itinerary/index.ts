@@ -142,9 +142,16 @@ function getDefaultStartTime(pace: string): string {
 
 /** Hard end-time cap per pace — the day MUST wrap up by this time */
 function getDayEndTime(pace: string): string {
-  if (pace === 'light')  return '6:30 PM';
-  if (pace === 'full')   return '10:00 PM';
-  return '8:30 PM'; // moderate
+  if (pace === 'light')  return '6:00 PM';
+  if (pace === 'full')   return '9:30 PM';
+  return '8:00 PM'; // moderate
+}
+
+/** Maximum total non-transport activities per day per pace (meals + sightseeing + flex) */
+function getMaxActivities(pace: string): number {
+  if (pace === 'light')  return 5;  // breakfast + 1 sightseeing + lunch + flex + dinner
+  if (pace === 'full')   return 9;  // breakfast + 4 sightseeing + lunch + flex + evening + dinner
+  return 7; // moderate: breakfast + 2-3 sightseeing + lunch + flex + evening + dinner
 }
 
 /**
@@ -381,6 +388,7 @@ serve(async (req) => {
 
     // ── Pace / slot settings ────────────────────────────────────────────────
     const sightseeingCount = getSightseeingCount(pace);
+    const maxActivities = getMaxActivities(pace);
     const startTime = preferredStartTime || getDefaultStartTime(pace);
     const endTime = getDayEndTime(pace);
     const availableHours = getAvailableHours(startTime, endTime);
@@ -414,15 +422,29 @@ serve(async (req) => {
 ${calendarContext}
 ${flightConstraintContext}
 
-TIME BUDGET — HARD RULE (enforce before writing any activities):
+CRITICAL SCHEDULING RULE — ENFORCE BEFORE WRITING EACH ACTIVITY:
 - Day starts: ${startTime}
-- Day MUST end by: ${endTime} (last activity including dinner must FINISH by this time)
+- Day MUST end by: ${endTime} — the LAST activity (dinner) must FINISH by this time
 - Total available: ~${availableHours} hours
-- Pace "${pace}" allows ~${sightseeingCount} sightseeing activities. This is a MAXIMUM — use fewer if time runs short.
-- As you write each activity, keep a running cumulative total: activity duration + travel time to next stop.
-- When the running total reaches the end time budget, STOP adding activities. Do NOT exceed the end time.
-- If you run out of time before dinner: shorten or skip the flex block, then shorten the evening attraction. Dinner is mandatory.
-- A focused day that ends on time is ALWAYS better than an overloaded day that overflows.
+- Travel time between activities: 20–30 minutes each (count this against the budget every time)
+- Pace "${pace}" allows MAXIMUM ${sightseeingCount} sightseeing attractions and ${maxActivities} total non-transport activities per day
+
+MANDATORY SELF-CHECK: As you write each activity, keep a running time total:
+  (previous activity end time) + (travel to next stop: 20–30 min) + (next activity duration) = new running total
+  If new running total would push past ${endTime} → STOP. Do NOT add that activity.
+
+PRIORITY ORDER when time runs short:
+  1. Keep: breakfast, lunch, dinner (mandatory meals — never remove)
+  2. Keep: the single flex/wander block (essential breathing room)
+  3. Remove: extra evening attractions first
+  4. Remove: extra afternoon sightseeing next
+  5. Shorten: flex block to 30 min if needed
+
+SELF-VERIFICATION REQUIRED: After writing all activities for a day, verify:
+  "Does the last activity (dinner) finish by ${endTime}?"
+  If NO → remove the last 1–2 non-meal activities and recalculate.
+  It is MUCH BETTER to have 4 activities that fit comfortably than 8 that overflow.
+  NEVER exceed the daily time limit under any circumstances.
 
 PRICE TIERS — MANDATORY:
 - Every activity MUST include a price tier in the pipe fields: € (free/very cheap), €€ (moderate, €5–25 entry or mid-range meal), €€€ (premium, €25–80), €€€€ (luxury/exclusive)
@@ -521,13 +543,13 @@ STRICT RULES:
 7. MUST include "Why:" reasoning for EVERY item including travel blocks and flex blocks
 8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
 9. Group nearby attractions — minimise unnecessary travel
-10. PACE AND TIME BUDGET — non-negotiable:
-    - light (~2 sightseeing/day): day ends by 6:30 PM — slow mornings, long lunches, early evenings
-    - moderate (~3 sightseeing/day): day ends by 8:30 PM — comfortable rhythm with breathing room
-    - full (~4 sightseeing/day): day ends by 10:00 PM — energetic but not frantic
-    CRITICAL: track cumulative time as you plan. Each activity's duration PLUS travel to the next stop counts against the budget.
-    When the budget runs out → STOP adding activities. Shorten the flex block first if needed; never overflow.
-    A focused day that ends on time is ALWAYS better than an overloaded day.
+10. PACE AND TIME BUDGET — absolute maximum, never exceed:
+    - light (~2 sightseeing/day, max 5 total activities): day ends by 6:00 PM — slow mornings, long lunches, early evenings
+    - moderate (~3 sightseeing/day, max 7 total activities): day ends by 8:00 PM — comfortable rhythm with breathing room
+    - full (~4 sightseeing/day, max 9 total activities): day ends by 9:30 PM — energetic but not frantic
+    Travel between activities costs 20–30 min EVERY time — factor this into each slot.
+    Track cumulative time as you write. The moment dinner would end after the hard cap → remove the last non-meal activity.
+    NEVER add an activity you cannot fit within the daily time budget.
 11. Use REAL places that exist — no invented names
 12. Insert booking warnings (⚠️) for ALL activities that typically require advance reservation
 13. Insert exactly 1 flex block per day (🗺️ Wander & Explore format)
@@ -562,7 +584,7 @@ Every day requires ALL of the following:
 - ⚠️ booking warnings on any activity that typically needs advance reservation
 - A price tier (€/€€/€€€/€€€€) in the pipe fields of EVERY activity
 Activity density follows the "${pace}" pace setting (~${sightseeingCount} sightseeing activities/day).
-TIME CONSTRAINT: Day starts ${startTime} and MUST end by ${endTime} (~${availableHours} hours available). Track cumulative time as you write — stop adding activities the moment you run out of budget.
+TIME CONSTRAINT: Day starts ${startTime} and MUST end by ${endTime} (~${availableHours} hours available, ~${maxActivities} total activities maximum). Count travel time (20–30 min) between every activity. After writing each day, verify the last activity ends before ${endTime} — if not, remove the last 1–2 non-meal activities.
 Every item — including travel and flex blocks — must have a "Why:" line.
 ${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;

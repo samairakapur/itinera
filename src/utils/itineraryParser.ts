@@ -9,7 +9,140 @@ export interface ParsedItinerary {
   weatherNotes: string;
 }
 
-export const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[]): ParsedItinerary => {
+// ---------------------------------------------------------------------------
+// Schedule validation — trims over-scheduled days before save
+// ---------------------------------------------------------------------------
+
+/** Parse a duration string like "45 min", "1.5 hours", "2h", "30 min" → minutes */
+function parseDurationMinutes(duration: string | undefined): number {
+  if (!duration) return 60; // default 1 hour if unknown
+  const d = duration.toLowerCase().trim();
+  // "X hour(s) Y min" or "Xh Ymin"
+  const hoursMinutes = d.match(/(\d+(?:\.\d+)?)\s*h(?:our)?s?\s*(?:(\d+)\s*m(?:in)?)?/);
+  if (hoursMinutes) {
+    return Math.round(parseFloat(hoursMinutes[1]) * 60 + (parseInt(hoursMinutes[2] || '0')));
+  }
+  // "X min" or "Xmin"
+  const minsOnly = d.match(/(\d+)\s*m(?:in)?/);
+  if (minsOnly) return parseInt(minsOnly[1]);
+  // Plain number — assume minutes
+  const plain = d.match(/^(\d+)$/);
+  if (plain) return parseInt(plain[1]);
+  return 60;
+}
+
+/** Convert "10:30 AM" / "14:00" style strings → decimal hours */
+function parseTimeToHours(timeStr: string | undefined): number | null {
+  if (!timeStr) return null;
+  const t = timeStr.trim();
+  const ampm = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (ampm) {
+    let h = parseInt(ampm[1]);
+    const m = parseInt(ampm[2]);
+    const meridiem = ampm[3].toUpperCase();
+    if (meridiem === 'PM' && h !== 12) h += 12;
+    if (meridiem === 'AM' && h === 12) h = 0;
+    return h + m / 60;
+  }
+  const h24 = t.match(/^(\d+):(\d+)$/);
+  if (h24) return parseInt(h24[1]) + parseInt(h24[2]) / 60;
+  return null;
+}
+
+/** Hard day-end caps (hours in 24h) per pace */
+const PACE_END_HOURS: Record<string, number> = {
+  light:    18.0,  // 6:00 PM
+  moderate: 20.0,  // 8:00 PM
+  full:     21.5,  // 9:30 PM
+};
+
+/** Hard max non-transport activities per day per pace */
+const PACE_MAX_ACTIVITIES: Record<string, number> = {
+  light:    5,
+  moderate: 7,
+  full:     9,
+};
+
+/**
+ * Trim activities from a parsed day that push the schedule past the pace end time.
+ * Removes from the end of evening → afternoon, skipping meals (type=restaurant).
+ * Returns a new DayData (does not mutate).
+ */
+function trimDayToSchedule(day: DayData, pace: string): DayData {
+  const endCap = PACE_END_HOURS[pace] ?? PACE_END_HOURS.moderate;
+  const maxActs = PACE_MAX_ACTIVITIES[pace] ?? PACE_MAX_ACTIVITIES.moderate;
+
+  // Flatten all activities in time order
+  const allActivities = [...day.morning, ...day.afternoon, ...day.evening];
+
+  // Count non-transport activities
+  const nonTransport = allActivities.filter(a => a.type !== 'transport');
+  if (nonTransport.length <= maxActs) {
+    // Within activity count budget — also check time budget
+    // Use the last activity's time + duration to estimate end
+    const lastAct = allActivities[allActivities.length - 1];
+    const lastTime = parseTimeToHours(lastAct?.time);
+    const lastDur = parseDurationMinutes(lastAct?.duration) / 60;
+    if (!lastTime || lastTime + lastDur <= endCap) return day; // fits fine
+  }
+
+  // Need to trim — collect activities to remove (non-essential, from the back)
+  // Essential = restaurant (meals). Non-essential = attraction, flex, prebooked, transport.
+  // Strategy: walk from the end of evening → afternoon → morning, remove non-restaurant
+  //           activities until count fits and/or time fits.
+  const trimmed = { ...day, evening: [...day.evening], afternoon: [...day.afternoon], morning: [...day.morning] };
+
+  const countNonTransport = () =>
+    [...trimmed.morning, ...trimmed.afternoon, ...trimmed.evening].filter(a => a.type !== 'transport').length;
+
+  const estimateEndHour = () => {
+    const acts = [...trimmed.morning, ...trimmed.afternoon, ...trimmed.evening];
+    if (acts.length === 0) return 0;
+    let runningHour: number | null = null;
+    for (const act of acts) {
+      const t = parseTimeToHours(act.time);
+      if (t !== null) runningHour = t;
+      if (runningHour !== null) {
+        runningHour += parseDurationMinutes(act.duration) / 60;
+        if (act.type !== 'transport' && act.type !== 'flex') {
+          runningHour += 0.4; // ~25 min travel to next
+        }
+      }
+    }
+    return runningHour ?? 0;
+  };
+
+  // Remove from the back: evening → afternoon (skip restaurants)
+  const slots: Array<keyof Pick<DayData, 'evening' | 'afternoon' | 'morning'>> = ['evening', 'afternoon', 'morning'];
+  let iterations = 0;
+  while (
+    iterations < 10 &&
+    (countNonTransport() > maxActs || estimateEndHour() > endCap)
+  ) {
+    let removed = false;
+    for (const slot of slots) {
+      const list = trimmed[slot] as Activity[];
+      // Find last non-restaurant, non-transport item to remove
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].type !== 'restaurant') {
+          console.log(`[schedule trim] Removing "${list[i].title}" (${list[i].type}) from ${slot} of day ${day.dayNumber} — pace ${pace}`);
+          trimmed[slot] = [...list.slice(0, i), ...list.slice(i + 1)];
+          removed = true;
+          break;
+        }
+      }
+      if (removed) break;
+    }
+    if (!removed) break; // nothing left to remove
+    iterations++;
+  }
+
+  return trimmed;
+}
+
+export { trimDayToSchedule };
+
+export const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[], pace?: string): ParsedItinerary => {
   const result: ParsedItinerary = {
     summary: '',
     days: [],
@@ -317,7 +450,9 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
       }
     }
 
-    result.days.push(dayData);
+    // Post-parse schedule validation — trim over-scheduled days
+    const paceMapped = pace === 'fast' ? 'full' : pace === 'relaxed' ? 'light' : pace === 'balanced' ? 'moderate' : (pace ?? 'moderate');
+    result.days.push(trimDayToSchedule(dayData, paceMapped));
   }
 
   // Parse packing tips
