@@ -199,10 +199,14 @@ const Nearby = () => {
                 </Button>
               )}
               {isPermissionDenied && (
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">
-                    To enable automatic location, update your browser settings and refresh the page.
-                  </p>
+                <div className="rounded-lg bg-muted/60 p-3 space-y-1">
+                  <p className="text-xs font-medium">How to enable location:</p>
+                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Open your browser <strong>Settings</strong></li>
+                    <li>Go to <strong>Privacy → Site Settings → Location</strong></li>
+                    <li>Find <strong>itinera-hazel.vercel.app</strong> and set it to <strong>Allow</strong></li>
+                    <li>Refresh this page</li>
+                  </ol>
                 </div>
               )}
             </CardContent>
