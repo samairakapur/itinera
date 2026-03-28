@@ -12,6 +12,9 @@ import {
   Clock,
   Users,
   DollarSign,
+  Calendar,
+  AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -63,7 +66,8 @@ interface ViatorProduct {
   fromPrice?: number;      // Edge function returns fromPrice
   priceFrom?: number;      // legacy alias
   currency?: string;
-  bookingUrl: string;
+  bookingUrl: string;      // direct product URL with affiliate ID (or search fallback)
+  webURL?: string;         // raw Viator webURL if available
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +81,8 @@ export interface BookingPanelProps {
   groupSize?: number;
   tripDate?: string;
   tripId?: string;
+  /** Dietary preferences for all group members — used to show compatibility warnings */
+  dietaryPreferences?: string[];
   /** Called when user confirms booking — marks activity as firm */
   onBookingConfirmed?: (activityId: string, bookingRef?: string) => void;
 }
@@ -92,6 +98,7 @@ export const BookingPanel = ({
   groupSize = 2,
   tripDate,
   tripId,
+  dietaryPreferences = [],
   onBookingConfirmed,
 }: BookingPanelProps) => {
   const [step, setStep] = useState<'browse' | 'confirm'>('browse');
@@ -99,10 +106,21 @@ export const BookingPanel = ({
   const [viatorLoading, setViatorLoading] = useState(false);
   const [bookingRef, setBookingRef] = useState('');
   const [confirming, setConfirming] = useState(false);
+  // Reservation tracker state
+  const [reservationDate, setReservationDate] = useState(tripDate ?? new Date().toISOString().split('T')[0]);
+  const [reservationTime, setReservationTime] = useState('');
+  const [reservationPartySize, setReservationPartySize] = useState(String(groupSize));
 
   const isRestaurant = activity.type === 'restaurant';
   const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
   const hasOpenTable = cityHasOpenTable(activity.cityName || cityName);
+
+  // Derive advisory signals for restaurants
+  const isPopularRestaurant = activity.priceTier === '€€€' || activity.priceTier === '€€€€' ||
+    activity.priceTier === '$$$' || activity.priceTier === '$$$$';
+  const isLargeGroup = groupSize >= 6;
+  const hasDietaryNeeds = dietaryPreferences.filter(d => d !== 'none' && d !== '').length > 0;
+  const leadTimeDays = isPopularRestaurant ? 7 : 3;
 
   // Build booking URLs
   const openTableUrl = (() => {
@@ -160,13 +178,30 @@ export const BookingPanel = ({
     load();
   }, [open, activity.id, isAttraction, activity.isPrebooked, activity.title, cityName, groupSize]);
 
-  // Reset on close
+  // Reset on close / pre-fill reservation fields on open
   useEffect(() => {
     if (!open) {
       setStep('browse');
       setBookingRef('');
+    } else {
+      setReservationDate(tripDate ?? new Date().toISOString().split('T')[0]);
+      setReservationPartySize(String(groupSize));
+      // Parse activity time to 24h for input[type=time], e.g. "7:30 PM" → "19:30"
+      if (activity.time) {
+        const m = activity.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (m) {
+          let h = parseInt(m[1]);
+          const min = m[2];
+          const mer = m[3].toUpperCase();
+          if (mer === 'PM' && h !== 12) h += 12;
+          if (mer === 'AM' && h === 12) h = 0;
+          setReservationTime(`${String(h).padStart(2, '0')}:${min}`);
+        } else {
+          setReservationTime('');
+        }
+      }
     }
-  }, [open]);
+  }, [open, tripDate, groupSize, activity.time]);
 
   const handleConfirmBooking = async () => {
     setConfirming(true);
@@ -226,7 +261,9 @@ export const BookingPanel = ({
                 {/* Restaurant meta row */}
                 <div className="flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
                   {activity.priceTier && (
-                    <span className="font-medium text-foreground">{activity.priceTier}</span>
+                    <Badge variant="outline" className="font-medium text-foreground">
+                      {activity.priceTier}
+                    </Badge>
                   )}
                   {activity.location && (
                     <span className="flex items-center gap-1">
@@ -234,51 +271,98 @@ export const BookingPanel = ({
                       {activity.location}
                     </span>
                   )}
+                  {activity.duration && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      {activity.duration}
+                    </span>
+                  )}
                 </div>
 
-                {hasOpenTable ? (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      Reserve a table via OpenTable — party size and date are pre-filled.
-                    </p>
-                    <Button
-                      className="w-full gap-2"
-                      onClick={() => window.open(openTableUrl, '_blank', 'noopener,noreferrer')}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Reserve on OpenTable
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full gap-2"
-                      onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Find on Google Maps
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      Call ahead or find on Google Maps to make a reservation.
-                    </p>
-                    <Button
-                      className="w-full gap-2"
-                      onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Find on Google Maps
-                    </Button>
-                  </>
-                )}
+                {/* Advisory banners */}
+                <div className="space-y-2">
+                  {isPopularRestaurant && (
+                    <div className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200/60 rounded-lg px-3 py-2 text-amber-800">
+                      <Calendar className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>Popular restaurant — book at least {leadTimeDays} days ahead to secure your table</span>
+                    </div>
+                  )}
+                  {isLargeGroup && (
+                    <div className="flex items-start gap-2 text-xs bg-blue-50 border border-blue-200/60 rounded-lg px-3 py-2 text-blue-800">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>Group of {groupSize} — online reservations may be limited. Calling the restaurant directly is recommended.</span>
+                    </div>
+                  )}
+                  {hasDietaryNeeds && (
+                    <div className="flex items-start gap-2 text-xs bg-orange-50 border border-orange-200/60 rounded-lg px-3 py-2 text-orange-800">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>Dietary requirements in your group: <span className="font-medium">{dietaryPreferences.filter(d => d !== 'none' && d !== '').join(', ')}</span> — check the menu before booking.</span>
+                    </div>
+                  )}
+                </div>
 
-                <div className="border-t border-border/50 pt-3 mt-2">
+                {/* Booking links */}
+                {hasOpenTable && (
                   <Button
-                    variant="outline"
                     className="w-full gap-2"
+                    onClick={() => window.open(openTableUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Reserve on OpenTable
+                  </Button>
+                )}
+                <Button
+                  variant={hasOpenTable ? 'outline' : 'default'}
+                  className="w-full gap-2"
+                  onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <MapPin className="w-4 h-4" />
+                  📍 Find on Google Maps
+                </Button>
+
+                {/* Reservation tracker */}
+                <div className="border border-border/60 rounded-xl p-3 space-y-2.5 bg-muted/30">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reservation Tracker</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="res-date" className="text-xs">Date</Label>
+                      <Input
+                        id="res-date"
+                        type="date"
+                        value={reservationDate}
+                        onChange={e => setReservationDate(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="res-time" className="text-xs">Time</Label>
+                      <Input
+                        id="res-time"
+                        type="time"
+                        value={reservationTime}
+                        onChange={e => setReservationTime(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="res-party" className="text-xs">Party size</Label>
+                    <Input
+                      id="res-party"
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={reservationPartySize}
+                      onChange={e => setReservationPartySize(e.target.value)}
+                      className="h-8 text-xs w-24"
+                    />
+                  </div>
+                  <Button
+                    className="w-full gap-2"
+                    size="sm"
                     onClick={() => setStep('confirm')}
                   >
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <CheckCircle2 className="w-4 h-4" />
                     I've made my reservation
                   </Button>
                 </div>
@@ -304,10 +388,8 @@ export const BookingPanel = ({
                           key={product.productCode}
                           product={product}
                           groupSize={groupSize}
-                          onBook={() => {
-                            window.open(product.bookingUrl, '_blank', 'noopener,noreferrer');
-                            setStep('confirm');
-                          }}
+                          tripDate={tripDate}
+                          onBook={() => setStep('confirm')}
                         />
                       ))}
                     </div>
@@ -379,20 +461,33 @@ export const BookingPanel = ({
             <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
               <CheckCircle2 className="w-6 h-6 text-green-500 shrink-0" />
               <div>
-                <p className="text-sm font-medium">Booking confirmed?</p>
+                <p className="text-sm font-medium">
+                  {isRestaurant ? 'Reservation made?' : 'Booking completed?'}
+                </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Confirming will lock this activity in your itinerary.
                 </p>
               </div>
             </div>
 
+            {/* Reservation summary for restaurants */}
+            {isRestaurant && (reservationDate || reservationTime || reservationPartySize) && (
+              <div className="bg-muted/40 rounded-xl px-4 py-3 text-sm space-y-1">
+                <p className="font-medium text-xs uppercase tracking-wide text-muted-foreground mb-2">Reservation details</p>
+                {reservationDate && <p>📅 {new Date(reservationDate + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>}
+                {reservationTime && <p>🕐 {reservationTime}</p>}
+                {reservationPartySize && <p>👥 Party of {reservationPartySize}</p>}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="booking-ref" className="text-sm">
-                Booking reference <span className="text-muted-foreground">(optional)</span>
+                {isRestaurant ? 'Reservation confirmation' : 'Booking reference'}{' '}
+                <span className="text-muted-foreground">(optional)</span>
               </Label>
               <Input
                 id="booking-ref"
-                placeholder="e.g. OT-12345 or Viator order ID"
+                placeholder={isRestaurant ? 'e.g. OT-12345 or confirmation email' : 'e.g. Viator order ID'}
                 value={bookingRef}
                 onChange={e => setBookingRef(e.target.value)}
               />
@@ -433,15 +528,32 @@ export const BookingPanel = ({
 const ViatorCard = ({
   product,
   groupSize,
+  tripDate,
   onBook,
 }: {
   product: ViatorProduct;
   groupSize: number;
+  tripDate?: string;
   onBook: () => void;
 }) => {
   const price = product.fromPrice ?? product.priceFrom;
   const image = product.imageUrl ?? product.thumbnailUrl;
   const totalPrice = price ? price * groupSize : undefined;
+
+  const handleBookClick = () => {
+    // Enrich booking URL with date and group size parameters
+    let url = product.bookingUrl;
+    try {
+      const u = new URL(url);
+      if (tripDate) u.searchParams.set('date', tripDate);
+      if (groupSize > 1) u.searchParams.set('pax', String(groupSize));
+      url = u.toString();
+    } catch {
+      // URL parsing failed — use as-is
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+    onBook();
+  };
 
   return (
     <div className="border border-border/60 rounded-xl overflow-hidden bg-card">
@@ -491,7 +603,7 @@ const ViatorCard = ({
           <p className="text-xs text-muted-foreground line-clamp-2">{product.description}</p>
         )}
 
-        <Button size="sm" className="w-full gap-2 mt-1" onClick={onBook}>
+        <Button size="sm" className="w-full gap-2 mt-1" onClick={handleBookClick}>
           <ExternalLink className="w-3.5 h-3.5" />
           Book on Viator
         </Button>

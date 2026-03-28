@@ -33,15 +33,31 @@ interface ViatorProduct {
   pricing?: { summary?: { fromPrice?: number; currency?: string } };
   images?: Array<{ variants?: Array<{ url?: string }> }>;
   webURL?: string;
+  // Duration can appear in multiple formats depending on API version
+  duration?: {
+    fixedDurationInMinutes?: number;
+    variableDurationFromMinutes?: number;
+    variableDurationToMinutes?: number;
+  };
+  durationMinutes?: number; // some endpoints flatten this
 }
 
 function buildAffiliateUrl(productCode: string, webUrl?: string): string {
-  if (webUrl) {
-    // Append affiliate tracking parameter
+  if (webUrl && webUrl.includes('viator.com')) {
+    // Append affiliate tracking parameter to the direct product URL
     const sep = webUrl.includes('?') ? '&' : '?';
     return `${webUrl}${sep}mcid=${VIATOR_PARTNER_ID}`;
   }
-  return `${VIATOR_AFFILIATE_BASE}/tours/${productCode}?mcid=${VIATOR_PARTNER_ID}`;
+  // Fallback: Viator search URL filtered to this product code
+  // The generic /tours/{productCode} path doesn't always resolve correctly
+  return `${VIATOR_AFFILIATE_BASE}/searchResults/all?text=${encodeURIComponent(productCode)}&mcid=${VIATOR_PARTNER_ID}`;
+}
+
+function extractDurationMinutes(p: ViatorProduct): number | undefined {
+  if (p.durationMinutes) return p.durationMinutes;
+  if (p.duration?.fixedDurationInMinutes) return p.duration.fixedDurationInMinutes;
+  if (p.duration?.variableDurationFromMinutes) return p.duration.variableDurationFromMinutes;
+  return undefined;
 }
 
 function mapProduct(p: ViatorProduct) {
@@ -53,9 +69,13 @@ function mapProduct(p: ViatorProduct) {
     reviewCount: p.reviewCount,
     fromPrice: p.pricing?.summary?.fromPrice,
     currency: p.pricing?.summary?.currency ?? 'USD',
+    durationMinutes: extractDurationMinutes(p),
     imageUrl: p.images?.[0]?.variants?.find(v => v.url?.includes('w300'))?.url
       ?? p.images?.[0]?.variants?.[0]?.url,
+    // bookingUrl: direct product page when webURL available, otherwise search fallback
     bookingUrl: buildAffiliateUrl(p.productCode, p.webURL),
+    // Provide the raw webURL so the client can fall back or construct its own URL
+    webURL: p.webURL,
   };
 }
 
