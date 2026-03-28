@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, Mail, Users, Trash2, Check, Clock, Link2, Copy, CheckCheck } from 'lucide-react';
+import { UserPlus, Users, Link2, Copy, CheckCheck, Mail, Crown, Pencil, Eye, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,19 +10,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useTripCollaborators, useInviteCollaborator, useRemoveCollaborator } from '@/hooks/useTripCollaborators';
+import { useTripCollaborators } from '@/hooks/useTripCollaborators';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
 interface InviteCollaboratorDialogProps {
@@ -30,82 +22,59 @@ interface InviteCollaboratorDialogProps {
   tripName?: string;    // city/trip name e.g. "Seoul"
   cityName?: string;    // full city + country e.g. "Seoul, South Korea"
   inviteToken?: string; // from itineraries.invite_token — enables shareable link
+  ownerName?: string;   // display name of the trip owner
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName, inviteToken }: InviteCollaboratorDialogProps) => {
+export const InviteCollaboratorDialog = ({
+  itineraryId,
+  tripName,
+  cityName,
+  inviteToken,
+  ownerName,
+}: InviteCollaboratorDialogProps) => {
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState('');
-  const [emailTouched, setEmailTouched] = useState(false);
-  const [role, setRole] = useState<'viewer' | 'editor'>('viewer');
   const [copied, setCopied] = useState(false);
+  const { user } = useAuth();
 
   const { data: collaborators = [] } = useTripCollaborators(itineraryId);
-  const inviteCollaborator = useInviteCollaborator();
-  const removeCollaborator = useRemoveCollaborator();
 
-  const emailError = emailTouched && email.trim() !== '' && !EMAIL_REGEX.test(email.trim())
-    ? 'Please enter a valid email address'
-    : emailTouched && email.trim() === ''
-    ? 'Email is required'
-    : null;
-
-  const isEmailValid = EMAIL_REGEX.test(email.trim());
-
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setEmailTouched(true);
-    if (!isEmailValid) return;
-
-    await inviteCollaborator.mutateAsync({
-      itineraryId,
-      email: email.trim(),
-      role,
-      tripName: tripName || 'a trip',
-      cityName: cityName || tripName || '',
-    });
-
-    setEmail('');
-    setEmailTouched(false);
-    setRole('viewer');
-  };
-
-  const handleRemove = async (id: string) => {
-    await removeCollaborator.mutateAsync({ id, itineraryId });
-  };
-
-  // Invite token URL lets anyone join without being pre-invited.
-  // Falls back to the direct trip URL if no token exists.
   const shareUrl = inviteToken
     ? `${window.location.origin}/invite/${inviteToken}`
     : `${window.location.origin}/trips/${itineraryId}`;
+
   const tripLabel = tripName ? `"${tripName}"` : 'a trip on Itinera';
-  const whatsAppUrl = `https://wa.me/?text=${encodeURIComponent(`Join me on ${tripLabel}! 🌍\n${shareUrl}`)}`;
-  const emailUrl = `mailto:?subject=${encodeURIComponent(`Join me on ${tripLabel}`)}&body=${encodeURIComponent(`Hey!\n\nI'm planning a trip${cityName ? ` to ${cityName}` : ''} on Itinera and would love for you to join.\n\nClick this link to view the itinerary and join the trip:\n${shareUrl}\n\nSee you there! ✈️`)}`;
+  const whatsAppText = `Join me on ${tripLabel}! 🌍\n${shareUrl}`;
+  const emailSubject = `Join me on ${tripLabel}`;
+  const emailBody = `Hey!\n\nI'm planning a trip${cityName ? ` to ${cityName}` : ''} on Itinera and would love for you to join.\n\nClick this link to view the itinerary and join:\n${shareUrl}\n\nSee you there! ✈️`;
+
+  const whatsAppUrl = `https://wa.me/?text=${encodeURIComponent(whatsAppText)}`;
+  const emailUrl = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
 
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      toast.success('Link copied to clipboard!');
-      setTimeout(() => setCopied(false), 2500);
     } catch {
-      // Fallback for older browsers
       const el = document.createElement('textarea');
       el.value = shareUrl;
       document.body.appendChild(el);
       el.select();
       document.execCommand('copy');
       document.body.removeChild(el);
-      setCopied(true);
-      toast.success('Link copied!');
-      setTimeout(() => setCopied(false), 2500);
     }
+    setCopied(true);
+    toast.success('Link copied!');
+    setTimeout(() => setCopied(false), 2500);
   };
 
-  const acceptedCollaborators = collaborators.filter(c => c.accepted_at);
-  const pendingInvitations = collaborators.filter(c => !c.accepted_at);
+  const acceptedMembers = collaborators.filter(c => c.accepted_at);
+  const memberCount = collaborators.length;
+
+  const roleIcon = (role: string) => {
+    if (role === 'editor') return <Pencil className="w-3 h-3" />;
+    return <Eye className="w-3 h-3" />;
+  };
+
+  const roleLabel = (role: string) => (role === 'editor' ? 'Editor' : 'Viewer');
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -113,239 +82,141 @@ export const InviteCollaboratorDialog = ({ itineraryId, tripName, cityName, invi
         <Button variant="outline" size="sm" className="gap-2">
           <Users className="w-4 h-4" />
           Share
-          {collaborators.length > 0 && (
+          {memberCount > 0 && (
             <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
-              {collaborators.length}
+              {memberCount}
             </Badge>
           )}
         </Button>
       </DialogTrigger>
+
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="w-5 h-5" />
+            <Link2 className="w-5 h-5" />
             Share Trip
           </DialogTitle>
           <DialogDescription>
-            Invite collaborators or share a link for {tripName ? `"${tripName}"` : 'this trip'}.
+            Share this link with anyone you want to join{tripName ? ` "${tripName}"` : ' this trip'}.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="link">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="invite" className="gap-2">
-              <Mail className="w-4 h-4" />
-              Invite
-              {collaborators.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1 flex items-center justify-center text-xs">
-                  {collaborators.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="link" className="gap-2">
-              <Link2 className="w-4 h-4" />
-              Share Link
-            </TabsTrigger>
-          </TabsList>
-
-          {/* ── Invite Tab ─────────────────────────────────────────────── */}
-          <TabsContent value="invite" className="space-y-4 mt-4">
-            <form onSubmit={handleInvite} className="space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Label htmlFor="email" className="sr-only">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onBlur={() => setEmailTouched(true)}
-                    className={`h-10 ${emailError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
-                    aria-invalid={!!emailError}
-                  />
-                </div>
-                <Select value={role} onValueChange={(v) => setRole(v as 'viewer' | 'editor')}>
-                  <SelectTrigger className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                    <SelectItem value="editor">Editor</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="submit"
-                  disabled={!isEmailValid || inviteCollaborator.isPending}
-                >
-                  Invite
-                </Button>
-              </div>
-              {emailError && (
-                <p className="text-xs text-destructive pl-1">{emailError}</p>
-              )}
-              <p className="text-xs text-muted-foreground pl-1">
-                We'll save the invitation. Share the link in the <strong>Share Link</strong> tab to notify them — no email is sent automatically.
-              </p>
-            </form>
-
-            {(acceptedCollaborators.length > 0 || pendingInvitations.length > 0) && (
-              <>
-                <Separator />
-
-                <div className="space-y-4">
-                  {acceptedCollaborators.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-muted-foreground">Trip Members</h4>
-                      {acceptedCollaborators.map((collab) => (
-                        <div
-                          key={collab.id}
-                          className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={collab.profile?.avatar_url || undefined} />
-                              <AvatarFallback>
-                                {collab.email.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="text-sm font-medium">{collab.profile?.full_name || collab.email}</p>
-                              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Check className="w-3 h-3 text-emerald-500" />
-                                {collab.role}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleRemove(collab.id)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {pendingInvitations.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-muted-foreground">Pending Invitations</h4>
-                      {pendingInvitations.map((collab) => (
-                        <div
-                          key={collab.id}
-                          className="flex items-center justify-between p-2 rounded-lg bg-muted/30"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-                              <Mail className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="text-sm">{collab.email}</p>
-                              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                Pending • {collab.role}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleRemove(collab.id)}
-                          >
-                            <Trash2 className="w-4 h-4 text-muted-foreground" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </TabsContent>
-
-          {/* ── Share Link Tab ──────────────────────────────────────────── */}
-          <TabsContent value="link" className="space-y-4 mt-4">
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {inviteToken
-                  ? 'Anyone with this link can join your trip — no pre-invite needed. Share it via WhatsApp, iMessage, or email.'
-                  : 'Share this link with people you\'ve invited. They\'ll need an Itinera account to view the trip.'}
-              </p>
-
-              {/* Copyable link */}
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={shareUrl}
-                  className="text-xs text-muted-foreground bg-muted"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleCopyLink}
-                  className="shrink-0"
-                  title="Copy link"
-                >
-                  {copied ? (
-                    <CheckCheck className="w-4 h-4 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-
-              {/* Share buttons */}
-              <div className="grid grid-cols-3 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={handleCopyLink}
-                >
-                  {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  Copy
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={() => window.open(whatsAppUrl, '_blank', 'noopener,noreferrer')}
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  WhatsApp
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={() => window.open(emailUrl, '_blank', 'noopener,noreferrer')}
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Email
-                </Button>
-              </div>
-
-              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
-                {inviteToken ? (
-                  <>
-                    <p className="font-medium text-foreground">🔗 Open invite link</p>
-                    <p>Anyone who opens this link can join the trip. They'll be asked to sign in or create an account first.</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-medium text-foreground">🔒 Account required</p>
-                    <p>Recipients must sign in to Itinera to view this trip. To give editing access, use the <strong>Invite</strong> tab.</p>
-                  </>
-                )}
-              </div>
+        <div className="space-y-5">
+          {/* ── Invite link ─────────────────────────────────────────────── */}
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={shareUrl}
+                className="text-xs text-muted-foreground bg-muted cursor-text"
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleCopyLink}
+                className="shrink-0"
+                title="Copy link"
+              >
+                {copied
+                  ? <CheckCheck className="w-4 h-4 text-emerald-500" />
+                  : <Copy className="w-4 h-4" />}
+              </Button>
             </div>
-          </TabsContent>
-        </Tabs>
+
+            {/* Share buttons */}
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant="default"
+                className="gap-1.5 col-span-1"
+                onClick={handleCopyLink}
+              >
+                {copied
+                  ? <CheckCheck className="w-4 h-4" />
+                  : <Copy className="w-4 h-4" />}
+                Copy Link
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-1.5 col-span-1"
+                onClick={() => window.open(whatsAppUrl, '_blank', 'noopener,noreferrer')}
+              >
+                <MessageCircle className="w-4 h-4 text-green-500" />
+                WhatsApp
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-1.5 col-span-1"
+                onClick={() => window.open(emailUrl, '_blank', 'noopener,noreferrer')}
+              >
+                <Mail className="w-4 h-4" />
+                Email
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {inviteToken
+                ? 'Anyone with this link can view and join the trip — no pre-invite needed.'
+                : 'Share this link with people who already have an Itinera account.'}
+            </p>
+          </div>
+
+          {/* ── Member list ──────────────────────────────────────────────── */}
+          {(acceptedMembers.length > 0 || ownerName) && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">Trip Members</h4>
+
+                {/* Owner row */}
+                <div className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                        {(ownerName || user?.email || '?').charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {ownerName || user?.email || 'You'}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="gap-1 text-xs">
+                    <Crown className="w-3 h-3 text-amber-500" />
+                    Owner
+                  </Badge>
+                </div>
+
+                {/* Collaborator rows */}
+                {acceptedMembers.map((collab) => (
+                  <div key={collab.id} className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={collab.profile?.avatar_url || undefined} />
+                        <AvatarFallback className="text-xs">
+                          {collab.email.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {collab.profile?.full_name || collab.email}
+                        </p>
+                        {collab.profile?.full_name && (
+                          <p className="text-xs text-muted-foreground">{collab.email}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="gap-1 text-xs">
+                      {roleIcon(collab.role)}
+                      {roleLabel(collab.role)}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
