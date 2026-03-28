@@ -580,13 +580,15 @@ const TripDetail = () => {
   return (
     <div className="min-h-screen pb-12">
       <div className="container px-4 max-w-2xl mx-auto">
-        <div className="py-6 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
-          <div className="flex items-center justify-between mb-2">
-            <Button variant="ghost" onClick={() => navigate('/trips')} className="-ml-2" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to My Trips
+        <div className="py-4 sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+          <div className="flex items-center gap-2 mb-2 min-w-0">
+            <Button variant="ghost" onClick={() => navigate('/trips')} className="-ml-2 shrink-0 gap-1" size="sm">
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Back to My Trips</span>
+              <span className="sm:hidden">Back</span>
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0" />
+            <div className="flex items-center gap-1.5 shrink-0">
               {hasUnsavedChanges && (
                 <Button 
                   size="sm" 

@@ -17,8 +17,13 @@ interface ChatMessage {
   profile?: {
     full_name: string | null;
     avatar_url: string | null;
-    email?: string;
   } | null;
+}
+
+// Map of user_id → display name + avatar (built from trip_collaborators + profiles)
+interface MemberInfo {
+  name: string;
+  avatarUrl?: string;
 }
 
 interface GroupChatProps {
@@ -28,57 +33,70 @@ interface GroupChatProps {
 export const GroupChat = ({ tripId }: GroupChatProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [memberMap, setMemberMap] = useState<Record<string, MemberInfo>>({});
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load initial messages
+  // Load collaborator names + profiles for display
   useEffect(() => {
     if (!tripId) return;
-
-    const loadMessages = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from('trip_chat')
-        .select(`
-          id, trip_id, user_id, message, created_at,
-          profiles:user_id ( full_name, avatar_url )
-        `)
-        .eq('trip_id', tripId)
-        .order('created_at', { ascending: true })
-        .limit(100);
-
-      setMessages((data as ChatMessage[]) ?? []);
-      setLoading(false);
-    };
-
-    loadMessages();
+    supabase
+      .from('trip_collaborators')
+      .select('user_id, email, profiles:user_id ( full_name, avatar_url )')
+      .eq('itinerary_id', tripId)
+      .then(({ data }) => {
+        const map: Record<string, MemberInfo> = {};
+        (data ?? []).forEach((c: any) => {
+          if (!c.user_id) return;
+          const fullName = c.profiles?.full_name as string | null;
+          const emailPrefix = (c.email as string | undefined)?.split('@')[0];
+          map[c.user_id] = {
+            name: fullName || emailPrefix || 'Member',
+            avatarUrl: c.profiles?.avatar_url || undefined,
+          };
+        });
+        setMemberMap(map);
+      });
   }, [tripId]);
 
-  // Scroll to bottom when messages load or change
+  // Load initial messages with profile join
+  useEffect(() => {
+    if (!tripId) return;
+    setLoading(true);
+    supabase
+      .from('trip_chat')
+      .select(`
+        id, trip_id, user_id, message, created_at,
+        profiles:user_id ( full_name, avatar_url )
+      `)
+      .eq('trip_id', tripId)
+      .order('created_at', { ascending: true })
+      .limit(100)
+      .then(({ data }) => {
+        setMessages((data as ChatMessage[]) ?? []);
+        setLoading(false);
+      });
+  }, [tripId]);
+
+  // Scroll to bottom on new messages
   useEffect(() => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, [messages]);
 
-  // Real-time subscription
+  // Real-time subscription — NO optimistic insert so Realtime is the single source of truth
   useEffect(() => {
     if (!tripId) return;
-
     const channel = supabase
       .channel(`trip-chat-${tripId}`)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'trip_chat',
-          filter: `trip_id=eq.${tripId}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'trip_chat', filter: `trip_id=eq.${tripId}` },
         async (payload) => {
           const newMsg = payload.new as ChatMessage;
-          // Fetch profile for the new message's sender
+          // Fetch profile for the sender if not already in memberMap
           if (newMsg.user_id) {
             const { data: profile } = await supabase
               .from('profiles')
@@ -87,48 +105,31 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
               .single();
             newMsg.profile = profile;
           }
-          setMessages(prev => {
-            // Avoid duplicates (optimistic vs real)
-            if (prev.some(m => m.id === newMsg.id)) return prev;
-            return [...prev, newMsg];
-          });
+          // Deduplicate: skip if we already have this id
+          setMessages(prev =>
+            prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]
+          );
         }
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [tripId]);
 
   const handleSend = async () => {
     if (!input.trim() || sending || !user) return;
-
     const msgText = input.trim();
-    setInput('');
+    setInput(''); // clear immediately for responsiveness
     setSending(true);
 
-    // Optimistic insert
-    const tempId = `temp-${Date.now()}`;
-    const optimistic: ChatMessage = {
-      id: tempId,
-      trip_id: tripId,
-      user_id: user.id,
-      message: msgText,
-      created_at: new Date().toISOString(),
-      profile: null,
-    };
-    setMessages(prev => [...prev, optimistic]);
-
-    const { error } = await supabase.from('trip_chat').insert({
-      trip_id: tripId,
-      user_id: user.id,
-      message: msgText,
-    });
+    // Insert — Realtime subscription will add it to state (no optimistic insert = no duplicates)
+    const { error } = await supabase
+      .from('trip_chat')
+      .insert({ trip_id: tripId, user_id: user.id, message: msgText });
 
     if (error) {
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+      // Restore input on failure
       setInput(msgText);
     }
-
     setSending(false);
     inputRef.current?.focus();
   };
@@ -140,16 +141,24 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
     }
   };
 
-  const getDisplayName = (msg: ChatMessage) => {
-    if (msg.profile?.full_name) return msg.profile.full_name;
+  // Resolve display name: own messages → "You", others → full_name → email prefix → "Member"
+  const getDisplayName = (msg: ChatMessage): string => {
     if (msg.user_id === user?.id) return 'You';
-    return 'Group member';
+    // Try inline profile join first (from initial load)
+    if (msg.profile?.full_name) return msg.profile.full_name;
+    // Fall back to the memberMap built from trip_collaborators
+    if (msg.user_id && memberMap[msg.user_id]) return memberMap[msg.user_id].name;
+    return 'Member';
   };
 
-  const getInitial = (msg: ChatMessage) => {
-    const name = getDisplayName(msg);
-    return name.charAt(0).toUpperCase();
+  const getAvatarUrl = (msg: ChatMessage): string | undefined => {
+    if (msg.profile?.avatar_url) return msg.profile.avatar_url;
+    if (msg.user_id && memberMap[msg.user_id]) return memberMap[msg.user_id].avatarUrl;
+    return undefined;
   };
+
+  const getInitial = (msg: ChatMessage): string =>
+    getDisplayName(msg).charAt(0).toUpperCase();
 
   if (loading) {
     return (
@@ -161,9 +170,9 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col" style={{ minHeight: 0 }}>
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 px-1 pb-4 min-h-0" style={{ maxHeight: '400px' }}>
+      <div className="overflow-y-auto space-y-3 pb-4" style={{ maxHeight: '380px', minHeight: '160px' }}>
         {messages.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center text-muted-foreground">
             <MessageSquare className="w-10 h-10 text-muted-foreground/30" />
@@ -176,30 +185,33 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
           messages.map((msg, i) => {
             const isMe = msg.user_id === user?.id;
             const prevMsg = i > 0 ? messages[i - 1] : null;
-            const showSender = !prevMsg || prevMsg.user_id !== msg.user_id;
+            const showSenderLabel = !prevMsg || prevMsg.user_id !== msg.user_id;
+            const displayName = getDisplayName(msg);
+            const avatarUrl = getAvatarUrl(msg);
 
             return (
-              <div
-                key={msg.id}
-                className={cn('flex gap-2.5', isMe && 'flex-row-reverse')}
-              >
-                {/* Avatar (only for first in a group) */}
-                {!isMe && showSender ? (
-                  <Avatar className="w-8 h-8 shrink-0 mt-1">
-                    <AvatarImage src={msg.profile?.avatar_url || undefined} />
-                    <AvatarFallback className="text-xs">{getInitial(msg)}</AvatarFallback>
-                  </Avatar>
-                ) : !isMe ? (
-                  <div className="w-8 shrink-0" />
+              <div key={msg.id} className={cn('flex gap-2.5', isMe && 'flex-row-reverse')}>
+                {/* Avatar — only for first in a consecutive block */}
+                {!isMe ? (
+                  showSenderLabel ? (
+                    <Avatar className="w-7 h-7 shrink-0 mt-1">
+                      <AvatarImage src={avatarUrl} />
+                      <AvatarFallback className="text-xs bg-secondary/20 text-secondary-foreground">
+                        {getInitial(msg)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <div className="w-7 shrink-0" />
+                  )
                 ) : null}
 
-                <div className={cn('max-w-[75%] space-y-0.5', isMe && 'items-end flex flex-col')}>
-                  {showSender && !isMe && (
-                    <p className="text-xs text-muted-foreground pl-1">{getDisplayName(msg)}</p>
+                <div className={cn('max-w-[76%] space-y-0.5', isMe && 'items-end flex flex-col')}>
+                  {showSenderLabel && !isMe && (
+                    <p className="text-xs text-muted-foreground font-medium pl-0.5">{displayName}</p>
                   )}
                   <div
                     className={cn(
-                      'px-3.5 py-2.5 rounded-2xl text-sm',
+                      'px-3.5 py-2 rounded-2xl text-sm leading-relaxed',
                       isMe
                         ? 'bg-primary text-primary-foreground rounded-tr-sm'
                         : 'bg-muted rounded-tl-sm'
@@ -207,9 +219,12 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
                   >
                     {msg.message}
                   </div>
-                  <p className="text-[10px] text-muted-foreground/60 px-1">
-                    {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
-                  </p>
+                  {/* Timestamp on last message in a group */}
+                  {(!messages[i + 1] || messages[i + 1].user_id !== msg.user_id) && (
+                    <p className="text-[10px] text-muted-foreground/60 px-0.5">
+                      {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -219,11 +234,11 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
       </div>
 
       {/* Input */}
-      <div className="pt-3 border-t border-border/60 shrink-0">
+      <div className="pt-3 border-t border-border/60">
         <div className="flex gap-2">
           <Input
             ref={inputRef}
-            placeholder="Type a message…"
+            placeholder={sending ? 'Sending…' : 'Type a message…'}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

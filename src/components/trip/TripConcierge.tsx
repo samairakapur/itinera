@@ -124,14 +124,17 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — sits above the mobile bottom nav (z-50 + pb-16 offset) */}
       <button
         onClick={() => setOpen(true)}
         className={cn(
-          'fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-lg',
+          // On mobile: sit above the 64px bottom nav bar
+          'fixed bottom-[4.5rem] right-4 z-[55] w-14 h-14 rounded-full shadow-xl',
+          // On sm+: back to normal bottom-right
+          'sm:bottom-6 sm:right-6',
           'bg-primary text-primary-foreground',
-          'flex items-center justify-center',
-          'hover:scale-110 transition-transform duration-200',
+          'flex items-center justify-center gap-1.5',
+          'hover:scale-110 active:scale-95 transition-transform duration-200',
           'focus:outline-none focus:ring-2 focus:ring-primary/50',
           open && 'hidden'
         )}
@@ -143,8 +146,8 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
       {/* Chat panel */}
       {open && (
         <div className={cn(
-          'fixed z-50 bg-background border border-border/60 shadow-2xl',
-          // Mobile: full screen
+          'fixed z-[55] bg-background border border-border/60 shadow-2xl',
+          // Mobile: full screen (sits above everything including bottom nav)
           'inset-0',
           // Desktop: floating panel bottom-right
           'sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[600px] sm:rounded-2xl',
