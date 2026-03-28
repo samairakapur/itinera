@@ -55,11 +55,13 @@ interface ViatorProduct {
   productCode: string;
   title: string;
   description?: string;
-  thumbnailUrl?: string;
+  imageUrl?: string;       // Edge function returns imageUrl
+  thumbnailUrl?: string;   // legacy alias
   rating?: number;
   reviewCount?: number;
   durationMinutes?: number;
-  priceFrom?: number;
+  fromPrice?: number;      // Edge function returns fromPrice
+  priceFrom?: number;      // legacy alias
   currency?: string;
   bookingUrl: string;
 }
@@ -137,8 +139,9 @@ export const BookingPanel = ({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              searchTerm: `${activity.title} ${cityName ?? ''}`.trim(),
-              city: cityName,
+              // Edge function expects 'destination' (city) and 'query' (search term)
+              destination: cityName ?? activity.cityName ?? '',
+              query: activity.title,
               groupSize,
             }),
           }
@@ -220,6 +223,19 @@ export const BookingPanel = ({
             {/* ── Restaurant panel ──────────────────────────────────────── */}
             {isRestaurant && (
               <div className="space-y-3">
+                {/* Restaurant meta row */}
+                <div className="flex items-center gap-3 flex-wrap text-sm text-muted-foreground">
+                  {activity.priceTier && (
+                    <span className="font-medium text-foreground">{activity.priceTier}</span>
+                  )}
+                  {activity.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      {activity.location}
+                    </span>
+                  )}
+                </div>
+
                 {hasOpenTable ? (
                   <>
                     <p className="text-sm text-muted-foreground">
@@ -232,11 +248,19 @@ export const BookingPanel = ({
                       <ExternalLink className="w-4 h-4" />
                       Reserve on OpenTable
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full gap-2"
+                      onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Find on Google Maps
+                    </Button>
                   </>
                 ) : (
                   <>
                     <p className="text-sm text-muted-foreground">
-                      OpenTable doesn't cover this city. Use Google Maps to find the restaurant and call to reserve.
+                      Call ahead or find on Google Maps to make a reservation.
                     </p>
                     <Button
                       className="w-full gap-2"
@@ -245,12 +269,6 @@ export const BookingPanel = ({
                       <MapPin className="w-4 h-4" />
                       Find on Google Maps
                     </Button>
-                    {activity.location && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
-                        <MapPin className="w-4 h-4 shrink-0" />
-                        <span>{activity.location}</span>
-                      </div>
-                    )}
                   </>
                 )}
 
@@ -421,13 +439,15 @@ const ViatorCard = ({
   groupSize: number;
   onBook: () => void;
 }) => {
-  const totalPrice = product.priceFrom ? product.priceFrom * groupSize : undefined;
+  const price = product.fromPrice ?? product.priceFrom;
+  const image = product.imageUrl ?? product.thumbnailUrl;
+  const totalPrice = price ? price * groupSize : undefined;
 
   return (
     <div className="border border-border/60 rounded-xl overflow-hidden bg-card">
-      {product.thumbnailUrl && (
+      {image && (
         <img
-          src={product.thumbnailUrl}
+          src={image}
           alt={product.title}
           className="w-full h-36 object-cover"
         />
@@ -453,11 +473,11 @@ const ViatorCard = ({
                 : `${product.durationMinutes}m`}
             </span>
           )}
-          {product.priceFrom !== undefined && (
+          {price !== undefined && (
             <span className="flex items-center gap-1 text-foreground font-medium">
               <DollarSign className="w-3 h-3" />
               {product.currency ?? ''}
-              {product.priceFrom.toFixed(0)}/person
+              {price.toFixed(0)}/person
               {totalPrice && groupSize > 1 && (
                 <span className="text-muted-foreground font-normal">
                   {' '}(total {product.currency ?? ''}{totalPrice.toFixed(0)})

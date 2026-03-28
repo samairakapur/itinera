@@ -85,7 +85,10 @@ serve(async (req: Request) => {
     }
 
     // Build Viator v1 product search payload
-    const searchText = query || destination;
+    // Combine query + destination for best results (e.g. "Eiffel Tower Paris")
+    const searchText = query && destination
+      ? `${query} ${destination}`
+      : (query || destination);
     const payload: Record<string, unknown> = {
       searchTerm: searchText,
       count: 3,
