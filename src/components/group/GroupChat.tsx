@@ -14,13 +14,9 @@ interface ChatMessage {
   user_id: string | null;
   message: string;
   created_at: string;
-  profile?: {
-    full_name: string | null;
-    avatar_url: string | null;
-  } | null;
 }
 
-// Map of user_id → display name + avatar (built from trip_collaborators + profiles)
+// Map of user_id → display name + avatar
 interface MemberInfo {
   name: string;
   avatarUrl?: string;
@@ -40,38 +36,76 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load collaborator names + profiles for display
+  // ---------------------------------------------------------------------------
+  // Load member map: collaborators + trip owner → profile names
+  // profiles has NO FK relationships defined, so we can't use PostgREST join.
+  // Instead: fetch collaborator rows, then fetch profiles in a separate .in() query.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!tripId) return;
-    supabase
-      .from('trip_collaborators')
-      .select('user_id, email, profiles:user_id ( full_name, avatar_url )')
-      .eq('itinerary_id', tripId)
-      .then(({ data }) => {
-        const map: Record<string, MemberInfo> = {};
-        (data ?? []).forEach((c: any) => {
-          if (!c.user_id) return;
-          const fullName = c.profiles?.full_name as string | null;
-          const emailPrefix = (c.email as string | undefined)?.split('@')[0];
-          map[c.user_id] = {
-            name: fullName || emailPrefix || 'Member',
-            avatarUrl: c.profiles?.avatar_url || undefined,
-          };
-        });
-        setMemberMap(map);
+
+    const buildMemberMap = async () => {
+      // 1. Collaborators (user_id + email fallback)
+      const { data: collabs } = await supabase
+        .from('trip_collaborators')
+        .select('user_id, email')
+        .eq('itinerary_id', tripId);
+
+      // 2. Trip owner (may not be in trip_collaborators)
+      const { data: tripRow } = await supabase
+        .from('itineraries')
+        .select('user_id')
+        .eq('id', tripId)
+        .single();
+
+      // 3. Collect all real user_ids (skip placeholder UUID)
+      const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
+      const rawIds = [
+        ...(collabs ?? []).map((c) => c.user_id),
+        tripRow?.user_id,
+      ].filter((id): id is string => !!id && id !== PLACEHOLDER);
+      const userIds = [...new Set(rawIds)];
+
+      if (userIds.length === 0) return;
+
+      // 4. Fetch profiles in one query
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, avatar_url')
+        .in('id', userIds);
+
+      const profileById: Record<string, { full_name: string | null; email: string | null; avatar_url: string | null }> = {};
+      (profiles ?? []).forEach((p) => { profileById[p.id] = p; });
+
+      // 5. Build map
+      const map: Record<string, MemberInfo> = {};
+
+      userIds.forEach((uid) => {
+        const profile = profileById[uid];
+        // Find email from collaborators list (profiles.email may be null for OAuth users)
+        const collab = (collabs ?? []).find((c) => c.user_id === uid);
+        const emailFallback = profile?.email || (collab?.email as string | undefined);
+        map[uid] = {
+          name: profile?.full_name || emailFallback?.split('@')[0] || 'Member',
+          avatarUrl: profile?.avatar_url || undefined,
+        };
       });
+
+      setMemberMap(map);
+    };
+
+    buildMemberMap();
   }, [tripId]);
 
-  // Load initial messages with profile join
+  // ---------------------------------------------------------------------------
+  // Load initial messages (no profile join — we use memberMap for names)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!tripId) return;
     setLoading(true);
     supabase
       .from('trip_chat')
-      .select(`
-        id, trip_id, user_id, message, created_at,
-        profiles:user_id ( full_name, avatar_url )
-      `)
+      .select('id, trip_id, user_id, message, created_at')
       .eq('trip_id', tripId)
       .order('created_at', { ascending: true })
       .limit(100)
@@ -86,7 +120,9 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, [messages]);
 
-  // Real-time subscription — NO optimistic insert so Realtime is the single source of truth
+  // ---------------------------------------------------------------------------
+  // Real-time subscription — Realtime is single source of truth (no optimistic insert)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!tripId) return;
     const channel = supabase
@@ -94,20 +130,11 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'trip_chat', filter: `trip_id=eq.${tripId}` },
-        async (payload) => {
+        (payload) => {
           const newMsg = payload.new as ChatMessage;
-          // Fetch profile for the sender if not already in memberMap
-          if (newMsg.user_id) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('full_name, avatar_url')
-              .eq('id', newMsg.user_id)
-              .single();
-            newMsg.profile = profile;
-          }
           // Deduplicate: skip if we already have this id
-          setMessages(prev =>
-            prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]
+          setMessages((prev) =>
+            prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
           );
         }
       )
@@ -121,15 +148,11 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
     setInput(''); // clear immediately for responsiveness
     setSending(true);
 
-    // Insert — Realtime subscription will add it to state (no optimistic insert = no duplicates)
     const { error } = await supabase
       .from('trip_chat')
       .insert({ trip_id: tripId, user_id: user.id, message: msgText });
 
-    if (error) {
-      // Restore input on failure
-      setInput(msgText);
-    }
+    if (error) setInput(msgText); // restore on failure
     setSending(false);
     inputRef.current?.focus();
   };
@@ -141,20 +164,16 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
     }
   };
 
-  // Resolve display name: own messages → "You", others → full_name → email prefix → "Member"
+  // Resolve display name: own messages → "You", others → memberMap name
   const getDisplayName = (msg: ChatMessage): string => {
+    if (!msg.user_id) return 'Member';
     if (msg.user_id === user?.id) return 'You';
-    // Try inline profile join first (from initial load)
-    if (msg.profile?.full_name) return msg.profile.full_name;
-    // Fall back to the memberMap built from trip_collaborators
-    if (msg.user_id && memberMap[msg.user_id]) return memberMap[msg.user_id].name;
-    return 'Member';
+    return memberMap[msg.user_id]?.name ?? 'Member';
   };
 
   const getAvatarUrl = (msg: ChatMessage): string | undefined => {
-    if (msg.profile?.avatar_url) return msg.profile.avatar_url;
-    if (msg.user_id && memberMap[msg.user_id]) return memberMap[msg.user_id].avatarUrl;
-    return undefined;
+    if (!msg.user_id) return undefined;
+    return memberMap[msg.user_id]?.avatarUrl;
   };
 
   const getInitial = (msg: ChatMessage): string =>
@@ -240,7 +259,7 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
             ref={inputRef}
             placeholder={sending ? 'Sending…' : 'Type a message…'}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={sending}
             className="flex-1 text-sm"

@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, X, Send, Loader2, Sparkles } from 'lucide-react';
+import { X, Send, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from 'sonner';
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'error';
   content: string;
   created_at: string;
 }
@@ -19,6 +17,34 @@ interface TripConciergeProps {
   tripId: string;
   tripName?: string;
 }
+
+// Aria avatar — gradient circle with sparkle
+const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
+  <div
+    className={cn(
+      'rounded-full flex items-center justify-center shrink-0',
+      'bg-gradient-to-br from-violet-500 to-fuchsia-500',
+      size === 'sm' ? 'w-7 h-7' : 'w-9 h-9'
+    )}
+  >
+    <Sparkles className={cn('text-white', size === 'sm' ? 'w-3.5 h-3.5' : 'w-4.5 h-4.5')} style={{ width: size === 'sm' ? 14 : 18, height: size === 'sm' ? 14 : 18 }} />
+  </div>
+);
+
+// Static welcome message shown when there are no saved messages
+const WELCOME_MESSAGE: Message = {
+  id: 'aria-welcome',
+  role: 'assistant',
+  content: `Hi! I'm Aria, your personal trip concierge. 👋
+
+I know your full itinerary, your group's preferences, and your flight times. Ask me anything — from restaurant recommendations to what to do if it rains.
+
+Try asking:
+• What should we do if it rains on Day 2?
+• Find a vegetarian restaurant near our Day 3 hotel
+• We're running late — should we skip anything?`,
+  created_at: new Date().toISOString(),
+};
 
 export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
   const { user } = useAuth();
@@ -42,10 +68,11 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
         .order('created_at', { ascending: true })
         .limit(30);
 
-      if (data) {
+      if (data && data.length > 0) {
         setMessages(data as Message[]);
-        setHistoryLoaded(true);
       }
+      // If no history, leave messages empty — welcome message is shown via displayMessages
+      setHistoryLoaded(true);
     };
 
     loadHistory();
@@ -80,7 +107,11 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
       content: userMessage,
       created_at: new Date().toISOString(),
     };
-    setMessages(prev => [...prev, tempUserMsg]);
+    setMessages((prev) => {
+      // If prev is empty, skip the welcome message now that there's a real message
+      const base = prev.length === 0 ? [] : prev;
+      return [...base, tempUserMsg];
+    });
     setLoading(true);
 
     try {
@@ -88,7 +119,15 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
         body: { tripId, message: userMessage, userId: user.id },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extract human-readable message from FunctionsHttpError / FunctionsFetchError
+        const errMsg =
+          (error as any)?.message ||
+          (error as any)?.context?.error ||
+          'The concierge is temporarily unavailable. Please try again in a moment.';
+        throw new Error(errMsg);
+      }
+
       if (data?.error) throw new Error(data.error);
 
       const assistantMsg: Message = {
@@ -97,12 +136,18 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
         content: data.reply,
         created_at: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, assistantMsg]);
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
-      toast.error('Concierge unavailable. Please try again.');
-      // Remove the optimistic user message on error
-      setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id));
-      setInput(userMessage);
+      const errorText = err instanceof Error ? err.message : 'The concierge is temporarily unavailable.';
+      // Show inline error bubble instead of toast so context isn't lost
+      const errorMsg: Message = {
+        id: `error-${Date.now()}`,
+        role: 'error',
+        content: errorText,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      setInput(userMessage); // restore input so user can retry
     } finally {
       setLoading(false);
     }
@@ -115,6 +160,10 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
     }
   };
 
+  // Show welcome message if no real messages exist yet (after history is loaded)
+  const displayMessages: Message[] =
+    historyLoaded && messages.length === 0 ? [WELCOME_MESSAGE] : messages;
+
   const suggestedPrompts = [
     'What should we do if it rains?',
     'Suggest a nearby restaurant for dinner',
@@ -124,44 +173,42 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
 
   return (
     <>
-      {/* Floating button — sits above the mobile bottom nav (z-50 + pb-16 offset) */}
+      {/* Floating button — sits above mobile bottom nav */}
       <button
         onClick={() => setOpen(true)}
         className={cn(
-          // On mobile: sit above the 64px bottom nav bar
-          'fixed bottom-[4.5rem] right-4 z-[55] w-14 h-14 rounded-full shadow-xl',
-          // On sm+: back to normal bottom-right
+          // Mobile: above 64px bottom nav
+          'fixed bottom-[4.5rem] right-4 z-[55]',
+          'h-12 rounded-full shadow-xl px-4 gap-2',
+          'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white',
+          'flex items-center justify-center',
+          'hover:scale-105 active:scale-95 transition-transform duration-200',
+          'focus:outline-none focus:ring-2 focus:ring-violet-400/50',
+          // Desktop: normal bottom-right, pill with label
           'sm:bottom-6 sm:right-6',
-          'bg-primary text-primary-foreground',
-          'flex items-center justify-center gap-1.5',
-          'hover:scale-110 active:scale-95 transition-transform duration-200',
-          'focus:outline-none focus:ring-2 focus:ring-primary/50',
           open && 'hidden'
         )}
-        aria-label="Open trip concierge"
+        aria-label="Open Trip Concierge"
       >
-        <Sparkles className="w-6 h-6" />
+        <Sparkles className="w-4 h-4 shrink-0" />
+        <span className="text-sm font-medium">Aria</span>
       </button>
 
       {/* Chat panel */}
       {open && (
         <div className={cn(
           'fixed z-[55] bg-background border border-border/60 shadow-2xl',
-          // Mobile: full screen (sits above everything including bottom nav)
           'inset-0',
-          // Desktop: floating panel bottom-right
           'sm:inset-auto sm:bottom-6 sm:right-6 sm:w-96 sm:h-[600px] sm:rounded-2xl',
           'flex flex-col'
         )}>
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border/60 shrink-0">
-            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <Bot className="w-5 h-5 text-primary" />
-            </div>
+            <AriaAvatar />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm leading-tight">Trip Concierge</p>
+              <p className="font-semibold text-sm leading-tight">Aria</p>
               <p className="text-xs text-muted-foreground truncate">
-                {tripName ? `${tripName} · ` : ''}AI assistant
+                {tripName ? `${tripName} · ` : ''}Trip Concierge
               </p>
             </div>
             <Button
@@ -176,76 +223,61 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
-            {messages.length === 0 && !loading && (
-              <div className="space-y-4">
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Bot className="w-4 h-4 text-primary" />
+            {displayMessages.map((msg, idx) => (
+              <div key={msg.id}>
+                {msg.role === 'user' ? (
+                  <div className="flex gap-3 flex-row-reverse">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0 mt-1 text-xs font-medium">
+                      {(user?.email ?? 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="max-w-[80%] px-4 py-3 rounded-2xl rounded-tr-sm text-sm bg-primary text-primary-foreground">
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
                   </div>
-                  <div className="bg-muted/60 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
-                    <p className="text-sm">
-                      Hi! I'm your personal concierge for{' '}
-                      <span className="font-medium">{tripName || 'this trip'}</span>. Ask me anything about your itinerary, alternatives, transport, or restaurants.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Suggested prompts */}
-                <div className="pl-11 space-y-2">
-                  <p className="text-xs text-muted-foreground">Try asking:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedPrompts.map(prompt => (
-                      <button
-                        key={prompt}
-                        onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
-                        className="text-xs px-3 py-1.5 rounded-full border border-border/60 hover:bg-muted/60 transition-colors text-left"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {messages.map(msg => (
-              <div
-                key={msg.id}
-                className={cn(
-                  'flex gap-3',
-                  msg.role === 'user' && 'flex-row-reverse'
-                )}
-              >
-                {msg.role === 'assistant' ? (
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                    <Bot className="w-4 h-4 text-primary" />
+                ) : msg.role === 'error' ? (
+                  <div className="flex gap-3">
+                    <AriaAvatar size="sm" />
+                    <div className="max-w-[80%] px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-red-50 border border-red-200/60 text-red-700">
+                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
                   </div>
                 ) : (
-                  <Avatar className="w-8 h-8 shrink-0 mt-1">
-                    <AvatarFallback className="text-xs">
-                      {(user?.email ?? 'U').charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="flex gap-3">
+                    <AriaAvatar size="sm" />
+                    <div className="max-w-[80%] space-y-0.5">
+                      {/* Show "Aria" label only on the first assistant message or after a user message */}
+                      {(idx === 0 || displayMessages[idx - 1]?.role === 'user') && (
+                        <p className="text-xs text-muted-foreground font-medium pl-0.5">Aria</p>
+                      )}
+                      <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-muted/60">
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      </div>
+                    </div>
+                  </div>
                 )}
-                <div
-                  className={cn(
-                    'max-w-[80%] px-4 py-3 rounded-2xl text-sm',
-                    msg.role === 'assistant'
-                      ? 'bg-muted/60 rounded-tl-sm'
-                      : 'bg-primary text-primary-foreground rounded-tr-sm'
-                  )}
-                >
-                  {/* Simple markdown: convert **bold** and bullet lists */}
-                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                </div>
+
+                {/* Suggested prompts after welcome message only */}
+                {msg.id === 'aria-welcome' && messages.length === 0 && (
+                  <div className="pl-10 mt-3 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {suggestedPrompts.map((prompt) => (
+                        <button
+                          key={prompt}
+                          onClick={() => { setInput(prompt); inputRef.current?.focus(); }}
+                          className="text-xs px-3 py-1.5 rounded-full border border-border/60 hover:bg-muted/60 transition-colors text-left"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
 
             {loading && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <Bot className="w-4 h-4 text-primary" />
-                </div>
+                <AriaAvatar size="sm" />
                 <div className="bg-muted/60 rounded-2xl rounded-tl-sm px-4 py-3">
                   <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                 </div>
@@ -260,9 +292,9 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
             <div className="flex gap-2">
               <Input
                 ref={inputRef}
-                placeholder="Ask about your trip…"
+                placeholder="Ask Aria about your trip…"
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={loading}
                 className="flex-1 text-sm"
@@ -271,7 +303,7 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
                 size="icon"
                 onClick={handleSend}
                 disabled={!input.trim() || loading}
-                className="shrink-0"
+                className="shrink-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0"
               >
                 {loading
                   ? <Loader2 className="w-4 h-4 animate-spin" />
