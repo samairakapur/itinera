@@ -46,6 +46,7 @@ export interface SavedItineraryItem {
   notes: string | null;
   attraction_id: string | null;
   restaurant_id: string | null;
+  price_tier: string | null;
 }
 
 export interface CitySelection {
@@ -330,6 +331,7 @@ export const useCreateItinerary = () => {
               notes: activity.reasoning || null,
               attraction_id: null,
               restaurant_id: null,
+              price_tier: activity.priceTier ?? null,
             });
           });
         };
@@ -402,6 +404,7 @@ export const useUpdateItinerary = () => {
               notes: activity.reasoning || null,
               attraction_id: null,
               restaurant_id: null,
+              price_tier: activity.priceTier ?? null,
             });
           });
         };

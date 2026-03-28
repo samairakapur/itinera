@@ -180,6 +180,14 @@ export const ActivityCard = ({
   const isRestaurant = activity.type === 'restaurant';
   const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
 
+  // priceTier: use stored value or fall back to a sensible default per type
+  // (existing trips pre-date the price_tier column — always show something)
+  const priceTier: Activity['priceTier'] = activity.priceTier ?? (
+    activity.type === 'transport' || activity.type === 'flex' ? '€' :
+    activity.type === 'restaurant' ? '€€' :
+    '€€'
+  );
+
   const getGoogleMapsUrl = () => {
     if (activity.latitude && activity.longitude) {
       return `https://www.google.com/maps/dir/?api=1&destination=${activity.latitude},${activity.longitude}&destination_place_id=`;
@@ -326,11 +334,9 @@ export const ActivityCard = ({
                       Firm
                     </Badge>
                   )}
-                  {activity.priceTier && (
-                    <Badge variant="outline" className="text-xs px-2 py-0.5 border-white/15 text-muted-foreground bg-transparent font-mono">
-                      {activity.priceTier}
-                    </Badge>
-                  )}
+                  <Badge variant="outline" className="text-xs px-2 py-0.5 border-white/15 text-muted-foreground bg-transparent font-mono">
+                    {priceTier}
+                  </Badge>
                 </div>
                 {mainDescription && (
                   <p className="text-sm text-muted-foreground mt-1 line-clamp-2">

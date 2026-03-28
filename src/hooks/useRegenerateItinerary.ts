@@ -207,6 +207,7 @@ export const useRegenerateItinerary = () => {
               notes: activity.reasoning || null,
               attraction_id: null,
               restaurant_id: null,
+              price_tier: activity.priceTier ?? null,
             });
           });
         };

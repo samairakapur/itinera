@@ -348,8 +348,9 @@ export const GuidedProfileForm = ({
       {/* Progress Bar */}
       <GuidedProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col justify-center px-4 py-8">
+      {/* Main Content — scrollable, padded so sticky nav never overlaps options */}
+      {/* pb-36 on mobile ensures last items clear the sticky nav (h~80px) + MobileBottomNav (h-16) */}
+      <div className="flex-1 overflow-y-auto px-4 py-8 pb-36 md:pb-8">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={currentStep}
@@ -429,9 +430,9 @@ export const GuidedProfileForm = ({
         </AnimatePresence>
       </div>
 
-      {/* Navigation */}
-      {/* bottom-16 on mobile clears the fixed MobileBottomNav (h-16); bottom-0 on md+ where it is hidden */}
-      <div className="sticky bottom-16 md:bottom-0 bg-background/95 backdrop-blur-sm border-t px-4 py-4">
+      {/* Navigation — fixed on mobile so it never scrolls away or overlaps content */}
+      {/* bottom-16 clears the MobileBottomNav on mobile; md:sticky+bottom-0 on desktop */}
+      <div className="fixed bottom-16 left-0 right-0 md:relative md:bottom-auto bg-background/95 backdrop-blur-sm border-t px-4 py-4 z-10">
         <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
           <Button
             variant="ghost"

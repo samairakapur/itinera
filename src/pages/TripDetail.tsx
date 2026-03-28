@@ -134,13 +134,14 @@ const TripDetail = () => {
     itinerary.itinerary_items?.forEach(item => {
       const day = daysMap[item.day_number];
       if (!day) return;
-      const activity: Activity = { 
-        id: item.id, 
-        type: item.item_type as any, 
-        title: item.custom_title || 'Activity', 
-        description: item.custom_description || undefined, 
+      const activity: Activity = {
+        id: item.id,
+        type: item.item_type as any,
+        title: item.custom_title || 'Activity',
+        description: item.custom_description || undefined,
         reasoning: item.notes || undefined,
         time: (item as any).scheduled_time || undefined,
+        priceTier: (item.price_tier as Activity['priceTier']) || undefined,
       };
       if (item.time_slot === 'morning') day.morning.push(activity);
       else if (item.time_slot === 'afternoon') day.afternoon.push(activity);
