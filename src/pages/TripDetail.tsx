@@ -13,7 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TripActivityFeed } from '@/components/group/TripActivityFeed';
 import { VotingPanel } from '@/components/group/VotingPanel';
+import { GroupChat } from '@/components/group/GroupChat';
 import { ProposeChangeDialog } from '@/components/group/ProposeChangeDialog';
+import { TripConcierge } from '@/components/trip/TripConcierge';
 import { DayCard, DayData } from '@/components/trip/DayCard';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
@@ -58,7 +60,7 @@ const TripDetail = () => {
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [groupTab, setGroupTab] = useState<'votes' | 'activity'>('votes');
+  const [groupTab, setGroupTab] = useState<'votes' | 'activity' | 'chat'>('votes');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogDay, setAddDialogDay] = useState(1);
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
@@ -685,13 +687,21 @@ const TripDetail = () => {
                       Votes {proposals.length > 0 && `(${proposals.length})`}
                     </Button>
                     <Button
+                      variant={groupTab === 'chat' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-3 text-xs gap-1.5"
+                      onClick={() => setGroupTab('chat')}
+                    >
+                      Chat
+                    </Button>
+                    <Button
                       variant={groupTab === 'activity' ? 'default' : 'ghost'}
                       size="sm"
                       className="h-7 px-3 text-xs gap-1.5"
                       onClick={() => setGroupTab('activity')}
                     >
                       <ActivityIcon className="w-3 h-3" />
-                      Activity
+                      Log
                     </Button>
                   </div>
                 </div>
@@ -706,6 +716,8 @@ const TripDetail = () => {
                     isLoading={groupLoading}
                     onCreateProposal={isDemocratic ? () => setProposalDialog({ open: true, type: 'add_activity' }) : undefined}
                   />
+                ) : groupTab === 'chat' ? (
+                  <GroupChat tripId={tripId!} />
                 ) : (
                   <TripActivityFeed feed={activityFeed} isLoading={groupLoading} />
                 )}
@@ -1029,6 +1041,14 @@ const TripDetail = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Trip Concierge — floating AI assistant */}
+      {tripId && (
+        <TripConcierge
+          tripId={tripId}
+          tripName={itinerary.name || itinerary.cities?.name}
+        />
+      )}
     </div>
   );
 };
