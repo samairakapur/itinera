@@ -234,13 +234,13 @@ export const useRegenerateItinerary = () => {
       }
 
       // Fire-and-forget Viator enrichment
-      const cityName = itinerary.cities?.name ?? '';
-      if (insertedItems.length > 0 && cityName) {
+      const enrichCityName = itinerary.cities?.name ?? '';
+      if (insertedItems.length > 0 && enrichCityName) {
         supabase.auth.getSession().then(({ data: { session } }) => {
           if (!session?.access_token) return;
           enrichActivitiesWithViator({
             items: insertedItems,
-            cityName,
+            cityName: enrichCityName,
             budgetLevel: itinerary.budget_level ?? undefined,
             groupSize: (itinerary as any).group_size ?? undefined,
             accessToken: session.access_token,
