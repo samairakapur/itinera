@@ -337,6 +337,25 @@ Deno.serve(async (req: Request) => {
           END $$;
         `,
       },
+      {
+        name: 'profiles — allow all authenticated users to read all profiles (needed for chat display names)',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'profiles'
+                AND policyname = 'Users can read all profiles'
+            ) THEN
+              CREATE POLICY "Users can read all profiles"
+              ON public.profiles
+              FOR SELECT
+              TO authenticated
+              USING (true);
+            END IF;
+          END $$;
+        `,
+      },
     ];
 
     for (const m of migrations) {
