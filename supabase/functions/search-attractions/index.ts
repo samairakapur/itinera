@@ -116,9 +116,8 @@ serve(async (req: Request) => {
       currency: 'USD',
     };
 
-    if (groupSize && groupSize > 1) {
-      payload.pricingAgeGroup = [{ ageBand: 'ADULT', numberOfTravelers: groupSize }];
-    }
+    // NOTE: pricingAgeGroup is NOT a valid field for /partner/products/search — omit it.
+    // groupSize is used only for context (passed through to UI), not sent to Viator.
 
     // Use v1 text search endpoint
     const searchRes = await fetch(`${VIATOR_API_BASE}/products/search`, {
@@ -127,17 +126,21 @@ serve(async (req: Request) => {
         'exp-api-key': apiKey,
         'Accept-Language': 'en-US',
         'Content-Type': 'application/json',
+        'Accept': 'application/json;version=2.0',
       },
       body: JSON.stringify(payload),
     });
 
     // Sandbox key may return 401/403 before activation
     if (searchRes.status === 401 || searchRes.status === 403) {
+      const authErrText = await searchRes.text().catch(() => '');
+      console.error('[search-attractions] Viator auth error:', searchRes.status, authErrText);
       return new Response(
         JSON.stringify({
           products: [],
           fallback: true,
           reason: 'Viator sandbox key not yet activated — check partner portal',
+          debug: authErrText.slice(0, 200),
         }),
         { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
       );
@@ -145,15 +148,30 @@ serve(async (req: Request) => {
 
     if (!searchRes.ok) {
       const errText = await searchRes.text();
-      console.error('Viator API error:', searchRes.status, errText);
+      console.error('[search-attractions] Viator API error:', searchRes.status, errText);
+      console.error('[search-attractions] Request payload was:', JSON.stringify(payload));
       return new Response(
-        JSON.stringify({ products: [], fallback: true, reason: `Viator error: ${searchRes.status}` }),
+        JSON.stringify({ products: [], fallback: true, reason: `Viator error: ${searchRes.status}`, debug: errText.slice(0, 300) }),
         { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
       );
     }
 
-    const data = await searchRes.json();
-    const products: ViatorProduct[] = data.products ?? data.data?.products ?? [];
+    const rawBody = await searchRes.text();
+    console.log('[search-attractions] Viator raw response (first 800 chars):', rawBody.slice(0, 800));
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(rawBody);
+    } catch {
+      console.error('[search-attractions] Failed to parse Viator response as JSON');
+      return new Response(
+        JSON.stringify({ products: [], fallback: true, reason: 'Invalid JSON from Viator' }),
+        { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Viator v2 response shape: { products: [...] } or { data: { products: [...] } }
+    const products: ViatorProduct[] = (data.products as ViatorProduct[]) ?? (data as any)?.data?.products ?? [];
     const mapped = products.slice(0, 3).map(mapProduct);
 
     return new Response(
