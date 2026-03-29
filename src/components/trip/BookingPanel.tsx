@@ -52,6 +52,49 @@ function cityHasOpenTable(city?: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Foursquare place details (fetched when restaurant panel opens)
+// ---------------------------------------------------------------------------
+interface FoursquarePlace {
+  tel?: string;
+  website?: string;
+  hours?: { display?: string; is_open_now?: boolean };
+  categories?: Array<{ name: string }>;
+  location?: { address?: string; locality?: string };
+}
+
+const FSQ_KEY = import.meta.env.VITE_FOURSQUARE_API_KEY as string | undefined;
+
+async function fetchFoursquareDetails(
+  restaurantName: string,
+  city?: string
+): Promise<FoursquarePlace | null> {
+  if (!FSQ_KEY) return null;
+  try {
+    const near = city ? `&near=${encodeURIComponent(city)}` : '';
+    const url =
+      `https://api.foursquare.com/v3/places/search` +
+      `?query=${encodeURIComponent(restaurantName)}${near}&categories=13065&limit=1` +
+      `&fields=name,tel,website,hours,location,categories`;
+    const res = await fetch(url, {
+      headers: { Authorization: FSQ_KEY, Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const place = data?.results?.[0];
+    if (!place) return null;
+    return {
+      tel: place.tel,
+      website: place.website,
+      hours: place.hours,
+      categories: place.categories,
+      location: place.location,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Viator result type (from search-attractions edge function)
 // ---------------------------------------------------------------------------
 interface ViatorProduct {
@@ -110,6 +153,9 @@ export const BookingPanel = ({
   const [reservationDate, setReservationDate] = useState(tripDate ?? new Date().toISOString().split('T')[0]);
   const [reservationTime, setReservationTime] = useState('');
   const [reservationPartySize, setReservationPartySize] = useState(String(groupSize));
+  // Foursquare restaurant details
+  const [fsqPlace, setFsqPlace] = useState<FoursquarePlace | null>(null);
+  const [fsqLoading, setFsqLoading] = useState(false);
 
   const isRestaurant = activity.type === 'restaurant';
   const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
@@ -178,11 +224,22 @@ export const BookingPanel = ({
     load();
   }, [open, activity.id, isAttraction, activity.isPrebooked, activity.title, cityName, groupSize]);
 
+  // Load Foursquare details when restaurant panel opens
+  useEffect(() => {
+    if (!open || !isRestaurant) return;
+    setFsqPlace(null);
+    setFsqLoading(true);
+    fetchFoursquareDetails(activity.title, cityName || activity.cityName)
+      .then(place => setFsqPlace(place))
+      .finally(() => setFsqLoading(false));
+  }, [open, isRestaurant, activity.title, cityName, activity.cityName]);
+
   // Reset on close / pre-fill reservation fields on open
   useEffect(() => {
     if (!open) {
       setStep('browse');
       setBookingRef('');
+      setFsqPlace(null);
     } else {
       setReservationDate(tripDate ?? new Date().toISOString().split('T')[0]);
       setReservationPartySize(String(groupSize));
@@ -278,6 +335,52 @@ export const BookingPanel = ({
                     </span>
                   )}
                 </div>
+
+                {/* Foursquare details — phone, hours, website */}
+                {(fsqLoading || fsqPlace) && (
+                  <div className="space-y-1.5 text-sm">
+                    {fsqLoading && !fsqPlace && (
+                      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Looking up restaurant details…</span>
+                      </div>
+                    )}
+                    {fsqPlace?.tel && (
+                      <a
+                        href={`tel:${fsqPlace.tel.replace(/\s/g, '')}`}
+                        className="flex items-center gap-2 text-sm hover:underline text-foreground"
+                      >
+                        <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <span>{fsqPlace.tel}</span>
+                      </a>
+                    )}
+                    {fsqPlace?.website && (
+                      <a
+                        href={fsqPlace.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm hover:underline text-primary truncate"
+                      >
+                        <Globe className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{fsqPlace.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span>
+                      </a>
+                    )}
+                    {fsqPlace?.hours?.display && (
+                      <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          <span className={cn(
+                            'text-xs font-medium mr-1.5',
+                            fsqPlace.hours.is_open_now ? 'text-green-600' : 'text-red-500'
+                          )}>
+                            {fsqPlace.hours.is_open_now ? 'Open now' : 'Closed now'}
+                          </span>
+                          <span className="text-xs">{fsqPlace.hours.display}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Advisory banners */}
                 <div className="space-y-2">
