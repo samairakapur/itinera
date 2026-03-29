@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import type { DayData } from '@/components/trip/DayCard';
 import { addDays, format } from 'date-fns';
+import { enrichActivitiesWithViator } from '@/utils/viatorEnrichment';
 
 export interface SavedItinerary {
   id: string;
@@ -48,6 +49,14 @@ export interface SavedItineraryItem {
   attraction_id: string | null;
   restaurant_id: string | null;
   price_tier: string | null;
+  // Viator pre-selected tour (populated asynchronously after save)
+  viator_product_code?: string | null;
+  viator_booking_url?: string | null;
+  viator_product_title?: string | null;
+  viator_price_per_person?: number | null;
+  viator_rating?: number | null;
+  viator_duration_minutes?: number | null;
+  viator_image_url?: string | null;
 }
 
 export interface CitySelection {
@@ -345,15 +354,34 @@ export const useCreateItinerary = () => {
 
       console.log('[useCreateItinerary] itinerary_items count:', items.length);
 
+      let insertedItems: Array<{ id: string; item_type: string; custom_title: string | null }> = [];
+
       if (items.length > 0) {
-        const { error: itemsError } = await supabase
+        const { data: savedItems, error: itemsError } = await supabase
           .from('itinerary_items')
-          .insert(items);
+          .insert(items)
+          .select('id, item_type, custom_title');
 
         if (itemsError) {
           console.error('[useCreateItinerary] itemsError:', itemsError);
           throw itemsError;
         }
+        insertedItems = savedItems ?? [];
+      }
+
+      // Fire-and-forget Viator enrichment for attraction items
+      const primaryCityName = input.selectedCities?.[0]?.cityName ?? '';
+      if (insertedItems.length > 0 && primaryCityName) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session?.access_token) return;
+          enrichActivitiesWithViator({
+            items: insertedItems,
+            cityName: primaryCityName,
+            budgetLevel: input.budgetLevel,
+            groupSize: input.groupSize,
+            accessToken: session.access_token,
+          }).catch(() => {}); // always non-fatal
+        });
       }
 
       return itinerary;
@@ -374,12 +402,18 @@ export const useUpdateItinerary = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ 
-      itineraryId, 
-      days 
-    }: { 
-      itineraryId: string; 
+    mutationFn: async ({
+      itineraryId,
+      days,
+      cityName,
+      budgetLevel,
+      groupSize,
+    }: {
+      itineraryId: string;
       days: DayData[];
+      cityName?: string;
+      budgetLevel?: string;
+      groupSize?: number;
     }) => {
       // Delete existing items
       const { error: deleteError } = await supabase
@@ -391,7 +425,7 @@ export const useUpdateItinerary = () => {
 
       // Create new items
       const items: Omit<SavedItineraryItem, 'id'>[] = [];
-      
+
       days.forEach((day) => {
         const addItems = (activities: typeof day.morning, timeSlot: string) => {
           activities.forEach((activity, index) => {
@@ -416,12 +450,16 @@ export const useUpdateItinerary = () => {
         addItems(day.evening, 'evening');
       });
 
+      let insertedItems: Array<{ id: string; item_type: string; custom_title: string | null }> = [];
+
       if (items.length > 0) {
-        const { error: insertError } = await supabase
+        const { data: savedItems, error: insertError } = await supabase
           .from('itinerary_items')
-          .insert(items);
+          .insert(items)
+          .select('id, item_type, custom_title');
 
         if (insertError) throw insertError;
+        insertedItems = savedItems ?? [];
       }
 
       // Update timestamp
@@ -431,6 +469,20 @@ export const useUpdateItinerary = () => {
         .eq('id', itineraryId);
 
       if (updateError) throw updateError;
+
+      // Fire-and-forget Viator enrichment
+      if (insertedItems.length > 0 && cityName) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session?.access_token) return;
+          enrichActivitiesWithViator({
+            items: insertedItems,
+            cityName,
+            budgetLevel,
+            groupSize,
+            accessToken: session.access_token,
+          }).catch(() => {});
+        });
+      }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['itinerary', variables.itineraryId] });

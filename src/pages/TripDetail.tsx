@@ -144,6 +144,14 @@ const TripDetail = () => {
         reasoning: item.notes || undefined,
         time: (item as any).scheduled_time || undefined,
         priceTier: (item.price_tier as Activity['priceTier']) || undefined,
+        // Viator pre-selected tour (populated asynchronously after save)
+        viatorProductCode: item.viator_product_code || undefined,
+        viatorBookingUrl: item.viator_booking_url || undefined,
+        viatorProductTitle: item.viator_product_title || undefined,
+        viatorPricePerPerson: item.viator_price_per_person || undefined,
+        viatorRating: item.viator_rating || undefined,
+        viatorDurationMinutes: item.viator_duration_minutes || undefined,
+        viatorImageUrl: item.viator_image_url || undefined,
       };
       if (item.time_slot === 'morning') day.morning.push(activity);
       else if (item.time_slot === 'afternoon') day.afternoon.push(activity);
@@ -165,13 +173,19 @@ const TripDetail = () => {
 
   const saveChanges = useCallback((newDays: DayData[], showToast = true) => {
     if (!tripId) return;
-    updateItinerary.mutate({ itineraryId: tripId, days: newDays }, {
+    updateItinerary.mutate({
+      itineraryId: tripId,
+      days: newDays,
+      cityName: itinerary?.cities?.name,
+      budgetLevel: itinerary?.budget_level ?? undefined,
+      groupSize: (itinerary as any)?.group_size ?? undefined,
+    }, {
       onSuccess: () => {
         setHasUnsavedChanges(false);
         if (showToast) toast.success('Changes saved!');
       }
     });
-  }, [tripId, updateItinerary]);
+  }, [tripId, updateItinerary, itinerary]);
 
   const handleManualSave = useCallback(() => {
     saveChanges(days);

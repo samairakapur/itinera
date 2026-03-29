@@ -6,6 +6,7 @@ import { parseItineraryText } from '@/utils/itineraryParser';
 import { FlightDetail } from './useFlightDetails';
 import { SavedItinerary, SavedItineraryItem } from './useItineraries';
 import { differenceInDays, format } from 'date-fns';
+import { enrichActivitiesWithViator } from '@/utils/viatorEnrichment';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
@@ -217,15 +218,34 @@ export const useRegenerateItinerary = () => {
         addItems(day.evening, 'evening');
       });
 
+      let insertedItems: Array<{ id: string; item_type: string; custom_title: string | null }> = [];
+
       if (items.length > 0) {
-        const { error: insertError } = await supabase
+        const { data: savedItems, error: insertError } = await supabase
           .from('itinerary_items')
-          .insert(items);
+          .insert(items)
+          .select('id, item_type, custom_title');
 
         if (insertError) {
           console.error('[regenerate] insert items error:', insertError);
           throw new Error('Failed to save regenerated itinerary items');
         }
+        insertedItems = savedItems ?? [];
+      }
+
+      // Fire-and-forget Viator enrichment
+      const cityName = itinerary.cities?.name ?? '';
+      if (insertedItems.length > 0 && cityName) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session?.access_token) return;
+          enrichActivitiesWithViator({
+            items: insertedItems,
+            cityName,
+            budgetLevel: itinerary.budget_level ?? undefined,
+            groupSize: (itinerary as any).group_size ?? undefined,
+            accessToken: session.access_token,
+          }).catch(() => {});
+        });
       }
 
       // Mark itinerary as flight-aware

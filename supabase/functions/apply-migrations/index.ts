@@ -338,6 +338,19 @@ Deno.serve(async (req: Request) => {
         `,
       },
       {
+        name: 'itinerary_items — add Viator pre-selected tour columns',
+        ddl: `
+          ALTER TABLE public.itinerary_items
+            ADD COLUMN IF NOT EXISTS viator_product_code TEXT,
+            ADD COLUMN IF NOT EXISTS viator_booking_url TEXT,
+            ADD COLUMN IF NOT EXISTS viator_product_title TEXT,
+            ADD COLUMN IF NOT EXISTS viator_price_per_person DECIMAL(10,2),
+            ADD COLUMN IF NOT EXISTS viator_rating DECIMAL(3,2),
+            ADD COLUMN IF NOT EXISTS viator_duration_minutes INTEGER,
+            ADD COLUMN IF NOT EXISTS viator_image_url TEXT;
+        `,
+      },
+      {
         name: 'profiles — allow all authenticated users to read all profiles (needed for chat display names)',
         ddl: `
           DO $$

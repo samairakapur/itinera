@@ -40,6 +40,13 @@ interface PublicItinerary {
     custom_title: string | null;
     custom_description: string | null;
     notes: string | null;
+    viator_product_code: string | null;
+    viator_booking_url: string | null;
+    viator_product_title: string | null;
+    viator_price_per_person: number | null;
+    viator_rating: number | null;
+    viator_duration_minutes: number | null;
+    viator_image_url: string | null;
   }[];
 }
 
@@ -64,7 +71,9 @@ const PublicTripView = () => {
             cities (name, country, image_url),
             itinerary_items (
               id, day_number, time_slot, order_index,
-              item_type, custom_title, custom_description, notes
+              item_type, custom_title, custom_description, notes,
+              viator_product_code, viator_booking_url, viator_product_title,
+              viator_price_per_person, viator_rating, viator_duration_minutes, viator_image_url
             )
           `)
           .eq('public_link_id', publicLinkId)
@@ -103,6 +112,13 @@ const PublicTripView = () => {
             title: item.custom_title || 'Activity',
             description: item.custom_description || undefined,
             reasoning: item.notes || undefined,
+            viatorProductCode: item.viator_product_code || undefined,
+            viatorBookingUrl: item.viator_booking_url || undefined,
+            viatorProductTitle: item.viator_product_title || undefined,
+            viatorPricePerPerson: item.viator_price_per_person || undefined,
+            viatorRating: item.viator_rating || undefined,
+            viatorDurationMinutes: item.viator_duration_minutes || undefined,
+            viatorImageUrl: item.viator_image_url || undefined,
           };
           if (item.time_slot === 'morning') day.morning.push(activity);
           else if (item.time_slot === 'afternoon') day.afternoon.push(activity);

@@ -72,6 +72,14 @@ export interface Activity {
   flexibility?: 'firm' | 'soft' | 'flex';
   /** Price tier indicator */
   priceTier?: '€' | '€€' | '€€€' | '€€€€' | '$' | '$$' | '$$$' | '$$$$';
+  /** Viator pre-selected tour — populated after itinerary save via enrichActivitiesWithViator */
+  viatorProductCode?: string;
+  viatorBookingUrl?: string;
+  viatorProductTitle?: string;
+  viatorPricePerPerson?: number;
+  viatorRating?: number;
+  viatorDurationMinutes?: number;
+  viatorImageUrl?: string;
 }
 
 interface ActivityCardProps {
@@ -515,16 +523,35 @@ export const ActivityCard = ({
               </div>
             )}
             {isAttraction && !activity.isPrebooked && (
-              <div className="mt-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-                  onClick={() => window.open(getViatorUrl(), '_blank', 'noopener,noreferrer')}
-                >
-                  <Ticket className="w-3.5 h-3.5" />
-                  Find tours on Viator
-                </Button>
+              <div className="mt-3 space-y-2">
+                {/* Viator pre-selected tour chip */}
+                {activity.viatorProductCode ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/8 border border-primary/15 rounded-lg px-2.5 py-1.5">
+                    <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                    <span className="text-primary font-medium">Tour found</span>
+                    {activity.viatorRating !== undefined && (
+                      <span className="flex items-center gap-0.5">
+                        <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                        {activity.viatorRating.toFixed(1)}
+                      </span>
+                    )}
+                    {activity.viatorPricePerPerson !== undefined && (
+                      <span className="text-foreground font-medium">
+                        · from ${activity.viatorPricePerPerson.toFixed(0)}/pp
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                    onClick={() => window.open(getViatorUrl(), '_blank', 'noopener,noreferrer')}
+                  >
+                    <Ticket className="w-3.5 h-3.5" />
+                    Find tours on Viator
+                  </Button>
+                )}
               </div>
             )}
 

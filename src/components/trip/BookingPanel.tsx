@@ -15,6 +15,8 @@ import {
   Calendar,
   AlertTriangle,
   Info,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -147,6 +149,7 @@ export const BookingPanel = ({
   const [step, setStep] = useState<'browse' | 'confirm'>('browse');
   const [viatorResults, setViatorResults] = useState<ViatorProduct[]>([]);
   const [viatorLoading, setViatorLoading] = useState(false);
+  const [browseOtherOpen, setBrowseOtherOpen] = useState(false);
   const [bookingRef, setBookingRef] = useState('');
   const [confirming, setConfirming] = useState(false);
   // Reservation tracker state
@@ -240,6 +243,7 @@ export const BookingPanel = ({
       setStep('browse');
       setBookingRef('');
       setFsqPlace(null);
+      setBrowseOtherOpen(false);
     } else {
       setReservationDate(tripDate ?? new Date().toISOString().split('T')[0]);
       setReservationPartySize(String(groupSize));
@@ -475,7 +479,124 @@ export const BookingPanel = ({
             {/* ── Attraction panel ──────────────────────────────────────── */}
             {isAttraction && !activity.isPrebooked && (
               <div className="space-y-4">
-                {viatorLoading ? (
+                {/* ── Pre-selected AI tour ─────────────────────────────── */}
+                {activity.viatorProductCode ? (
+                  <div className="space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                      <p className="text-sm font-medium text-foreground">AI-Selected Tour</p>
+                    </div>
+
+                    {/* Tour card */}
+                    <div className="border border-primary/20 rounded-xl overflow-hidden bg-primary/5">
+                      {activity.viatorImageUrl && (
+                        <img
+                          src={activity.viatorImageUrl}
+                          alt={activity.viatorProductTitle ?? activity.title}
+                          className="w-full h-40 object-cover"
+                        />
+                      )}
+                      <div className="p-3 space-y-2">
+                        <p className="text-sm font-medium leading-snug">
+                          {activity.viatorProductTitle ?? activity.title}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          {activity.viatorRating !== undefined && (
+                            <span className="flex items-center gap-1">
+                              <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                              {activity.viatorRating.toFixed(1)}
+                            </span>
+                          )}
+                          {activity.viatorDurationMinutes && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {activity.viatorDurationMinutes >= 60
+                                ? `${Math.floor(activity.viatorDurationMinutes / 60)}h${activity.viatorDurationMinutes % 60 > 0 ? ` ${activity.viatorDurationMinutes % 60}m` : ''}`
+                                : `${activity.viatorDurationMinutes}m`}
+                            </span>
+                          )}
+                          {activity.viatorPricePerPerson !== undefined && (
+                            <span className="flex items-center gap-1 text-foreground font-medium">
+                              <DollarSign className="w-3 h-3" />
+                              {activity.viatorPricePerPerson.toFixed(0)}/person
+                              {groupSize > 1 && (
+                                <span className="text-muted-foreground font-normal">
+                                  {' '}(total ${(activity.viatorPricePerPerson * groupSize).toFixed(0)})
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          className="w-full gap-2 mt-1"
+                          onClick={() => {
+                            let url = activity.viatorBookingUrl ?? '';
+                            try {
+                              const u = new URL(url);
+                              if (tripDate) u.searchParams.set('date', tripDate);
+                              if (groupSize > 1) u.searchParams.set('pax', String(groupSize));
+                              url = u.toString();
+                            } catch { /* use as-is */ }
+                            window.open(url, '_blank', 'noopener,noreferrer');
+                            setStep('confirm');
+                          }}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Book this tour on Viator
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Browse other options — collapsible */}
+                    <button
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                      onClick={() => setBrowseOtherOpen(v => !v)}
+                    >
+                      <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', browseOtherOpen && 'rotate-180')} />
+                      Browse other options
+                    </button>
+
+                    {browseOtherOpen && (
+                      <div className="space-y-3 pt-1">
+                        {viatorLoading ? (
+                          <div className="flex items-center gap-2 py-4 text-muted-foreground justify-center">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-sm">Loading tours…</span>
+                          </div>
+                        ) : viatorResults.length > 0 ? (
+                          viatorResults
+                            .filter(p => p.productCode !== activity.viatorProductCode)
+                            .map(product => (
+                              <ViatorCard
+                                key={product.productCode}
+                                product={product}
+                                groupSize={groupSize}
+                                tripDate={tripDate}
+                                onBook={() => setStep('confirm')}
+                              />
+                            ))
+                        ) : (
+                          <Button
+                            variant="outline"
+                            className="w-full gap-2"
+                            onClick={() => {
+                              const q = encodeURIComponent(`${activity.title} ${cityName ?? ''}`.trim());
+                              window.open(
+                                `https://www.viator.com/searchResults/all?text=${q}&pax=${groupSize}&mcid=P00294080`,
+                                '_blank',
+                                'noopener,noreferrer'
+                              );
+                            }}
+                          >
+                            <Ticket className="w-4 h-4" />
+                            Search all tours on Viator
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : viatorLoading ? (
                   <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin" />
                     <span className="text-sm">Searching bookable tours…</span>
