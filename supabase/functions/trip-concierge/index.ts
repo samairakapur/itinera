@@ -225,6 +225,7 @@ YOUR ROLE AS ARIA:
         max_tokens: 600,
         temperature: 0.7,
       }),
+      signal: AbortSignal.timeout(28000), // 28s — well within Supabase's 30s limit
     });
 
     if (!aiRes.ok) {
@@ -258,7 +259,13 @@ YOUR ROLE AS ARIA:
     return json({ reply });
 
   } catch (err) {
-    console.error('[trip-concierge] unhandled error:', err);
-    return json({ error: err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.' });
+    const msg = err instanceof Error ? err.message : String(err);
+    const isTimeout = msg.includes('timed out') || msg.includes('AbortError') || msg.includes('signal');
+    console.error('[trip-concierge] unhandled error:', msg);
+    return json({
+      error: isTimeout
+        ? 'Aria took too long to respond. Please try again.'
+        : `Aria error: ${msg}`,
+    });
   }
 });

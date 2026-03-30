@@ -120,11 +120,22 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
       });
 
       if (error) {
-        // Extract human-readable message from FunctionsHttpError / FunctionsFetchError
-        const errMsg =
-          (error as any)?.message ||
-          (error as any)?.context?.error ||
-          'The concierge is temporarily unavailable. Please try again in a moment.';
+        // Supabase returns FunctionsHttpError for non-2xx. Try to extract the actual body.
+        let errMsg = 'Aria is temporarily unavailable. Please try again.';
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx?.json) {
+            const body = await ctx.json();
+            errMsg = body?.error || errMsg;
+          } else if (ctx?.text) {
+            const text = await ctx.text();
+            errMsg = text || errMsg;
+          } else {
+            errMsg = (error as any)?.message || errMsg;
+          }
+        } catch {
+          errMsg = (error as any)?.message || errMsg;
+        }
         throw new Error(errMsg);
       }
 

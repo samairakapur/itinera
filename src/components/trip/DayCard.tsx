@@ -574,13 +574,25 @@ export const DayCard = ({
                   <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                   <div className="flex-1 space-y-1">
                     <p className="font-medium text-destructive">
-                      Day is {overflowLabel(daySchedule)} over schedule
+                      Day is {overflowLabel(daySchedule)} schedule
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {daySchedule.suggestedDropIds.length > 0
                         ? `Consider removing the highlighted flex block${daySchedule.suggestedDropIds.length > 1 ? 's' : ''} to bring the day back on track.`
                         : 'Consider shortening an activity or moving one to the next day.'}
                     </p>
+                    {daySchedule.suggestedDropIds.length > 0 && onRemove && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-1 h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive/10"
+                        onClick={() => {
+                          daySchedule.suggestedDropIds.forEach(id => onRemove(id));
+                        }}
+                      >
+                        Auto-fix schedule
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

@@ -447,7 +447,7 @@ const CityDetail = () => {
                         Top Pick
                       </Badge>
                     )}
-                    <AttractionCard attraction={attraction} />
+                    <AttractionCard attraction={attraction} cityName={city.name} />
                   </div>
                 ))}
               </div>

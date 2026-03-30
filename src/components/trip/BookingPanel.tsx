@@ -54,43 +54,26 @@ function cityHasOpenTable(city?: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Foursquare place details (fetched when restaurant panel opens)
+// Foursquare place details — routed through the restaurant-details Edge Function
+// so the API key stays server-side and is never exposed in the browser bundle.
 // ---------------------------------------------------------------------------
 interface FoursquarePlace {
   tel?: string;
   website?: string;
   hours?: { display?: string; is_open_now?: boolean };
-  categories?: Array<{ name: string }>;
-  location?: { address?: string; locality?: string };
+  categories?: string[];
+  address?: string;
 }
-
-const FSQ_KEY = import.meta.env.VITE_FOURSQUARE_API_KEY as string | undefined;
 
 async function fetchFoursquareDetails(
   restaurantName: string,
   city?: string
 ): Promise<FoursquarePlace | null> {
-  if (!FSQ_KEY) return null;
   try {
-    const near = city ? `&near=${encodeURIComponent(city)}` : '';
-    const url =
-      `https://api.foursquare.com/v3/places/search` +
-      `?query=${encodeURIComponent(restaurantName)}${near}&categories=13065&limit=1` +
-      `&fields=name,tel,website,hours,location,categories`;
-    const res = await fetch(url, {
-      headers: { Authorization: FSQ_KEY, Accept: 'application/json' },
+    const { data } = await supabase.functions.invoke('restaurant-details', {
+      body: { name: restaurantName, city },
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const place = data?.results?.[0];
-    if (!place) return null;
-    return {
-      tel: place.tel,
-      website: place.website,
-      hours: place.hours,
-      categories: place.categories,
-      location: place.location,
-    };
+    return (data?.place as FoursquarePlace) ?? null;
   } catch {
     return null;
   }

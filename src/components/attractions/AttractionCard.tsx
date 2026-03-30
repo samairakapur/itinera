@@ -21,10 +21,11 @@ import type { Attraction } from '@/hooks/useAttractions';
 
 interface AttractionCardProps {
   attraction: Attraction;
+  /** City name used to pick the correct city photo; avoids AI-hallucinated image_url values */
+  cityName?: string;
 }
 
-const AttractionCard = ({ attraction }: AttractionCardProps) => {
-  const [imageError, setImageError] = useState(false);
+const AttractionCard = ({ attraction, cityName }: AttractionCardProps) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const { user } = useAuth();
   const toggleFavorite = useToggleFavorite();
@@ -52,10 +53,10 @@ const AttractionCard = ({ attraction }: AttractionCardProps) => {
     return `$${price}`;
   };
 
-  // Use the image utility for accurate, place-matched images
-  const imageUrl = imageError || !attraction.image_url 
-    ? getAttractionImage(attraction.name, undefined, attraction.category || undefined) 
-    : attraction.image_url;
+  // Always compute image from name+city+category — never trust attraction.image_url from the DB
+  // because the AI generates hallucinated Unsplash IDs that serve unrelated photos (e.g. the
+  // Eiffel Tower for a Dubai attraction). City image is at least the correct destination.
+  const imageUrl = getAttractionImage(attraction.name, cityName, attraction.category || undefined);
 
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
@@ -72,10 +73,7 @@ const AttractionCard = ({ attraction }: AttractionCardProps) => {
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}
           onLoad={() => setImageLoaded(true)}
-          onError={() => {
-            setImageError(true);
-            setImageLoaded(true);
-          }}
+          onError={() => setImageLoaded(true)}
           loading="lazy"
         />
         <Button

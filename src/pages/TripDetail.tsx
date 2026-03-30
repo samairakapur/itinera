@@ -659,7 +659,7 @@ const TripDetail = () => {
               </AlertDialog>
             </div>
           </div>
-          <h1 className="font-display text-2xl font-bold">{itinerary.cities?.name || 'Your Trip'}</h1>
+          <h1 className="font-display text-2xl font-bold">{itinerary.name || itinerary.cities?.name || 'Your Trip'}</h1>
           {tripStartDate && endDate && (
             <p className="text-sm text-muted-foreground flex items-center gap-1">
               <Calendar className="w-4 h-4" />

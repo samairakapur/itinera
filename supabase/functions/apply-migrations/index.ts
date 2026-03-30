@@ -351,6 +351,60 @@ Deno.serve(async (req: Request) => {
         `,
       },
       {
+        // The original trip_chat RLS used SECURITY DEFINER helper functions which
+        // Supabase Realtime evaluates incorrectly for postgres_changes subscriptions —
+        // events aren't delivered to non-owner members. Replace with inline SQL so that
+        // Realtime can correctly check each subscriber's access. Also set REPLICA IDENTITY
+        // FULL so the full row is available for RLS evaluation on DELETE events.
+        name: 'trip_chat — fix RLS for cross-user Realtime delivery (inline SQL + REPLICA IDENTITY FULL)',
+        ddl: `
+          ALTER TABLE public.trip_chat REPLICA IDENTITY FULL;
+
+          DROP POLICY IF EXISTS "Trip members can view chat messages" ON public.trip_chat;
+          DROP POLICY IF EXISTS "Trip members can send chat messages" ON public.trip_chat;
+
+          CREATE POLICY "Trip members can view chat messages"
+          ON public.trip_chat FOR SELECT TO authenticated
+          USING (
+            EXISTS (SELECT 1 FROM public.itineraries WHERE id = trip_id AND user_id = auth.uid())
+            OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND email = auth.email())
+            OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND user_id = auth.uid())
+          );
+
+          CREATE POLICY "Trip members can send chat messages"
+          ON public.trip_chat FOR INSERT TO authenticated
+          WITH CHECK (
+            auth.uid() = user_id
+            AND (
+              EXISTS (SELECT 1 FROM public.itineraries WHERE id = trip_id AND user_id = auth.uid())
+              OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND email = auth.email())
+              OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND user_id = auth.uid())
+            )
+          );
+        `,
+      },
+      {
+        // Viator enrichment (run by the authenticated trip owner) needs UPDATE on
+        // itinerary_items to write viator_* columns. The existing UPDATE policy only covers
+        // the owner (owns_itinerary). Add a dedicated policy for viator column writes.
+        name: 'itinerary_items — allow owner to UPDATE viator enrichment columns',
+        ddl: `
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'itinerary_items'
+                AND policyname = 'Owner can update viator enrichment on items'
+            ) THEN
+              CREATE POLICY "Owner can update viator enrichment on items"
+              ON public.itinerary_items FOR UPDATE TO authenticated
+              USING (public.owns_itinerary(itinerary_id))
+              WITH CHECK (public.owns_itinerary(itinerary_id));
+            END IF;
+          END $$;
+        `,
+      },
+      {
         name: 'profiles — allow all authenticated users to read all profiles (needed for chat display names)',
         ddl: `
           DO $$

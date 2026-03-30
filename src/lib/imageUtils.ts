@@ -111,14 +111,17 @@ export function getCityImage(cityName: string, _country?: string): string {
 
 /**
  * Returns the best available image for an attraction.
- * Checks the category map first, then falls back to a unique Picsum.
+ * Priority: category-specific photo → city photo (correct city!) → stable Picsum.
+ * Always pass cityName when known — it prevents showing images from the wrong city.
  */
 export function getAttractionImage(
   attractionName: string,
-  _cityName?: string,
+  cityName?: string,
   category?: string,
 ): string {
   if (category && CATEGORY_IMAGES[category]) return CATEGORY_IMAGES[category];
+  // Use the curated city photo so images at least show the correct city
+  if (cityName && CITY_IMAGES[cityName]) return CITY_IMAGES[cityName];
   return picsumUrl(`attraction-${attractionName}`, 600, 400);
 }
 

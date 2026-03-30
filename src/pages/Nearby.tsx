@@ -44,6 +44,7 @@ const Nearby = () => {
   
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -55,6 +56,7 @@ const Nearby = () => {
     if (!latitude || !longitude) return;
 
     setLoading(true);
+    setFetchError(false);
     try {
       const { data, error } = await supabase.functions.invoke('nearby-places', {
         body: {
@@ -76,6 +78,7 @@ const Nearby = () => {
     } catch (err) {
       console.error('Error fetching nearby places:', err);
       setPlaces([]);
+      setFetchError(true);
       toast.error('Could not load nearby places. Check your connection and try again.');
     } finally {
       setLoading(false);
@@ -83,10 +86,11 @@ const Nearby = () => {
   }, [latitude, longitude, radiusKm]);
 
   useEffect(() => {
-    if (latitude && longitude && places.length === 0 && !loading) {
+    // Don't auto-retry after an error — user must manually refresh to avoid repeated toasts
+    if (latitude && longitude && places.length === 0 && !loading && !fetchError) {
       fetchNearbyPlaces();
     }
-  }, [latitude, longitude, fetchNearbyPlaces, places.length, loading]);
+  }, [latitude, longitude, fetchNearbyPlaces, places.length, loading, fetchError]);
 
   const handleManualLocationSet = (lat: number, lng: number, name?: string) => {
     setManualLocation(lat, lng);
@@ -97,6 +101,7 @@ const Nearby = () => {
 
   const handleRefresh = () => {
     setPlaces([]);
+    setFetchError(false);
     if (isPermissionDenied && !locationName) {
       setManualDialogOpen(true);
     } else {
