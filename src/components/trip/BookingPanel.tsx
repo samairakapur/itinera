@@ -37,14 +37,21 @@ import type { Activity } from './ActivityCard';
 // ---------------------------------------------------------------------------
 // Region helpers (reuse same set as ActivityCard)
 // ---------------------------------------------------------------------------
+// Only cities with confirmed OpenTable restaurant coverage.
+// Do NOT add cities without coverage — shows 0 results which confuses users.
+// No coverage: Lisbon, Porto, Bali, Phuket, Bangkok, Singapore, Seoul, Vienna,
+// Budapest, Prague, most of Southeast Asia, South America, Middle East, Africa.
 const OPENTABLE_CITIES = new Set([
+  // North America (strong coverage)
   'new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'boston',
   'washington', 'seattle', 'las vegas', 'houston', 'dallas', 'denver', 'atlanta',
   'toronto', 'vancouver', 'montreal',
+  // UK (confirmed)
   'london', 'manchester', 'edinburgh', 'birmingham', 'bristol',
-  'paris', 'amsterdam', 'rome', 'barcelona', 'madrid', 'berlin', 'vienna',
-  'lisbon', 'dublin', 'brussels', 'zurich', 'milan', 'florence', 'venice',
-  'munich', 'hamburg', 'cologne', 'prague', 'budapest',
+  // Core Europe (confirmed)
+  'paris', 'amsterdam', 'rome', 'barcelona', 'madrid', 'berlin', 'milan', 'munich',
+  // Asia-Pacific (limited but present)
+  'tokyo', 'hong kong', 'sydney', 'melbourne',
 ]);
 
 function cityHasOpenTable(city?: string): boolean {

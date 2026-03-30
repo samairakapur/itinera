@@ -45,33 +45,26 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'tripId, message, and userId are required' });
     }
 
-    // ── AI key setup (same priority order as generate-itinerary) ──────────
+    // ── AI provider cascade ────────────────────────────────────────────────
+    // Build an ordered list of providers; try each in turn until one succeeds.
+    // This means a bad/expired GROQ_API_KEY automatically falls through to
+    // GOOGLE_AI_API_KEY so Aria keeps working even when one key expires.
     const GROQ_API_KEY      = sanitizeKey(Deno.env.get('GROQ_API_KEY'))      || undefined;
     const LOVABLE_API_KEY   = sanitizeKey(Deno.env.get('LOVABLE_API_KEY'))   || undefined;
     const GOOGLE_AI_API_KEY = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
 
     console.log('[trip-concierge] AI keys present:', {
-      groq: !!GROQ_API_KEY,
-      lovable: !!LOVABLE_API_KEY,
-      google: !!GOOGLE_AI_API_KEY,
+      groq: !!GROQ_API_KEY, lovable: !!LOVABLE_API_KEY, google: !!GOOGLE_AI_API_KEY,
     });
 
-    let AI_KEY: string, AI_URL: string, AI_MODEL: string;
+    type Provider = { key: string; url: string; model: string; name: string };
+    const providers: Provider[] = [];
+    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: 'https://api.groq.com/openai/v1/chat/completions',                                  model: 'llama-3.3-70b-versatile',             name: 'groq' });
+    if (LOVABLE_API_KEY)   providers.push({ key: LOVABLE_API_KEY,   url: 'https://ai.gateway.lovable.dev/v1/chat/completions',                              model: 'google/gemini-2.5-flash',             name: 'lovable' });
+    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',        model: 'gemini-2.0-flash',                    name: 'google' });
 
-    if (GROQ_API_KEY) {
-      AI_KEY   = GROQ_API_KEY;
-      AI_URL   = 'https://api.groq.com/openai/v1/chat/completions';
-      AI_MODEL = 'llama-3.3-70b-versatile';
-    } else if (LOVABLE_API_KEY) {
-      AI_KEY   = LOVABLE_API_KEY;
-      AI_URL   = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-      AI_MODEL = 'google/gemini-2.5-flash';
-    } else if (GOOGLE_AI_API_KEY) {
-      AI_KEY   = GOOGLE_AI_API_KEY;
-      AI_URL   = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-      AI_MODEL = 'gemini-2.0-flash';
-    } else {
-      return json({ error: 'AI service not configured. Set GROQ_API_KEY or GOOGLE_AI_API_KEY in Supabase Edge Function secrets.' });
+    if (providers.length === 0) {
+      return json({ error: 'AI service not configured. Please set GROQ_API_KEY or GOOGLE_AI_API_KEY in Supabase Edge Function secrets.' });
     }
 
     // ── Service-role client to load all trip data ──────────────────────────
@@ -210,38 +203,53 @@ YOUR ROLE AS ARIA:
       { role: 'user', content: message },
     ];
 
-    // ── Call AI ────────────────────────────────────────────────────────────
-    console.log(`[trip-concierge] calling ${AI_MODEL} with ${aiMessages.length} messages`);
+    // ── Call AI (with provider cascade) ───────────────────────────────────
+    let reply = '';
+    let lastError = '';
 
-    const aiRes = await fetch(AI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${AI_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: aiMessages,
-        max_tokens: 600,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(28000), // 28s — well within Supabase's 30s limit
-    });
+    for (const provider of providers) {
+      console.log(`[trip-concierge] trying ${provider.name} (${provider.model})`);
+      try {
+        const aiRes = await fetch(provider.url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${provider.key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: provider.model,
+            messages: aiMessages,
+            max_tokens: 600,
+            temperature: 0.7,
+          }),
+        });
 
-    if (!aiRes.ok) {
-      const errText = await aiRes.text().catch(() => '');
-      console.error('[trip-concierge] AI error:', aiRes.status, errText);
-      if (aiRes.status === 401 || aiRes.status === 403) {
-        return json({ error: 'AI API key rejected. Check that GROQ_API_KEY or GOOGLE_AI_API_KEY is correctly set in Supabase Edge Function secrets.' });
+        if (!aiRes.ok) {
+          const errText = await aiRes.text().catch(() => '');
+          console.warn(`[trip-concierge] ${provider.name} returned ${aiRes.status}:`, errText.slice(0, 200));
+          lastError = `${provider.name} error ${aiRes.status}`;
+          // 401/403 = bad key → try next provider; 429 = rate limit → also try next
+          continue;
+        }
+
+        const aiData = await aiRes.json();
+        const content: string | undefined = aiData.choices?.[0]?.message?.content;
+        if (content) {
+          reply = content;
+          console.log(`[trip-concierge] success via ${provider.name}, reply length:`, reply.length);
+          break;
+        }
+        lastError = `${provider.name} returned empty content`;
+      } catch (fetchErr) {
+        console.warn(`[trip-concierge] ${provider.name} fetch error:`, fetchErr);
+        lastError = `${provider.name} fetch failed`;
+        continue;
       }
-      if (aiRes.status === 429) {
-        return json({ error: 'AI service is busy. Please wait a few seconds and try again.' });
-      }
-      return json({ error: `AI returned an error (${aiRes.status}). Please try again.` });
     }
 
-    const aiData = await aiRes.json();
-    const reply: string = aiData.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate a response. Please try again.";
+    if (!reply) {
+      return json({ error: `Aria couldn't respond (${lastError}). Please try again in a moment.` });
+    }
 
     // ── Save assistant reply (best-effort) ────────────────────────────────
     try {

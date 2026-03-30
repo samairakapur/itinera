@@ -98,7 +98,10 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
   }, [tripId]);
 
   // ---------------------------------------------------------------------------
-  // Load initial messages (no profile join — we use memberMap for names)
+  // Load initial messages + back-fill memberMap from message user_ids
+  // The initial buildMemberMap uses trip_collaborators rows, but collaborators
+  // whose user_id FK isn't set (pending invite) won't appear. Loading profiles
+  // from the actual message user_ids guarantees every sender has a name.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!tripId) return;
@@ -109,9 +112,36 @@ export const GroupChat = ({ tripId }: GroupChatProps) => {
       .eq('trip_id', tripId)
       .order('created_at', { ascending: true })
       .limit(100)
-      .then(({ data }) => {
-        setMessages((data as ChatMessage[]) ?? []);
+      .then(async ({ data }) => {
+        const msgs = (data as ChatMessage[]) ?? [];
+        setMessages(msgs);
         setLoading(false);
+
+        // Back-fill names for any user_id that buildMemberMap may have missed
+        const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
+        const seenIds = [...new Set(
+          msgs.map(m => m.user_id).filter((id): id is string => !!id && id !== PLACEHOLDER)
+        )];
+        if (seenIds.length === 0) return;
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, avatar_url')
+          .in('id', seenIds);
+
+        if (!profiles?.length) return;
+        setMemberMap(prev => {
+          const next = { ...prev };
+          profiles.forEach(p => {
+            if (!next[p.id] || next[p.id].name === 'Member') {
+              next[p.id] = {
+                name: p.full_name || p.email?.split('@')[0] || 'Member',
+                avatarUrl: p.avatar_url || undefined,
+              };
+            }
+          });
+          return next;
+        });
       });
   }, [tripId]);
 

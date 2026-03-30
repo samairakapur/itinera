@@ -100,6 +100,8 @@ const NewTrip = () => {
   const [parsedItinerary, setParsedItinerary] = useState<ParsedItinerary | null>(null);
   const [weatherData, setWeatherData] = useState<DayWeather[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('form');
+  // Custom trip name entered by the user in DateSelectionStep (empty = use auto-generated name)
+  const [customTripName, setCustomTripName] = useState('');
 
   // Add activity dialog state
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -451,13 +453,14 @@ const NewTrip = () => {
     const primaryCity = cities?.find(c => c.id === selectedCities[0].cityId);
     if (!primaryCity) return;
 
-    // Create trip name based on cities
+    // Use the user's custom name if they typed one; otherwise auto-generate
     const cityNames = selectedCities
       .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
       .filter(Boolean);
-    const tripName = cityNames.length > 1 
+    const autoName = cityNames.length > 1
       ? `${cityNames.join(' → ')} Adventure`
       : `${cityNames[0]} Adventure`;
+    const tripName = customTripName.trim() || autoName;
 
     // Build enriched selectedCities for multi-city leg creation
     const enrichedCities = selectedCities.map(sc => ({
@@ -576,16 +579,23 @@ const NewTrip = () => {
     const cityNames = selectedCities
       .map(sc => cities?.find(c => c.id === sc.cityId)?.name)
       .filter(Boolean);
-    const displayName = cityNames.length > 1 
+    const displayName = cityNames.length > 1
       ? cityNames.join(' → ')
       : primaryCityData.name;
-      
+    // Pre-populate name field if the user hasn't typed one yet
+    const autoName = cityNames.length > 1
+      ? `${cityNames.join(' → ')} Adventure`
+      : `${cityNames[0] ?? primaryCityData.name} Adventure`;
+    const nameForField = customTripName || autoName;
+
     return (
       <div className="min-h-screen py-8" ref={contentRef}>
         <div className="container px-4 max-w-lg mx-auto">
           <DateSelectionStep
             cityName={displayName}
             numDays={numDays}
+            tripName={nameForField}
+            onTripNameChange={setCustomTripName}
             onBack={() => setViewMode('itinerary')}
             onSave={handleSaveTrip}
             isSaving={createItinerary.isPending}

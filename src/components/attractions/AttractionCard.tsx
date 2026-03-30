@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToggleFavorite, useIsFavorite } from '@/hooks/useFavorites';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { getAttractionImage } from '@/lib/imageUtils';
+import { useResolvedImage } from '@/hooks/useResolvedImage';
 import type { Attraction } from '@/hooks/useAttractions';
 
 interface AttractionCardProps {
@@ -53,10 +53,9 @@ const AttractionCard = ({ attraction, cityName }: AttractionCardProps) => {
     return `$${price}`;
   };
 
-  // Always compute image from name+city+category — never trust attraction.image_url from the DB
-  // because the AI generates hallucinated Unsplash IDs that serve unrelated photos (e.g. the
-  // Eiffel Tower for a Dubai attraction). City image is at least the correct destination.
-  const imageUrl = getAttractionImage(attraction.name, cityName, attraction.category || undefined);
+  // Resolve the best available image: starts with a curated city/category fallback immediately,
+  // then upgrades to a Wikimedia / Unsplash / Pexels / Pixabay photo via the Edge Function.
+  const imageUrl = useResolvedImage(attraction.name, cityName, attraction.category || undefined);
 
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
