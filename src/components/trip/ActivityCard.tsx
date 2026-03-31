@@ -124,8 +124,7 @@ const typeIcons = {
   flex: Sparkles,
 };
 
-// Cities where OpenTable has meaningful coverage (US/UK/Europe majors)
-// For all other cities, show Google Maps search instead
+// Cities with confirmed OpenTable restaurant coverage
 const OPENTABLE_CITIES = new Set([
   // North America
   'new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'boston',
@@ -133,17 +132,43 @@ const OPENTABLE_CITIES = new Set([
   'toronto', 'vancouver', 'montreal',
   // UK
   'london', 'manchester', 'edinburgh', 'birmingham', 'bristol',
-  // Western Europe
-  'paris', 'amsterdam', 'rome', 'barcelona', 'madrid', 'berlin', 'vienna',
-  'lisbon', 'dublin', 'brussels', 'zurich', 'milan', 'florence', 'venice',
-  'munich', 'hamburg', 'cologne', 'prague', 'budapest',
+  // Core Europe (confirmed coverage)
+  'paris', 'amsterdam', 'rome', 'barcelona', 'madrid', 'berlin', 'milan', 'munich',
+  // Asia-Pacific
+  'tokyo', 'hong kong', 'sydney', 'melbourne',
 ]);
+
+// Cities where Chope has restaurant reservation coverage (SE Asia)
+const CHOPE_CITY_SLUGS: Record<string, string> = {
+  'singapore': 'singapore',
+  'bangkok':   'bangkok',
+  'phuket':    'phuket',
+  'bali':      'bali',
+  'jakarta':   'jakarta',
+  'hong kong': 'hong-kong',
+  'shanghai':  'shanghai',
+};
 
 /** Returns true if the city has substantial OpenTable restaurant coverage */
 function cityHasOpenTable(city?: string): boolean {
   if (!city) return false;
   const normalized = city.toLowerCase().trim();
   return [...OPENTABLE_CITIES].some(c => normalized.includes(c) || c.includes(normalized));
+}
+
+/** Returns true if the city has Chope restaurant reservation coverage */
+function cityHasChope(city?: string): boolean {
+  if (!city) return false;
+  const normalized = city.toLowerCase().trim();
+  return Object.keys(CHOPE_CITY_SLUGS).some(c => normalized.includes(c) || c.includes(normalized));
+}
+
+/** Chope slug for a city name, or null if not covered */
+function chopeSlug(city?: string): string | null {
+  if (!city) return null;
+  const normalized = city.toLowerCase().trim();
+  const key = Object.keys(CHOPE_CITY_SLUGS).find(c => normalized.includes(c) || c.includes(normalized));
+  return key ? CHOPE_CITY_SLUGS[key] : null;
 }
 
 const typeColors = {
@@ -251,6 +276,14 @@ export const ActivityCard = ({
     return `https://www.opentable.com/s?term=${term}&covers=${covers}&dateTime=${dateTime}`;
   };
 
+  // Chope deep-link: search by restaurant name in the city (SE Asia)
+  const getChopeUrl = () => {
+    const city = activity.cityName || cityName || '';
+    const slug = chopeSlug(city);
+    if (!slug) return '#';
+    return `https://www.chope.co/${slug}-restaurants/search?keyword=${encodeURIComponent(activity.title)}`;
+  };
+
   // Google Maps restaurant search — works globally
   const getGoogleMapsRestaurantUrl = () => {
     const parts = [activity.title];
@@ -259,6 +292,7 @@ export const ActivityCard = ({
   };
 
   const showOpenTable = isRestaurant && cityHasOpenTable(activity.cityName || cityName);
+  const showChope = isRestaurant && !showOpenTable && cityHasChope(activity.cityName || cityName);
 
   // Viator affiliate search link — /searchResults/all avoids 404, mcid is our partner tracking ID
   const getViatorUrl = () => {
@@ -508,6 +542,16 @@ export const ActivityCard = ({
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     Reserve on OpenTable
+                  </Button>
+                ) : showChope ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                    onClick={() => window.open(getChopeUrl(), '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Reserve on Chope
                   </Button>
                 ) : (
                   <Button

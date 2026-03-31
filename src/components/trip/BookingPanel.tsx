@@ -41,6 +41,7 @@ import type { Activity } from './ActivityCard';
 // Do NOT add cities without coverage — shows 0 results which confuses users.
 // No coverage: Lisbon, Porto, Bali, Phuket, Bangkok, Singapore, Seoul, Vienna,
 // Budapest, Prague, most of Southeast Asia, South America, Middle East, Africa.
+// For SE Asia, Chope is used instead.
 const OPENTABLE_CITIES = new Set([
   // North America (strong coverage)
   'new york', 'los angeles', 'chicago', 'san francisco', 'miami', 'boston',
@@ -58,6 +59,24 @@ function cityHasOpenTable(city?: string): boolean {
   if (!city) return false;
   const n = city.toLowerCase().trim();
   return [...OPENTABLE_CITIES].some(c => n.includes(c) || c.includes(n));
+}
+
+// Cities where Chope has restaurant reservation coverage (SE Asia)
+const CHOPE_CITY_SLUGS: Record<string, string> = {
+  'singapore': 'singapore',
+  'bangkok':   'bangkok',
+  'phuket':    'phuket',
+  'bali':      'bali',
+  'jakarta':   'jakarta',
+  'hong kong': 'hong-kong',
+  'shanghai':  'shanghai',
+};
+
+function chopeCitySlug(city?: string): string | null {
+  if (!city) return null;
+  const n = city.toLowerCase().trim();
+  const key = Object.keys(CHOPE_CITY_SLUGS).find(c => n.includes(c) || c.includes(n));
+  return key ? CHOPE_CITY_SLUGS[key] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +172,11 @@ export const BookingPanel = ({
   const isRestaurant = activity.type === 'restaurant';
   const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
   const hasOpenTable = cityHasOpenTable(activity.cityName || cityName);
+  const chopeSlug = chopeCitySlug(activity.cityName || cityName);
+  const hasChope = !hasOpenTable && chopeSlug !== null;
+  const chopeUrl = chopeSlug
+    ? `https://www.chope.co/${chopeSlug}-restaurants/search?keyword=${encodeURIComponent(activity.title)}`
+    : null;
 
   // Derive advisory signals for restaurants
   const isPopularRestaurant = activity.priceTier === '€€€' || activity.priceTier === '€€€€' ||
@@ -408,8 +432,17 @@ export const BookingPanel = ({
                     Reserve on OpenTable
                   </Button>
                 )}
+                {hasChope && chopeUrl && (
+                  <Button
+                    className="w-full gap-2"
+                    onClick={() => window.open(chopeUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Reserve on Chope
+                  </Button>
+                )}
                 <Button
-                  variant={hasOpenTable ? 'outline' : 'default'}
+                  variant={hasOpenTable || hasChope ? 'outline' : 'default'}
                   className="w-full gap-2"
                   onClick={() => window.open(googleMapsUrl, '_blank', 'noopener,noreferrer')}
                 >

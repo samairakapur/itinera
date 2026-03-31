@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useCities } from '@/hooks/useCities';
 import { usePersonalizedDestinations, ScoredCity } from '@/hooks/usePersonalizedDestinations';
@@ -56,6 +56,8 @@ const Destinations = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('all');
   const [selectedCity, setSelectedCity] = useState('all');
+  const [showAllPersonalized, setShowAllPersonalized] = useState(false);
+  const allDestinationsRef = useRef<HTMLDivElement>(null);
 
   const filteredCities = useMemo(() => {
     if (!cities) return [];
@@ -147,13 +149,18 @@ const Destinations = () => {
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {personalizedCities.slice(0, 4).map((city) => (
+              {personalizedCities.slice(0, showAllPersonalized ? undefined : 4).map((city) => (
                 <PersonalizedCityCard key={city.id} city={city} />
               ))}
             </div>
-            {personalizedCities.length > 4 && (
+            {personalizedCities.length > 4 && !showAllPersonalized && (
               <div className="mt-6 text-center">
-                <Button variant="outline" size="sm" className="rounded-xl border-border">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl border-border"
+                  onClick={() => setShowAllPersonalized(true)}
+                >
                   View all {personalizedCities.length} personalized picks
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>

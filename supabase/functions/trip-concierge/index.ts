@@ -219,8 +219,61 @@ YOUR ROLE AS ARIA:
           body: JSON.stringify({
             model: provider.model,
             messages: aiMessages,
-            max_tokens: 600,
+            max_tokens: 800,
             temperature: 0.7,
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'add_activity',
+                  description: 'Add a new activity or restaurant to a specific day of the itinerary',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      day_number: { type: 'number', description: 'Day number (1-based)' },
+                      time_slot: { type: 'string', enum: ['morning', 'afternoon', 'evening'] },
+                      activity_name: { type: 'string', description: 'Name of the activity or restaurant' },
+                      category: { type: 'string', description: 'Type: attraction, restaurant, flex, or transport' },
+                      description: { type: 'string', description: 'Brief description of the activity' },
+                    },
+                    required: ['day_number', 'time_slot', 'activity_name'],
+                  },
+                },
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'remove_activity',
+                  description: 'Remove an existing activity from the itinerary',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      day_number: { type: 'number' },
+                      activity_name: { type: 'string', description: 'Full or partial name of the activity to remove' },
+                    },
+                    required: ['day_number', 'activity_name'],
+                  },
+                },
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'swap_activity',
+                  description: 'Replace one activity with a different one on the same day',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      day_number: { type: 'number' },
+                      old_activity: { type: 'string', description: 'Name of the activity to replace' },
+                      new_activity: { type: 'string', description: 'Name of the replacement activity' },
+                      new_category: { type: 'string', description: 'Category of the new activity: attraction, restaurant, flex' },
+                    },
+                    required: ['day_number', 'old_activity', 'new_activity'],
+                  },
+                },
+              },
+            ],
+            tool_choice: 'auto',
           }),
         });
 
@@ -233,7 +286,24 @@ YOUR ROLE AS ARIA:
         }
 
         const aiData = await aiRes.json();
-        const content: string | undefined = aiData.choices?.[0]?.message?.content;
+        const choice = aiData.choices?.[0];
+        const content: string | undefined = choice?.message?.content;
+        const toolCalls = choice?.message?.tool_calls;
+
+        // AI wants to invoke a tool — return the proposed change for user confirmation
+        if (toolCalls && toolCalls.length > 0) {
+          const tc = toolCalls[0];
+          let toolArgs: Record<string, unknown> = {};
+          try { toolArgs = JSON.parse(tc.function?.arguments ?? '{}'); } catch { /* keep empty */ }
+          const toolReply = content || 'I can make this change to your itinerary. Shall I apply it?';
+          console.log(`[trip-concierge] tool call via ${provider.name}:`, tc.function?.name, toolArgs);
+          // Best-effort save Aria's message
+          try {
+            await supabase.from('trip_messages').insert({ trip_id: tripId, user_id: null, role: 'assistant', content: toolReply });
+          } catch { /* ignore */ }
+          return json({ reply: toolReply, toolCall: { name: tc.function?.name, args: toolArgs } });
+        }
+
         if (content) {
           reply = content;
           console.log(`[trip-concierge] success via ${provider.name}, reply length:`, reply.length);

@@ -304,6 +304,30 @@ const Nearby = () => {
           </Card>
         )}
 
+        {/* Inline error state — shown when the Edge Function or Overpass API fails */}
+        {fetchError && !loading && places.length === 0 && (
+          <Card className="mb-6 border-destructive/20 bg-destructive/5">
+            <CardContent className="py-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-destructive">Could not load nearby places</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The location data service may be temporarily overloaded. Try increasing the search radius or use the Refresh button.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 h-8 text-xs gap-2"
+                  onClick={handleRefresh}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Try again
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
             <TabsTrigger value="all" className="gap-2">

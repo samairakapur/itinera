@@ -142,6 +142,71 @@ function trimDayToSchedule(day: DayData, pace: string): DayData {
 
 export { trimDayToSchedule };
 
+/**
+ * HARD schedule enforcement — second-pass safety net run after trimDayToSchedule.
+ *
+ * Walks every activity sequentially from the day's start time, computing a
+ * running clock. Any activity whose END time would push past the pace's day-end
+ * cap is dropped (including dinners / restaurants that the first pass preserved).
+ * Uses the AI's explicit activity.time stamps when present to avoid compressing
+ * activities that naturally have gaps between them.
+ */
+function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
+  const END_CAPS_MINS: Record<string, number> = {
+    light:    18 * 60,          // 6:00 PM
+    moderate: 20 * 60,          // 8:00 PM
+    full:     21 * 60 + 30,     // 9:30 PM
+  };
+  const cap = END_CAPS_MINS[pace] ?? END_CAPS_MINS.moderate;
+
+  return days.map(day => {
+    const all = [...day.morning, ...day.afternoon, ...day.evening];
+    if (all.length === 0) return day;
+
+    // Determine day start from the first activity's explicit time, else default 09:00
+    const firstTime = parseTimeToHours(all[0].time);
+    let t = firstTime !== null ? Math.round(firstTime * 60) : 9 * 60;
+
+    const kept: Activity[] = [];
+
+    for (const act of all) {
+      // If this activity has a later explicit start time, advance the clock
+      const actTime = parseTimeToHours(act.time);
+      if (actTime !== null) {
+        const actMins = Math.round(actTime * 60);
+        if (actMins > t) t = actMins;
+      }
+
+      const dur = parseDurationMinutes(act.duration);
+      const travel = (act.type === 'transport' || act.type === 'flex') ? 0 : 25;
+      const endMins = t + dur;
+
+      if (endMins <= cap) {
+        kept.push(act);
+        t = endMins + travel;
+      } else {
+        const endH = Math.floor(endMins / 60);
+        const endM = String(endMins % 60).padStart(2, '0');
+        const capH = Math.floor(cap / 60);
+        const capM = String(cap % 60).padStart(2, '0');
+        console.log(
+          `[enforceSchedule] Day ${day.dayNumber}: dropped "${act.title}" ` +
+          `(would end ~${endH}:${endM}, cap ${capH}:${capM}, pace=${pace})`
+        );
+        break; // drop this activity and all remaining ones
+      }
+    }
+
+    const keptIds = new Set(kept.map(a => a.id));
+    return {
+      ...day,
+      morning:   day.morning.filter(a => keptIds.has(a.id)),
+      afternoon: day.afternoon.filter(a => keptIds.has(a.id)),
+      evening:   day.evening.filter(a => keptIds.has(a.id)),
+    };
+  });
+}
+
 export const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[], pace?: string): ParsedItinerary => {
   const result: ParsedItinerary = {
     summary: '',
@@ -454,6 +519,11 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
     const paceMapped = pace === 'fast' ? 'full' : pace === 'relaxed' ? 'light' : pace === 'balanced' ? 'moderate' : (pace ?? 'moderate');
     result.days.push(trimDayToSchedule(dayData, paceMapped));
   }
+
+  // Hard enforcement — second pass that drops any activity (including restaurants)
+  // that would push the day past its end cap even after trimDayToSchedule ran.
+  const paceMapped = pace === 'fast' ? 'full' : pace === 'relaxed' ? 'light' : pace === 'balanced' ? 'moderate' : (pace ?? 'moderate');
+  result.days = enforceScheduleLimits(result.days, paceMapped);
 
   // Parse packing tips
   const packingMatch = text.match(/##\s*Packing\s*Tips?\s*\n([\s\S]*?)(?=##|$)/i);

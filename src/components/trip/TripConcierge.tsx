@@ -13,6 +13,11 @@ interface Message {
   created_at: string;
 }
 
+interface ToolCall {
+  name: 'add_activity' | 'remove_activity' | 'swap_activity';
+  args: Record<string, unknown>;
+}
+
 interface TripConciergeProps {
   tripId: string;
   tripName?: string;
@@ -53,6 +58,8 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [pendingToolCall, setPendingToolCall] = useState<{ toolCall: ToolCall; messageId: string } | null>(null);
+  const [applyingTool, setApplyingTool] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -141,13 +148,18 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
 
       if (data?.error) throw new Error(data.error);
 
+      const msgId = `assistant-${Date.now()}`;
       const assistantMsg: Message = {
-        id: `assistant-${Date.now()}`,
+        id: msgId,
         role: 'assistant',
         content: data.reply,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      // If Aria proposes a tool action, store it for user confirmation
+      if (data.toolCall) {
+        setPendingToolCall({ toolCall: data.toolCall as ToolCall, messageId: msgId });
+      }
     } catch (err) {
       const errorText = err instanceof Error ? err.message : 'The concierge is temporarily unavailable.';
       // Show inline error bubble instead of toast so context isn't lost
@@ -168,6 +180,102 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  // Execute an Aria-proposed itinerary change after user confirms
+  const handleApplyTool = async (confirm: boolean) => {
+    if (!pendingToolCall || !user) return;
+    const { toolCall } = pendingToolCall;
+    setPendingToolCall(null);
+
+    if (!confirm) {
+      // User declined — let Aria know
+      const declineMsg: Message = {
+        id: `user-${Date.now()}`, role: 'user',
+        content: "No thanks, keep the itinerary as is.",
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, declineMsg]);
+      setLoading(true);
+      try {
+        const { data } = await supabase.functions.invoke('trip-concierge', {
+          body: { tripId, message: "No thanks, keep the itinerary as is.", userId: user.id },
+        });
+        if (data?.reply) {
+          setMessages(prev => [...prev, {
+            id: `assistant-${Date.now()}`, role: 'assistant',
+            content: data.reply, created_at: new Date().toISOString(),
+          }]);
+        }
+      } catch { /* ignore */ }
+      finally { setLoading(false); }
+      return;
+    }
+
+    setApplyingTool(true);
+    try {
+      const args = toolCall.args;
+
+      if (toolCall.name === 'remove_activity') {
+        await supabase.from('itinerary_items')
+          .delete()
+          .eq('itinerary_id', tripId)
+          .eq('day_number', args.day_number as number)
+          .ilike('custom_title', `%${args.activity_name}%`);
+
+      } else if (toolCall.name === 'add_activity') {
+        await supabase.from('itinerary_items').insert({
+          itinerary_id: tripId,
+          day_number: args.day_number as number,
+          time_slot: (args.time_slot as string) || 'morning',
+          item_type: (args.category as string) || 'attraction',
+          custom_title: args.activity_name as string,
+          custom_description: (args.description as string) || '',
+          order_index: 999,
+        });
+
+      } else if (toolCall.name === 'swap_activity') {
+        await supabase.from('itinerary_items')
+          .delete()
+          .eq('itinerary_id', tripId)
+          .eq('day_number', args.day_number as number)
+          .ilike('custom_title', `%${args.old_activity}%`);
+        await supabase.from('itinerary_items').insert({
+          itinerary_id: tripId,
+          day_number: args.day_number as number,
+          item_type: (args.new_category as string) || 'attraction',
+          custom_title: args.new_activity as string,
+          order_index: 999,
+        });
+      }
+
+      // Confirm to Aria that the change was applied
+      const confirmMsg: Message = {
+        id: `user-${Date.now()}`, role: 'user',
+        content: "Done, please apply the change.",
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, confirmMsg]);
+      setLoading(true);
+      const { data } = await supabase.functions.invoke('trip-concierge', {
+        body: { tripId, message: 'The change has been applied to the itinerary successfully.', userId: user.id },
+      });
+      if (data?.reply) {
+        setMessages(prev => [...prev, {
+          id: `assistant-${Date.now()}`, role: 'assistant',
+          content: data.reply, created_at: new Date().toISOString(),
+        }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`, role: 'error',
+        content: 'Could not apply the change. Please edit the itinerary manually.',
+        created_at: new Date().toISOString(),
+      }]);
+    } finally {
+      setApplyingTool(false);
+      setLoading(false);
     }
   };
 
@@ -263,6 +371,29 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
                       <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-muted/60">
                         <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                       </div>
+                      {/* Tool-call confirmation — shown only for the message that triggered the tool */}
+                      {pendingToolCall?.messageId === msg.id && (
+                        <div className="flex gap-2 mt-2 pl-0.5">
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white gap-1"
+                            onClick={() => handleApplyTool(true)}
+                            disabled={applyingTool}
+                          >
+                            {applyingTool && <Loader2 className="w-3 h-3 animate-spin" />}
+                            Apply this change
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={() => handleApplyTool(false)}
+                            disabled={applyingTool}
+                          >
+                            No thanks
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
