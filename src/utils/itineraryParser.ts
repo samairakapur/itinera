@@ -142,16 +142,26 @@ function trimDayToSchedule(day: DayData, pace: string): DayData {
 
 export { trimDayToSchedule };
 
+/** Returns true if an activity is a meal that must never be dropped */
+function isMealActivity(act: Activity): boolean {
+  if (act.type === 'restaurant') return true;
+  const titleLower = act.title.toLowerCase();
+  return ['breakfast', 'lunch', 'dinner', 'brunch', 'café', 'cafe', 'bistro', 'brasserie'].some(k =>
+    titleLower.includes(k)
+  );
+}
+
 /**
  * HARD schedule enforcement — second-pass safety net run after trimDayToSchedule.
  *
  * Walks every activity sequentially from the day's start time, computing a
- * running clock. Any activity whose END time would push past the pace's day-end
- * cap is dropped (including dinners / restaurants that the first pass preserved).
- * Uses the AI's explicit activity.time stamps when present to avoid compressing
- * activities that naturally have gaps between them.
+ * running clock. Non-essential activities (attractions, flex) whose END time
+ * would exceed the pace's day-end cap are dropped. Meals (restaurants and
+ * any activity whose title includes breakfast/lunch/dinner) are ALWAYS kept —
+ * they may push the schedule slightly past the cap but are never removed.
  */
 function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
+  // Soft caps — meals may exceed these slightly; attractions/flex cannot
   const END_CAPS_MINS: Record<string, number> = {
     light:    18 * 60,          // 6:00 PM
     moderate: 20 * 60,          // 8:00 PM
@@ -163,14 +173,14 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
     const all = [...day.morning, ...day.afternoon, ...day.evening];
     if (all.length === 0) return day;
 
-    // Determine day start from the first activity's explicit time, else default 09:00
     const firstTime = parseTimeToHours(all[0].time);
     let t = firstTime !== null ? Math.round(firstTime * 60) : 9 * 60;
 
     const kept: Activity[] = [];
+    let capReached = false; // once a non-meal is dropped, stop adding non-meals
 
     for (const act of all) {
-      // If this activity has a later explicit start time, advance the clock
+      // Advance clock if this activity has a later explicit start time
       const actTime = parseTimeToHours(act.time);
       if (actTime !== null) {
         const actMins = Math.round(actTime * 60);
@@ -180,8 +190,15 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
       const dur = parseDurationMinutes(act.duration);
       const travel = (act.type === 'transport' || act.type === 'flex') ? 0 : 25;
       const endMins = t + dur;
+      const meal = isMealActivity(act);
+
+      if (capReached && !meal) continue; // skip non-meals after cap has been reached
 
       if (endMins <= cap) {
+        kept.push(act);
+        t = endMins + travel;
+      } else if (meal) {
+        // Meals are always kept even if they push slightly past the cap
         kept.push(act);
         t = endMins + travel;
       } else {
@@ -193,7 +210,7 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
           `[enforceSchedule] Day ${day.dayNumber}: dropped "${act.title}" ` +
           `(would end ~${endH}:${endM}, cap ${capH}:${capM}, pace=${pace})`
         );
-        break; // drop this activity and all remaining ones
+        capReached = true; // continue loop only to pick up any protected meals after this
       }
     }
 

@@ -147,6 +147,26 @@ export const TripPreferencesForm = ({
     }
   };
 
+  /**
+   * Dietary selection with mutual-exclusivity for "No preference" (value='none'):
+   * - Selecting 'none' clears all specific restrictions
+   * - Selecting any specific restriction clears 'none'
+   */
+  const handleDietarySelect = (value: string) => {
+    if (value === 'none') {
+      // "No preference" is exclusive — clear all other selections
+      updatePreference('dietaryPreferences', ['none']);
+    } else {
+      // Any specific restriction clears 'none', then toggles the chosen option
+      const without = preferences.dietaryPreferences.filter(d => d !== 'none');
+      if (without.includes(value)) {
+        updatePreference('dietaryPreferences', without.filter(d => d !== value));
+      } else {
+        updatePreference('dietaryPreferences', [...without, value]);
+      }
+    }
+  };
+
   const canProceed = () => {
     if (currentStep === 1) {
       return preferences.destination && preferences.tripLength && preferences.travelGroup;
@@ -525,21 +545,29 @@ const StepContent = ({ step, cities, preferences, updatePreference, toggleArrayP
           <span className="font-medium">Any dietary preferences?</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          {DIETARY_OPTIONS.map((option) => (
-            <Badge
-              key={option.value}
-              variant={preferences.dietaryPreferences.includes(option.value) ? 'default' : 'outline'}
-              className={cn(
-                "cursor-pointer px-3 py-2 text-sm transition-all",
-                preferences.dietaryPreferences.includes(option.value)
-                  ? "bg-primary hover:bg-primary/90"
-                  : "hover:bg-muted"
-              )}
-              onClick={() => toggleArrayPreference('dietaryPreferences', option.value)}
-            >
-              {option.label}
-            </Badge>
-          ))}
+          {DIETARY_OPTIONS.map((option) => {
+            const isSelected = preferences.dietaryPreferences.includes(option.value);
+            // Non-'none' options are disabled when 'none' is selected
+            const isDisabled = option.value !== 'none' && preferences.dietaryPreferences.includes('none');
+            return (
+              <Badge
+                key={option.value}
+                variant={isSelected ? 'default' : 'outline'}
+                className={cn(
+                  "px-3 py-2 text-sm transition-all",
+                  isDisabled
+                    ? "cursor-not-allowed opacity-40"
+                    : "cursor-pointer",
+                  isSelected
+                    ? "bg-primary hover:bg-primary/90"
+                    : !isDisabled && "hover:bg-muted"
+                )}
+                onClick={() => !isDisabled && handleDietarySelect(option.value)}
+              >
+                {option.label}
+              </Badge>
+            );
+          })}
         </div>
       </div>
 

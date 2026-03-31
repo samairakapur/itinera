@@ -210,8 +210,13 @@ export const ActivityCard = ({
   const colorClass = typeColors[activity.type] || typeColors.custom;
 
   // ── Type flags — declared first so all downstream consts can reference them ──
-  const isRestaurant = activity.type === 'restaurant';
-  const isAttraction = activity.type === 'attraction' || activity.type === 'prebooked';
+  // Supplement the `type` field with a title-based heuristic: the AI sometimes
+  // assigns type='attraction' to breakfast/lunch/dinner entries. Catch those here
+  // so they get restaurant booking CTAs instead of a Viator "Find tours" button.
+  const MEAL_KEYWORDS = ['breakfast', 'lunch', 'dinner', 'brunch', 'café', 'cafe', 'bistro', 'brasserie', 'restaurant'];
+  const titleIsMeal = MEAL_KEYWORDS.some(k => activity.title.toLowerCase().includes(k));
+  const isRestaurant = activity.type === 'restaurant' || titleIsMeal;
+  const isAttraction = (activity.type === 'attraction' || activity.type === 'prebooked') && !isRestaurant;
 
   // priceTier: use stored value or fall back to a sensible default per type
   // (existing trips pre-date the price_tier column — always show something)
@@ -277,11 +282,15 @@ export const ActivityCard = ({
   };
 
   // Chope deep-link: search by restaurant name in the city (SE Asia)
+  // Format: chope.co/{city}-restaurants?keyword={name}&date={date}&time={time}&pax={n}
   const getChopeUrl = () => {
     const city = activity.cityName || cityName || '';
     const slug = chopeSlug(city);
     if (!slug) return '#';
-    return `https://www.chope.co/${slug}-restaurants/search?keyword=${encodeURIComponent(activity.title)}`;
+    const keyword = encodeURIComponent(activity.title);
+    const dateStr = tripDate ?? new Date().toISOString().split('T')[0];
+    const pax = groupSize ?? 2;
+    return `https://www.chope.co/${slug}-restaurants?keyword=${keyword}&date=${dateStr}&time=19%3A00&pax=${pax}`;
   };
 
   // Google Maps restaurant search — works globally

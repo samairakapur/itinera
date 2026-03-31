@@ -174,9 +174,12 @@ export const BookingPanel = ({
   const hasOpenTable = cityHasOpenTable(activity.cityName || cityName);
   const chopeSlug = chopeCitySlug(activity.cityName || cityName);
   const hasChope = !hasOpenTable && chopeSlug !== null;
-  const chopeUrl = chopeSlug
-    ? `https://www.chope.co/${chopeSlug}-restaurants/search?keyword=${encodeURIComponent(activity.title)}`
-    : null;
+  const chopeUrl = (() => {
+    if (!chopeSlug) return null;
+    const keyword = encodeURIComponent(activity.title);
+    const dateStr = tripDate ?? new Date().toISOString().split('T')[0];
+    return `https://www.chope.co/${chopeSlug}-restaurants?keyword=${keyword}&date=${dateStr}&time=19%3A00&pax=${groupSize}`;
+  })();
 
   // Derive advisory signals for restaurants
   const isPopularRestaurant = activity.priceTier === '€€€' || activity.priceTier === '€€€€' ||

@@ -343,10 +343,16 @@ export const DayCard = ({
 
   const WeatherIcon = day.weather ? getWeatherIcon(day.weather.condition) : Sun;
 
-  // Clean title
-  const cleanTitle = day.title && !day.title.toLowerCase().startsWith('day') 
-    ? day.title 
-    : day.title.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim() || 'Exploring';
+  // Strip "Day N –" or "Day N — Weekday, Month Day:" prefix from AI-generated titles
+  // then also drop any colon-separated date (e.g. "Tuesday, March 31: Exploring...") → "Exploring..."
+  const rawTitle = day.title?.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim() ?? '';
+  const colonIdx = rawTitle.search(/:\s+[A-Z]/); // "Tuesday, March 31: Exploring Singapore"
+  const cleanTitle = (colonIdx >= 0 ? rawTitle.slice(colonIdx + 1).trim() : rawTitle) || '';
+
+  // Header label: "Day N" when no date, "Day N – Tue Mar 31" when date exists
+  const dayLabel = formattedDate
+    ? `Day ${day.dayNumber}${dayOfWeek ? ` – ${dayOfWeek}` : ''} ${formattedDate}`
+    : `Day ${day.dayNumber}`;
 
   return (
     <>
@@ -368,8 +374,11 @@ export const DayCard = ({
                   </div>
                   <div>
                     <h3 className="font-display text-lg font-bold text-foreground">
-                      {formattedDate ? `${formattedDate} – ${cleanTitle}` : `Day ${day.dayNumber} – ${cleanTitle}`}
+                      {dayLabel}
                     </h3>
+                    {cleanTitle && (
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{cleanTitle}</p>
+                    )}
                     <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                       <span>{totalActivities} {totalActivities === 1 ? 'activity' : 'activities'}</span>
                       {showCheckIn && completedCount > 0 && (
