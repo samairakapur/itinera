@@ -20,7 +20,7 @@ const passwordSchema = z.string()
   .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Password must contain at least one special character');
 const nameSchema = z.string().min(2, 'Name must be at least 2 characters');
 
-type View = 'auth' | 'forgot' | 'forgot-success';
+type View = 'auth' | 'forgot' | 'forgot-success' | 'confirm-email';
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -53,9 +53,12 @@ const Auth = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
+    // Only validate email format on login — never block login with password-strength rules.
+    // The password strength rules apply only to NEW signups. Supabase handles credential
+    // validation on the server; any client-side password check here would lock out
+    // existing users whose passwords pre-date the strict requirements.
     try {
       emailSchema.parse(loginEmail);
-      passwordSchema.parse(loginPassword);
     } catch (err) {
       if (err instanceof z.ZodError) {
         toast.error(err.errors[0].message);
@@ -64,17 +67,28 @@ const Auth = () => {
       }
     }
 
+    if (!loginPassword) {
+      toast.error('Please enter your password.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const { error } = await signIn(loginEmail, loginPassword);
 
     if (error) {
-      if (error.message.includes('Invalid login credentials')) {
+      if (
+        error.message.includes('Invalid login credentials') ||
+        error.message.includes('invalid_credentials')
+      ) {
         toast.error('Invalid email or password. Please try again.');
+      } else if (error.message.includes('Email not confirmed')) {
+        toast.error('Please confirm your email before signing in. Check your inbox.');
       } else {
         toast.error(error.message);
       }
     } else {
       toast.success('Welcome back! 🎉');
-      navigate('/');
+      navigate(redirectTo);
     }
 
     setIsSubmitting(false);
@@ -114,17 +128,24 @@ const Auth = () => {
       return;
     }
 
-    const { error } = await signUp(signupEmail, signupPassword, signupName);
+    const { error, needsConfirmation } = await signUp(signupEmail, signupPassword, signupName);
 
     if (error) {
-      if (error.message.includes('already registered')) {
+      if (
+        error.message.includes('already registered') ||
+        error.message.includes('User already registered')
+      ) {
         toast.error('This email is already registered. Please sign in instead.');
       } else {
         toast.error(error.message);
       }
+    } else if (needsConfirmation) {
+      // Email confirmation is enabled in Supabase — user must click the link before signing in
+      setView('confirm-email');
     } else {
+      // Auto-confirm is on (e.g. local dev) — user is immediately logged in
       toast.success('Account created successfully! Welcome aboard! 🎉');
-      navigate('/');
+      navigate(redirectTo);
     }
 
     setIsSubmitting(false);
@@ -196,11 +217,20 @@ const Auth = () => {
       <main className="flex-1 flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-md">
 
-          {/* ── Forgot Password / Success views ── */}
+          {/* ── Non-auth views: confirm-email, forgot, forgot-success ── */}
           {view !== 'auth' ? (
             <>
               <div className="text-center mb-8">
-                {view === 'forgot' ? (
+                {view === 'confirm-email' ? (
+                  <>
+                    <h1 className="font-display text-3xl font-bold text-foreground mb-2">
+                      Check your inbox
+                    </h1>
+                    <p className="text-muted-foreground">
+                      One last step before you start exploring
+                    </p>
+                  </>
+                ) : view === 'forgot' ? (
                   <>
                     <h1 className="font-display text-3xl font-bold text-foreground mb-2">
                       Reset your password
@@ -222,7 +252,34 @@ const Auth = () => {
               </div>
 
               <Card className="shadow-card border-white/5">
-                {view === 'forgot' ? (
+                {view === 'confirm-email' ? (
+                  /* Email confirmation pending */
+                  <CardContent className="pt-6 pb-6">
+                    <div className="flex flex-col items-center text-center space-y-4">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Mail className="w-8 h-8 text-primary" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-semibold text-foreground">Confirm your email address</h3>
+                        <p className="text-sm text-muted-foreground">
+                          We sent a confirmation link to <strong>{signupEmail}</strong>.
+                          Click the link to activate your account, then come back here to sign in.
+                        </p>
+                        <p className="text-xs text-muted-foreground pt-1">
+                          Didn't receive it? Check your spam folder.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2"
+                        onClick={goBackToAuth}
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        Back to Sign In
+                      </Button>
+                    </div>
+                  </CardContent>
+                ) : view === 'forgot' ? (
                   <>
                     <CardHeader className="pb-4">
                       <button

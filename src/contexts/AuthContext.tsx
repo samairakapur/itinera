@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null; needsConfirmation: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<{ error: Error | null }>;
@@ -49,8 +49,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -60,8 +60,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       },
     });
-    
-    return { error: error as Error | null };
+
+    // When email confirmation is enabled, Supabase returns a user with no session
+    // and user.identities === []. When auto-confirm is on, session is set immediately.
+    const needsConfirmation = !error && !data.session;
+
+    return { error: error as Error | null, needsConfirmation };
   };
 
   const signIn = async (email: string, password: string) => {
