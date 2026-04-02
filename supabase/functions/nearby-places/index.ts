@@ -139,6 +139,44 @@ function typicalTimeSpent(type: string, tags: Record<string, string>): string {
   return "1 – 2 hrs";
 }
 
+// Always respond HTTP 200 so supabase.functions.invoke can read the body.
+// Errors are communicated via { error: string, places: [] } in the JSON body.
+const json = (body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+// Overpass endpoint list — tried in order until one succeeds
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
+
+async function fetchOverpass(query: string): Promise<any> {
+  const encoded = encodeURIComponent(query);
+  let lastErr: Error = new Error("All Overpass endpoints failed");
+
+  for (const base of OVERPASS_ENDPOINTS) {
+    try {
+      const res = await fetch(`${base}?data=${encoded}`, {
+        headers: { "User-Agent": "itinera-travel-app/1.0" },
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!res.ok) {
+        lastErr = new Error(`${base} responded ${res.status}`);
+        continue;
+      }
+      return await res.json();
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      console.warn(`Overpass endpoint ${base} failed:`, lastErr.message);
+    }
+  }
+  throw lastErr;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -149,30 +187,14 @@ serve(async (req) => {
     const { lat, lng, radius_meters, categories } = body;
 
     if (!lat || !lng || !radius_meters || !categories?.length) {
-      return new Response(JSON.stringify({ error: "Missing required fields: lat, lng, radius_meters, categories" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Missing required fields: lat, lng, radius_meters, categories", places: [] });
     }
 
-    // Cap radius at 25km to avoid overloading Overpass
+    // Cap radius at 25 km to avoid overloading Overpass
     const clampedRadius = Math.min(radius_meters, 25000);
 
     const query = buildOverpassQuery(lat, lng, clampedRadius, categories);
-    const encodedQuery = encodeURIComponent(query);
-
-    const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodedQuery}`;
-
-    const response = await fetch(overpassUrl, {
-      headers: { "User-Agent": "itinera-travel-app/1.0" },
-      signal: AbortSignal.timeout(28000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await fetchOverpass(query);
     const elements: any[] = data.elements || [];
 
     // Filter to nodes with a name and valid coords
@@ -185,7 +207,6 @@ serve(async (req) => {
         const tags = node.tags as Record<string, string>;
         const type = osmTagsToType(tags);
 
-        // Only keep the categories requested
         if (!categories.includes(type)) return null;
 
         const distanceKm = haversineDistance(lat, lng, node.lat, node.lon);
@@ -211,16 +232,15 @@ serve(async (req) => {
       })
       .filter((p): p is NearbyPlace => p !== null)
       .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 15);
+      .slice(0, 20);
 
-    return new Response(JSON.stringify({ places }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ places });
   } catch (err) {
-    console.error("nearby-places error:", err);
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error", places: [] }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("nearby-places error:", msg);
+    return json({
+      error: `Could not load nearby places: ${msg}. The map data service may be temporarily overloaded — please try again in a moment.`,
+      places: [],
+    });
   }
 });

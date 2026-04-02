@@ -69,6 +69,14 @@ const Nearby = () => {
 
       if (error) throw error;
 
+      // Server-side errors are returned as HTTP 200 with { error: string, places: [] }
+      if (data?.error) {
+        console.error('nearby-places function error:', data.error);
+        setFetchError(true);
+        toast.error(data.error);
+        return;
+      }
+
       const fetchedPlaces: NearbyPlace[] = data?.places ?? [];
       setPlaces(fetchedPlaces);
 
