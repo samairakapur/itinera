@@ -12,7 +12,6 @@ import { TripPreferences } from '@/components/trip/TripPreferencesForm';
 import { GuidedTripForm } from '@/components/trip/guided';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { DayCard, DayData, DayWeather } from '@/components/trip/DayCard';
-import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { DateSelectionStep } from '@/components/trip/DateSelectionStep';
@@ -715,13 +714,6 @@ const NewTrip = () => {
                   />
                 );
               })}
-
-              {/* Travel Tips */}
-              <TravelTips
-                packingTips={parsedItinerary.packingTips}
-                transportTips={parsedItinerary.transportTips}
-                weatherNotes={parsedItinerary.weatherNotes}
-              />
 
               {/* Bottom Save Button */}
               <Button

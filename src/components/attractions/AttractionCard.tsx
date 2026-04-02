@@ -13,7 +13,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToggleFavorite, useIsFavorite } from '@/hooks/useFavorites';
+import { useIsSaved, useToggleSavedPlace } from '@/hooks/useSavedPlaces';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getAttractionImage } from '@/lib/imageUtils';
@@ -21,29 +21,35 @@ import type { Attraction } from '@/hooks/useAttractions';
 
 interface AttractionCardProps {
   attraction: Attraction;
+  city?: string;
 }
 
-const AttractionCard = ({ attraction }: AttractionCardProps) => {
+const AttractionCard = ({ attraction, city = '' }: AttractionCardProps) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const { user } = useAuth();
-  const toggleFavorite = useToggleFavorite();
-  const isFavorite = useIsFavorite(attraction.id);
+  const toggleSave = useToggleSavedPlace();
+  const isSaved = useIsSaved(attraction.name, city);
 
   const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!user) {
-      toast.error('Please sign in to save favorites');
+      toast.error('Please sign in to save places');
       return;
     }
-    
+
     try {
-      const result = await toggleFavorite.mutateAsync({ attractionId: attraction.id });
-      toast.success(result.action === 'added' ? 'Added to favorites!' : 'Removed from favorites');
-    } catch (error) {
-      toast.error('Failed to update favorites');
+      const result = await toggleSave.mutateAsync({
+        place_name: attraction.name,
+        place_type: 'attraction',
+        city,
+        image_url: attraction.image_url ?? null,
+      });
+      toast.success(result.action === 'saved' ? 'Saved to wishlist!' : 'Removed from wishlist');
+    } catch {
+      toast.error('Failed to update wishlist');
     }
   };
 
@@ -83,11 +89,11 @@ const AttractionCard = ({ attraction }: AttractionCardProps) => {
           size="icon"
           className={cn(
             "absolute top-2 right-2 bg-background/80 backdrop-blur-sm hover:bg-background",
-            isFavorite && "text-red-500"
+            isSaved && "text-red-500"
           )}
           onClick={handleFavoriteClick}
         >
-          <Heart className={cn("w-4 h-4", isFavorite && "fill-current")} />
+          <Heart className={cn("w-4 h-4", isSaved && "fill-current")} />
         </Button>
         {attraction.category && (
           <Badge className="absolute top-2 left-2 bg-background/80 backdrop-blur-sm text-foreground">

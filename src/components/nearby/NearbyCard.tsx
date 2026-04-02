@@ -12,8 +12,13 @@ import {
   Utensils,
   Landmark,
   CalendarPlus,
-  Timer
+  Timer,
+  Heart,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { useIsSaved, useToggleSavedPlace } from '@/hooks/useSavedPlaces';
+import { toast } from 'sonner';
 import { AddToItineraryDialog } from './AddToItineraryDialog';
 
 export interface NearbyPlace {
@@ -44,6 +49,7 @@ export interface NearbyPlace {
 
 interface NearbyCardProps {
   place: NearbyPlace;
+  city?: string;
 }
 
 const typeIcons = {
@@ -71,10 +77,31 @@ const DEFAULT_TIME_SPENT: Record<string, string> = {
   restaurant: '1 – 1.5 hrs',
 };
 
-export const NearbyCard = ({ place }: NearbyCardProps) => {
+export const NearbyCard = ({ place, city = '' }: NearbyCardProps) => {
   const Icon = typeIcons[place.type];
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const { user } = useAuth();
+  const isSaved = useIsSaved(place.name, city);
+  const toggleSave = useToggleSavedPlace();
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) { toast.error('Sign in to save places'); return; }
+    try {
+      const result = await toggleSave.mutateAsync({
+        place_name: place.name,
+        place_type: place.type,
+        city,
+        image_url: place.imageUrl ?? null,
+        foursquare_id: place.id ?? null,
+      });
+      toast.success(result.action === 'saved' ? 'Saved to wishlist!' : 'Removed from wishlist');
+    } catch {
+      toast.error('Failed to update wishlist');
+    }
+  };
 
   const handleDirections = () => {
     if (place.latitude && place.longitude) {
@@ -113,13 +140,26 @@ export const NearbyCard = ({ place }: NearbyCardProps) => {
             </div>
           )}
 
-          {/* Type badge — top right */}
-          <div className="absolute top-2 right-2">
+          {/* Type badge — top left */}
+          <div className="absolute top-2 left-2">
             <Badge className={`${typeColors[place.type]} backdrop-blur-sm`}>
               <Icon className="w-3 h-3 mr-1" />
               {place.type.charAt(0).toUpperCase() + place.type.slice(1)}
             </Badge>
           </div>
+
+          {/* Heart / save — top right */}
+          <button
+            onClick={handleSave}
+            className={cn(
+              'absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full',
+              'bg-background/80 backdrop-blur-sm hover:bg-background transition-colors',
+              isSaved ? 'text-red-500' : 'text-muted-foreground'
+            )}
+            aria-label={isSaved ? 'Remove from wishlist' : 'Save to wishlist'}
+          >
+            <Heart className={cn('w-4 h-4', isSaved && 'fill-current')} />
+          </button>
 
           {/* Transport badge — bottom left (shown after OSRM enrichment) */}
           {place.transportMode && (

@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProfile, useUpdateProfile, TravelPreferences } from "@/hooks/useProfile";
+import { useSavedPlaces, useToggleSavedPlace, SavedPlace } from "@/hooks/useSavedPlaces";
 import { toast } from "sonner";
-import { User, Compass, Wallet, Utensils, Pencil, Loader2, Check, ChevronRight } from "lucide-react";
+import { User, Compass, Wallet, Utensils, Pencil, Loader2, Check, ChevronRight, Heart, MapPin, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -104,6 +105,112 @@ interface EditingSectionState {
   travel: boolean;
   budget: boolean;
   food: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Saved Places tab — standalone component so hooks run unconditionally
+// ---------------------------------------------------------------------------
+function SavedTab() {
+  const { data: saved, isLoading } = useSavedPlaces();
+  const toggleSave = useToggleSavedPlace();
+
+  const handleRemove = async (place: SavedPlace) => {
+    try {
+      await toggleSave.mutateAsync({
+        place_name: place.place_name,
+        place_type: place.place_type,
+        city: place.city,
+      });
+      toast.success('Removed from wishlist');
+    } catch {
+      toast.error('Failed to remove');
+    }
+  };
+
+  // Group by city
+  const byCityMap = (saved ?? []).reduce<Record<string, SavedPlace[]>>((acc, p) => {
+    const key = p.city || 'Unknown';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(p);
+    return acc;
+  }, {});
+  const cities = Object.keys(byCityMap).sort();
+
+  const typeEmoji: Record<string, string> = {
+    attraction: '🏛️',
+    restaurant: '🍽️',
+    cafe: '☕',
+  };
+
+  return (
+    <TabsContent value="saved" className="mt-0">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Heart className="w-5 h-5 text-primary" />
+            Saved Places
+          </CardTitle>
+          <CardDescription>Attractions, restaurants, and cafés you've wishlisted</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : cities.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Heart className="w-10 h-10 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">No saved places yet</p>
+              <p className="text-sm mt-1">Tap the heart icon on any attraction or restaurant to add it here.</p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {cities.map(city => (
+                <div key={city}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <MapPin className="w-4 h-4 text-primary" />
+                    <h3 className="font-semibold text-foreground">{city}</h3>
+                    <span className="text-xs text-muted-foreground">({byCityMap[city].length})</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {byCityMap[city].map(place => (
+                      <div
+                        key={place.id}
+                        className="flex items-center gap-3 rounded-lg border border-border/50 p-3 group hover:border-primary/20 transition-colors"
+                      >
+                        {place.image_url ? (
+                          <img
+                            src={place.image_url}
+                            alt={place.place_name}
+                            className="w-14 h-14 rounded-md object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-md bg-muted flex items-center justify-center shrink-0 text-xl">
+                            {typeEmoji[place.place_type] ?? '📍'}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm line-clamp-1">{place.place_name}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{place.place_type}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRemove(place)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
+                          aria-label="Remove from wishlist"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </TabsContent>
+  );
 }
 
 export default function Profile() {
@@ -343,7 +450,7 @@ export default function Profile() {
       </Card>
 
       <Tabs defaultValue="personal" className="space-y-6">
-        <TabsList className="grid grid-cols-4 w-full">
+        <TabsList className="grid grid-cols-5 w-full">
           <TabsTrigger value="personal" className="flex items-center gap-2">
             <User className="w-4 h-4" />
             <span className="hidden sm:inline">Personal</span>
@@ -359,6 +466,10 @@ export default function Profile() {
           <TabsTrigger value="food" className="flex items-center gap-2">
             <Utensils className="w-4 h-4" />
             <span className="hidden sm:inline">Food</span>
+          </TabsTrigger>
+          <TabsTrigger value="saved" className="flex items-center gap-2">
+            <Heart className="w-4 h-4" />
+            <span className="hidden sm:inline">Saved</span>
           </TabsTrigger>
         </TabsList>
 
@@ -746,6 +857,9 @@ export default function Profile() {
             </CardContent>
           </Card>
         </TabsContent>
+        {/* Saved Tab */}
+        <SavedTab />
+
       </Tabs>
 
       {/* Retake Profile Setup CTA */}

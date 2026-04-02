@@ -964,7 +964,7 @@ const Nearby = () => {
             ) : filteredPlaces.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredPlaces.map((place) => (
-                  <NearbyCard key={place.id} place={place} />
+                  <NearbyCard key={place.id} place={place} city={locationName ?? ''} />
                 ))}
               </div>
             ) : hasError ? (

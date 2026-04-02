@@ -5,6 +5,7 @@ import { useActiveTripToday } from '@/hooks/useItineraries';
 import { Button } from '@/components/ui/button';
 import { MapPin, X } from 'lucide-react';
 import { useState } from 'react';
+import { OnboardingWalkthrough, useOnboarding } from '@/components/onboarding/OnboardingWalkthrough';
 
 const ActiveTripBanner = () => {
   const { data: activeTrip } = useActiveTripToday();
@@ -45,6 +46,8 @@ const ActiveTripBanner = () => {
 };
 
 const Layout = () => {
+  const { shouldShow, markDone } = useOnboarding();
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -54,6 +57,7 @@ const Layout = () => {
         <Outlet />
       </main>
       <MobileBottomNav />
+      {shouldShow && <OnboardingWalkthrough onDone={markDone} />}
     </div>
   );
 };
