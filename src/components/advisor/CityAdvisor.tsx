@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, Send, User, Sparkles } from 'lucide-react';
+import { Send, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { City } from '@/hooks/useCities';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,81 +21,14 @@ const SUPABASE_BASE = import.meta.env.VITE_SUPABASE_URL ?? 'https://vvrkjjtwxoyn
 const CHAT_URL = `${SUPABASE_BASE}/functions/v1/chat`;
 
 // ---------------------------------------------------------------------------
-// City-specific suggested prompts
+// Kiko prompt chips — same for all cities (destination-agnostic)
 // ---------------------------------------------------------------------------
-function getSuggestedPrompts(cityName: string): string[] {
-  const city = cityName.toLowerCase();
-  if (city.includes('tokyo')) {
-    return [
-      'Best ramen near Shinjuku for under ¥1,500?',
-      'Top cherry blossom spots — when and where?',
-      'Izakaya picks in Golden Gai?',
-      'Metro tips — how to get around cheaply?',
-    ];
-  }
-  if (city.includes('barcelona')) {
-    return [
-      'Best tapas in El Born that aren\'t tourist traps?',
-      'How far ahead to book Sagrada Família?',
-      'Hidden viewpoints beyond Tibidabo?',
-      'Pintxos bars in Poble Sec — best ones?',
-    ];
-  }
-  if (city.includes('bangkok')) {
-    return [
-      'Best street food in Chinatown tonight?',
-      'How to get around without hitting traffic?',
-      'Rooftop bars with the best views?',
-      'Temple route for a half day — what order?',
-    ];
-  }
-  if (city.includes('london')) {
-    return [
-      'Best restaurants near Borough Market?',
-      'Free experiences beyond the obvious?',
-      'Day trips: Bath, Cotswolds or Oxford?',
-      'Which areas are best to stay in?',
-    ];
-  }
-  if (city.includes('paris')) {
-    return [
-      'Best bakeries — perfect croissant?',
-      'How do I avoid queues at the Louvre?',
-      'Dinner off the tourist trail?',
-      'Natural wine bars in Saint-Germain?',
-    ];
-  }
-  if (city.includes('bali')) {
-    return [
-      'Ubud or Seminyak — which suits me better?',
-      'Best sunset spots on the island?',
-      'Beach clubs that aren\'t overpriced?',
-      'Temple etiquette — what do I need to know?',
-    ];
-  }
-  if (city.includes('singapore')) {
-    return [
-      'Best hawker centres to visit?',
-      'Where to find the best chilli crab?',
-      'Things to do beyond Orchard Road?',
-      'MRT vs. Grab — which to use?',
-    ];
-  }
-  if (city.includes('rome')) {
-    return [
-      'Best cacio e pepe in Rome — where?',
-      'Vatican without the 3-hour queue?',
-      'Hidden neighbourhoods to explore?',
-      'Best gelato — who does it best?',
-    ];
-  }
-  return [
-    `Best restaurants in ${cityName} by neighbourhood?`,
-    `Hidden gems most tourists miss?`,
-    `How to get around ${cityName} efficiently?`,
-    `What should I know before visiting?`,
-  ];
-}
+const KIKO_PROMPTS = [
+  'What makes this city special?',
+  'Best neighbourhood for first-timers?',
+  'Hidden gems most tourists miss?',
+  'Best time of year to visit?',
+];
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown renderer — bold, bullets, line breaks
@@ -140,8 +73,6 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const suggestedPrompts = getSuggestedPrompts(city.name);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -253,27 +184,30 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
     <Card className="h-[600px] flex flex-col">
       <CardHeader className="border-b pb-3">
         <CardTitle className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
-            <Bot className="w-4 h-4 text-primary-foreground" />
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 text-white text-sm font-bold">
+            🌍
           </div>
-          {city.name} Travel Advisor
+          <div className="flex flex-col">
+            <span>Kiko 🌍</span>
+            <span className="text-xs font-normal text-muted-foreground">Your destination guide</span>
+          </div>
         </CardTitle>
       </CardHeader>
 
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <Sparkles className="w-8 h-8 text-primary" />
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mb-4 text-2xl">
+              🌍
             </div>
             <h3 className="font-display text-lg font-semibold mb-1">
-              Your local guide to {city.name}
+              Kiko 🌍
             </h3>
             <p className="text-sm text-muted-foreground mb-5 max-w-xs">
-              Ask me anything — restaurants by neighbourhood, hidden gems, transport, booking tips and more.
+              Hi! I'm Kiko 🌍 Tell me where you're curious about — I can share what makes each city special, the best neighbourhoods to explore, and what's worth skipping.
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {suggestedPrompts.map((prompt) => (
+              {KIKO_PROMPTS.map((prompt) => (
                 <Button
                   key={prompt}
                   variant="outline"
@@ -297,8 +231,8 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
                 )}
               >
                 {message.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-4 h-4 text-primary-foreground" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 mt-0.5 text-sm">
+                    🌍
                   </div>
                 )}
                 <div
@@ -323,8 +257,8 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
             ))}
             {isLoading && messages[messages.length - 1]?.role === 'user' && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center shrink-0">
-                  <Bot className="w-4 h-4 text-primary-foreground" />
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 text-sm">
+                  🌍
                 </div>
                 <div className="bg-muted rounded-2xl px-4 py-3">
                   <div className="flex gap-1 items-center h-4">
@@ -344,7 +278,7 @@ const CityAdvisor = ({ city }: CityAdvisorProps) => {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Ask about ${city.name}…`}
+            placeholder={`Ask Kiko about ${city.name}…`}
             disabled={isLoading}
             className="flex-1"
           />

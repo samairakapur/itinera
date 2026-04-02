@@ -28,3 +28,4 @@ dist-ssr
 
 # Nested repo (not part of this project)
 itinera/
+.vercel

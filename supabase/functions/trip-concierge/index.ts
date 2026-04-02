@@ -46,25 +46,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── AI provider cascade ────────────────────────────────────────────────
-    // Build an ordered list of providers; try each in turn until one succeeds.
-    // This means a bad/expired GROQ_API_KEY automatically falls through to
-    // GOOGLE_AI_API_KEY so Aria keeps working even when one key expires.
-    const GROQ_API_KEY      = sanitizeKey(Deno.env.get('GROQ_API_KEY'))      || undefined;
-    const LOVABLE_API_KEY   = sanitizeKey(Deno.env.get('LOVABLE_API_KEY'))   || undefined;
-    const GOOGLE_AI_API_KEY = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
+    // Primary: Groq (llama-3.1-70b-versatile); Secondary: OpenAI-compatible fallback.
+    // Google AI has been removed from the chain (was causing 429 errors).
+    const GROQ_API_KEY    = sanitizeKey(Deno.env.get('GROQ_API_KEY'))    || undefined;
+    const LOVABLE_API_KEY = sanitizeKey(Deno.env.get('LOVABLE_API_KEY')) || undefined;
 
     console.log('[trip-concierge] AI keys present:', {
-      groq: !!GROQ_API_KEY, lovable: !!LOVABLE_API_KEY, google: !!GOOGLE_AI_API_KEY,
+      groq: !!GROQ_API_KEY, lovable: !!LOVABLE_API_KEY,
     });
 
     type Provider = { key: string; url: string; model: string; name: string };
     const providers: Provider[] = [];
-    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: 'https://api.groq.com/openai/v1/chat/completions',                                  model: 'llama-3.3-70b-versatile',             name: 'groq' });
-    if (LOVABLE_API_KEY)   providers.push({ key: LOVABLE_API_KEY,   url: 'https://ai.gateway.lovable.dev/v1/chat/completions',                              model: 'google/gemini-2.5-flash',             name: 'lovable' });
-    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',        model: 'gemini-2.0-flash',                    name: 'google' });
+    if (GROQ_API_KEY)    providers.push({ key: GROQ_API_KEY,    url: 'https://api.groq.com/openai/v1/chat/completions',              model: 'llama-3.1-70b-versatile',  name: 'groq' });
+    if (LOVABLE_API_KEY) providers.push({ key: LOVABLE_API_KEY, url: 'https://ai.gateway.lovable.dev/v1/chat/completions',           model: 'google/gemini-2.5-flash',   name: 'lovable' });
 
     if (providers.length === 0) {
-      return json({ error: 'AI service not configured. Please set GROQ_API_KEY or GOOGLE_AI_API_KEY in Supabase Edge Function secrets.' });
+      return json({ error: 'AI service not configured. Please set GROQ_API_KEY in Supabase Edge Function secrets.' });
     }
 
     // ── Service-role client to load all trip data ──────────────────────────
@@ -224,6 +221,7 @@ TONE: Warm, concise, and actionable. Bullet points for lists. Short paragraphs f
       try {
         const aiRes = await fetch(provider.url, {
           method: 'POST',
+          signal: AbortSignal.timeout(30000),
           headers: {
             'Authorization': `Bearer ${provider.key}`,
             'Content-Type': 'application/json',

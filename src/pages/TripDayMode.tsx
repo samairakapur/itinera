@@ -31,21 +31,22 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // ── Circular progress ring ────────────────────────────────────────────────────
-const CircleRing = ({ pct, size = 64 }: { pct: number; size?: number }) => {
-  const r = (size - 8) / 2;
+const CircleRing = ({ pct, size = 96 }: { pct: number; size?: number }) => {
+  const r = (size - 10) / 2;
   const circ = 2 * Math.PI * r;
-  const dash = (pct / 100) * circ;
+  const dash = (Math.min(pct, 100) / 100) * circ;
+  // Colour: green at 100%, green at 50%+, grey below 50%
+  const progressColour = pct >= 100 ? '#22C55E' : pct >= 50 ? '#22C55E' : '#D1D5DB';
   return (
     <svg width={size} height={size} className="-rotate-90">
       {/* Track */}
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={6} className="text-muted/40" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#D1D5DB" strokeWidth={7} />
       {/* Progress */}
       <circle
         cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke="currentColor" strokeWidth={6}
+        stroke={progressColour} strokeWidth={7}
         strokeDasharray={`${dash} ${circ}`}
         strokeLinecap="round"
-        className={pct >= 100 ? 'text-green-500' : 'text-primary'}
         style={{ transition: 'stroke-dasharray 0.4s ease' }}
       />
     </svg>
@@ -508,20 +509,25 @@ const TripDayMode = () => {
     if (progressPct >= 80 || (isEveningHour && doneCount > 0)) {
       reflectionShownRef.current = true;
       setTimeout(() => {
+        const summary = progressPct >= 100
+          ? "You've completed everything — what a day!"
+          : `You've done ${doneCount} of ${activeCount} activities. Any highlights?`;
         toast(
           <div className="space-y-1">
             <p className="font-semibold text-sm">How's the day going? ✨</p>
-            <p className="text-xs text-muted-foreground">
-              {progressPct >= 100
-                ? "You've completed everything — what a day!"
-                : `You've done ${doneCount} of ${activeCount} activities. Any highlights?`}
-            </p>
+            <p className="text-xs text-muted-foreground">{summary}</p>
           </div>,
-          { duration: 10000 }
+          {
+            duration: 10000,
+            action: {
+              label: 'Chat with Aria',
+              onClick: () => navigate(`/trips/${tripId}`),
+            },
+          }
         );
       }, 800);
     }
-  }, [progressPct, doneCount, activeCount, isOnTrip]);
+  }, [progressPct, doneCount, activeCount, isOnTrip, navigate, tripId]);
 
   // "Next Up" = first pending activity in current or future slot
   const nextUp = useMemo(() => {
@@ -688,10 +694,10 @@ const TripDayMode = () => {
             </Button>
 
             {/* Circular progress ring */}
-            <div className="relative w-14 h-14 flex items-center justify-center">
-              <CircleRing pct={progressPct} size={56} />
-              <span className="absolute text-[10px] font-semibold leading-none text-foreground">
-                {Math.round(progressPct)}%
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <CircleRing pct={progressPct} size={96} />
+              <span className="absolute text-base font-bold leading-none text-foreground">
+                {progressPct >= 100 ? '✓' : `${Math.round(progressPct)}%`}
               </span>
             </div>
 

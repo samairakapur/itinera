@@ -12,226 +12,259 @@ interface NearbyRequest {
   categories: Array<"attraction" | "cafe" | "restaurant">;
 }
 
-interface NearbyPlace {
-  id: string;
-  name: string;
-  type: "attraction" | "cafe" | "restaurant";
-  description: string;
-  latitude: number;
-  longitude: number;
-  distanceKm: number;
-  distance: string;
-  rating: null;
-  priceLevel: null;
-  openNow: null;
-  address: string;
-  imageUrl: null;
-  matchReason: string;
-  cuisine: string | null;
-  typicalTimeSpent: string;
-}
-
-// Haversine distance in km
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function formatDistance(km: number): string {
-  if (km < 1) return `${Math.round(km * 1000)}m`;
-  return `${km.toFixed(1)} km`;
-}
-
-function buildOverpassQuery(lat: number, lng: number, radius: number, categories: string[]): string {
-  const around = `(around:${radius},${lat},${lng})`;
-  const parts: string[] = [];
-
-  if (categories.includes("attraction")) {
-    parts.push(`node["tourism"~"^(attraction|museum|gallery|artwork|viewpoint|zoo|theme_park)$"]${around};`);
-    parts.push(`node["historic"~"^(monument|castle|ruins|memorial|building|church)$"]["name"]${around};`);
-    parts.push(`node["amenity"~"^(theatre|cinema|arts_centre)$"]["name"]${around};`);
-    parts.push(`way["tourism"~"^(attraction|museum|gallery)$"]["name"]${around};`);
-  }
-  if (categories.includes("cafe")) {
-    parts.push(`node["amenity"~"^(cafe|bakery)$"]["name"]${around};`);
-    parts.push(`node["amenity"="ice_cream"]["name"]${around};`);
-  }
-  if (categories.includes("restaurant")) {
-    parts.push(`node["amenity"~"^(restaurant|fast_food|food_court|pub|bar)$"]["name"]${around};`);
-    parts.push(`way["amenity"~"^(restaurant|fast_food)$"]["name"]${around};`);
-  }
-
-  return `[out:json][timeout:30];(${parts.join("")});out body 60;>;out skel qt;`;
-}
-
-function osmTagsToType(tags: Record<string, string>): "attraction" | "cafe" | "restaurant" {
-  const amenity = tags.amenity || "";
-  const tourism = tags.tourism || "";
-  const historic = tags.historic || "";
-
-  if (["cafe", "bakery", "ice_cream"].includes(amenity)) return "cafe";
-  if (["restaurant", "fast_food", "food_court", "pub", "bar"].includes(amenity)) return "restaurant";
-  if (tourism || historic || ["theatre", "cinema", "arts_centre"].includes(amenity)) return "attraction";
-  return "attraction";
-}
-
-function buildAddress(tags: Record<string, string>): string {
-  const parts: string[] = [];
-  if (tags["addr:housenumber"] && tags["addr:street"]) {
-    parts.push(`${tags["addr:housenumber"]} ${tags["addr:street"]}`);
-  } else if (tags["addr:street"]) {
-    parts.push(tags["addr:street"]);
-  }
-  if (tags["addr:city"]) parts.push(tags["addr:city"]);
-  if (tags["addr:country"]) parts.push(tags["addr:country"]);
-  return parts.join(", ") || "Address unavailable";
-}
-
-function buildMatchReason(type: string, tags: Record<string, string>): string {
-  const cuisine = tags.cuisine;
-  switch (type) {
-    case "cafe":
-      return cuisine ? `${cuisine.split(";")[0]} café nearby` : "Café within walking distance";
-    case "restaurant":
-      return cuisine ? `${cuisine.split(";")[0]} cuisine nearby` : "Restaurant within reach";
-    default: {
-      const tourism = tags.tourism || tags.historic || "";
-      if (tourism) return `Local ${tourism.replace(/_/g, " ")} worth visiting`;
-      return "Local attraction nearby";
-    }
-  }
-}
-
-function buildDescription(type: string, tags: Record<string, string>): string {
-  const name = tags.name || "This place";
-  switch (type) {
-    case "cafe":
-      return tags.cuisine
-        ? `A local ${tags.cuisine.split(";")[0]} café.`
-        : `A café near you.`;
-    case "restaurant":
-      return tags.cuisine
-        ? `Serving ${tags.cuisine.split(";")[0]} cuisine.`
-        : `A restaurant near you.`;
-    default: {
-      if (tags.tourism === "museum") return `A museum in the area.`;
-      if (tags.tourism === "gallery") return `An art gallery nearby.`;
-      if (tags.historic) return `A historic ${tags.historic.replace(/_/g, " ")} nearby.`;
-      if (tags.tourism === "viewpoint") return `A viewpoint with local views.`;
-      return `A local attraction — ${name}.`;
-    }
-  }
-}
-
-function typicalTimeSpent(type: string, tags: Record<string, string>): string {
-  if (type === "cafe") return "30 – 45 min";
-  if (type === "restaurant") return "1 – 1.5 hrs";
-  if (tags.tourism === "museum") return "1.5 – 3 hrs";
-  if (tags.tourism === "gallery") return "1 – 2 hrs";
-  if (tags.tourism === "viewpoint") return "15 – 30 min";
-  return "1 – 2 hrs";
-}
-
-// Always respond HTTP 200 so supabase.functions.invoke can read the body.
-// Errors are communicated via { error: string, places: [] } in the JSON body.
+// Always HTTP 200 so supabase.functions.invoke reads the body
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-// Overpass endpoint list — tried in order until one succeeds
+// Foursquare v3 category codes
+// Attractions: Arts & Entertainment (10000) + Landmarks & Outdoors (16000)
+// Café: 13032 (Coffee Shop) + 13035 (Café)
+// Restaurant: 13065 (Restaurant)
+const FSQ_CATEGORIES: Record<string, string[]> = {
+  attraction: ["10000", "16000"],
+  cafe: ["13032", "13035"],
+  restaurant: ["13065"],
+};
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) return `${Math.round(meters)}m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+function mapFsqType(categories: any[]): "attraction" | "cafe" | "restaurant" {
+  if (!categories?.length) return "attraction";
+  const ids: number[] = categories.map((c: any) => Math.floor(c.id / 1000));
+  if (ids.some(id => id === 13)) {
+    const leafIds = categories.map((c: any) => c.id);
+    if (leafIds.some((id: number) => [13032, 13035, 13063].includes(id))) return "cafe";
+    return "restaurant";
+  }
+  return "attraction";
+}
+
+function buildPhotoUrl(photo: any): string | null {
+  if (!photo?.prefix || !photo?.suffix) return null;
+  return `${photo.prefix}500x300${photo.suffix}`;
+}
+
+function buildMatchReason(type: string, place: any): string {
+  const category = place.categories?.[0]?.name ?? "";
+  const distance = place.distance ? `${formatDistance(place.distance)} away` : "nearby";
+  switch (type) {
+    case "cafe": return `${category || "Café"} ${distance}`;
+    case "restaurant": return `${category || "Restaurant"} ${distance}`;
+    default: return `${category || "Attraction"} ${distance}`;
+  }
+}
+
+function buildDescription(type: string, place: any): string {
+  const category = place.categories?.[0]?.name ?? "";
+  switch (type) {
+    case "cafe": return category ? `A ${category.toLowerCase()} near you.` : "A café near you.";
+    case "restaurant": return category ? `A ${category.toLowerCase()} near you.` : "A restaurant near you.";
+    default: return category ? `A ${category.toLowerCase()} in the area.` : `A local attraction nearby.`;
+  }
+}
+
+function typicalTime(type: string): string {
+  if (type === "cafe") return "30 – 45 min";
+  if (type === "restaurant") return "1 – 1.5 hrs";
+  return "1 – 2 hrs";
+}
+
+async function fetchFoursquarePlaces(
+  lat: number,
+  lng: number,
+  radiusMeters: number,
+  categories: string[],
+  apiKey: string,
+): Promise<any[]> {
+  const categoryIds = categories.flatMap(c => FSQ_CATEGORIES[c] ?? []).join(",");
+  const fields = "fsq_id,name,categories,geocodes,location,distance,rating,price,photos";
+  const url =
+    `https://api.foursquare.com/v3/places/search?ll=${lat},${lng}&radius=${radiusMeters}` +
+    `&categories=${categoryIds}&fields=${fields}&limit=40&sort=DISTANCE`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: apiKey,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Foursquare API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.results ?? [];
+}
+
+// Overpass fallback when Foursquare key is unavailable
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
+function buildOverpassQuery(lat: number, lng: number, radius: number, categories: string[]): string {
+  const around = `(around:${radius},${lat},${lng})`;
+  const parts: string[] = [];
+  if (categories.includes("attraction")) {
+    parts.push(`node["tourism"~"^(attraction|museum|gallery|artwork|viewpoint|zoo|theme_park)$"]${around};`);
+    parts.push(`node["historic"~"^(monument|castle|ruins|memorial|building|church)$"]["name"]${around};`);
+    parts.push(`way["tourism"~"^(attraction|museum|gallery)$"]["name"]${around};`);
+  }
+  if (categories.includes("cafe")) {
+    parts.push(`node["amenity"~"^(cafe|bakery)$"]["name"]${around};`);
+  }
+  if (categories.includes("restaurant")) {
+    parts.push(`node["amenity"~"^(restaurant|fast_food|pub|bar)$"]["name"]${around};`);
+  }
+  return `[out:json][timeout:25];(${parts.join("")});out body 50;>;out skel qt;`;
+}
+
 async function fetchOverpass(query: string): Promise<any> {
   const encoded = encodeURIComponent(query);
   let lastErr: Error = new Error("All Overpass endpoints failed");
-
   for (const base of OVERPASS_ENDPOINTS) {
     try {
       const res = await fetch(`${base}?data=${encoded}`, {
         headers: { "User-Agent": "itinera-travel-app/1.0" },
         signal: AbortSignal.timeout(25000),
       });
-      if (!res.ok) {
-        lastErr = new Error(`${base} responded ${res.status}`);
-        continue;
-      }
+      if (!res.ok) { lastErr = new Error(`${base} ${res.status}`); continue; }
       return await res.json();
     } catch (e) {
       lastErr = e instanceof Error ? e : new Error(String(e));
-      console.warn(`Overpass endpoint ${base} failed:`, lastErr.message);
     }
   }
   throw lastErr;
 }
 
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function osmTagsToType(tags: Record<string, string>): "attraction" | "cafe" | "restaurant" {
+  const amenity = tags.amenity || "";
+  if (["cafe", "bakery", "ice_cream"].includes(amenity)) return "cafe";
+  if (["restaurant", "fast_food", "food_court", "pub", "bar"].includes(amenity)) return "restaurant";
+  return "attraction";
+}
+
+function osmMatchReason(type: string, tags: Record<string, string>, distM: number): string {
+  const dist = formatDistance(distM);
+  const cuisine = tags.cuisine?.split(";")[0] ?? "";
+  if (type === "cafe") return cuisine ? `${cuisine} café, ${dist} away` : `Café ${dist} away`;
+  if (type === "restaurant") return cuisine ? `${cuisine} restaurant, ${dist} away` : `Restaurant ${dist} away`;
+  const poi = tags.tourism || tags.historic || "";
+  return poi ? `${poi.replace(/_/g, " ")} ${dist} away` : `Local attraction ${dist} away`;
+}
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const body: NearbyRequest = await req.json();
     const { lat, lng, radius_meters, categories } = body;
 
     if (!lat || !lng || !radius_meters || !categories?.length) {
-      return json({ error: "Missing required fields: lat, lng, radius_meters, categories", places: [] });
+      return json({ error: "Missing required fields", places: [] });
     }
 
-    // Cap radius at 25 km to avoid overloading Overpass
     const clampedRadius = Math.min(radius_meters, 25000);
+    const apiKey = Deno.env.get("FOURSQUARE_API_KEY");
 
+    // ── Foursquare path ─────────────────────────────────────────────────────
+    if (apiKey) {
+      const results = await fetchFoursquarePlaces(lat, lng, clampedRadius, categories, apiKey);
+
+      const places = results
+        .filter((r: any) => r.name && r.geocodes?.main)
+        .map((r: any) => {
+          const type = mapFsqType(r.categories);
+          const distM = r.distance ?? haversine(lat, lng, r.geocodes.main.latitude, r.geocodes.main.longitude);
+          const photo = r.photos?.[0];
+          const imageUrl = buildPhotoUrl(photo);
+          const addr = r.location?.formatted_address ?? r.location?.address ?? "Address unavailable";
+
+          return {
+            id: r.fsq_id,
+            name: r.name,
+            type,
+            description: buildDescription(type, r),
+            latitude: r.geocodes.main.latitude,
+            longitude: r.geocodes.main.longitude,
+            distanceKm: distM / 1000,
+            distance: formatDistance(distM),
+            rating: r.rating ? Math.round(r.rating * 10) / 10 : null,
+            priceLevel: r.price ?? null,
+            openNow: null,
+            address: addr,
+            imageUrl,
+            matchReason: buildMatchReason(type, r),
+            cuisine: r.categories?.find((c: any) => c.name?.toLowerCase().includes("cuisine"))?.name ?? null,
+            typicalTimeSpent: typicalTime(type),
+          };
+        })
+        .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
+        .slice(0, 20);
+
+      return json({ places });
+    }
+
+    // ── Overpass fallback (no Foursquare key) ───────────────────────────────
+    console.warn("No FOURSQUARE_API_KEY — falling back to Overpass OSM");
     const query = buildOverpassQuery(lat, lng, clampedRadius, categories);
     const data = await fetchOverpass(query);
     const elements: any[] = data.elements || [];
+    const nodes = elements.filter(el => el.type === "node" && el.tags?.name && el.lat && el.lon);
 
-    // Filter to nodes with a name and valid coords
-    const nodes = elements.filter(
-      (el) => el.type === "node" && el.tags?.name && el.lat && el.lon
-    );
-
-    const places: NearbyPlace[] = nodes
-      .map((node): NearbyPlace | null => {
+    const places = nodes
+      .map((node: any) => {
         const tags = node.tags as Record<string, string>;
         const type = osmTagsToType(tags);
-
         if (!categories.includes(type)) return null;
-
-        const distanceKm = haversineDistance(lat, lng, node.lat, node.lon);
+        const distM = haversine(lat, lng, node.lat, node.lon);
+        const addrParts = [
+          tags["addr:housenumber"] && tags["addr:street"]
+            ? `${tags["addr:housenumber"]} ${tags["addr:street"]}`
+            : tags["addr:street"],
+          tags["addr:city"],
+        ].filter(Boolean);
 
         return {
           id: `osm-${node.id}`,
           name: tags.name,
           type,
-          description: buildDescription(type, tags),
+          description: osmMatchReason(type, tags, distM),
           latitude: node.lat,
           longitude: node.lon,
-          distanceKm,
-          distance: formatDistance(distanceKm),
+          distanceKm: distM / 1000,
+          distance: formatDistance(distM),
           rating: null,
           priceLevel: null,
           openNow: null,
-          address: buildAddress(tags),
+          address: addrParts.join(", ") || "Address unavailable",
           imageUrl: null,
-          matchReason: buildMatchReason(type, tags),
+          matchReason: osmMatchReason(type, tags, distM),
           cuisine: tags.cuisine ? tags.cuisine.split(";")[0].trim() : null,
-          typicalTimeSpent: typicalTimeSpent(type, tags),
+          typicalTimeSpent: typicalTime(type),
         };
       })
-      .filter((p): p is NearbyPlace => p !== null)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .filter(Boolean)
+      .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
       .slice(0, 20);
 
     return json({ places });
@@ -239,7 +272,7 @@ serve(async (req) => {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("nearby-places error:", msg);
     return json({
-      error: `Could not load nearby places: ${msg}. The map data service may be temporarily overloaded — please try again in a moment.`,
+      error: `Could not load nearby places. The location service may be temporarily unavailable — please try again in a moment.`,
       places: [],
     });
   }

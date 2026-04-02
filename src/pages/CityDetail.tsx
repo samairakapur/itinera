@@ -1,5 +1,6 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useCity } from '@/hooks/useCities';
+import { CITY_ATTRACTIONS } from '@/lib/cityAttractions';
 import { usePersonalizedAttractions } from '@/hooks/usePersonalizedAttractions';
 import { usePersonalizedRestaurants } from '@/hooks/usePersonalizedRestaurants';
 import { useTransport } from '@/hooks/useTransport';
@@ -16,12 +17,12 @@ import MonthlyClimateSummary from '@/components/weather/MonthlyClimateSummary';
 import PersonalizedTransportRecommendation from '@/components/transport/PersonalizedTransportRecommendation';
 import PersonalizedInsiderTips from '@/components/overview/PersonalizedInsiderTips';
 import { CommunityTipsDialog } from '@/components/community/CommunityTipsDialog';
-import { 
-  MapPin, 
-  Info, 
-  Cloud, 
-  Bus, 
-  Landmark, 
+import {
+  MapPin,
+  Info,
+  Cloud,
+  Bus,
+  Landmark,
   UtensilsCrossed,
   Bot,
   Clock,
@@ -31,11 +32,13 @@ import {
   Car,
   Train,
   Sparkles,
-  Users
+  Users,
+  ArrowLeft,
 } from 'lucide-react';
 
 const CityDetail = () => {
   const { cityId } = useParams<{ cityId: string }>();
+  const navigate = useNavigate();
   const { data: city, isLoading: cityLoading } = useCity(cityId);
   const { data: attractions, isLoading: attractionsLoading } = usePersonalizedAttractions(cityId);
   const { data: restaurants, isLoading: restaurantsLoading } = usePersonalizedRestaurants(cityId);
@@ -68,6 +71,36 @@ const CityDetail = () => {
 
   const airportOptions = transport?.airport_transfer_options as Array<{ method: string; duration: string; cost: string }> || [];
 
+  // Apply curated attraction overrides for known cities
+  const curatedAttractions = city && CITY_ATTRACTIONS[city.name]
+    ? CITY_ATTRACTIONS[city.name].map((curated, idx) => {
+        // Try to match by name with existing DB record, or create a synthetic one
+        const existing = attractions?.find(a =>
+          a.name.toLowerCase().includes(curated.name.toLowerCase()) ||
+          curated.name.toLowerCase().includes(a.name.toLowerCase())
+        );
+        return existing
+          ? { ...existing, name: curated.name, description: curated.description }
+          : {
+              id: `curated-${idx}`,
+              name: curated.name,
+              description: curated.description,
+              city_id: cityId ?? '',
+              category: null,
+              rating: null,
+              duration_minutes: null,
+              price_adult: null,
+              price_child: null,
+              is_family_friendly: null,
+              is_indoor: null,
+              best_time: null,
+              ticket_online_url: null,
+              image_url: null,
+              created_at: null,
+            };
+      })
+    : attractions;
+
   // Parse content into bullet points
   const parseIntoBullets = (text: string): string[] => {
     // Split by common separators: periods followed by space/capital, semicolons, or existing bullets
@@ -80,6 +113,20 @@ const CityDetail = () => {
 
   return (
     <div className="min-h-screen">
+      {/* Back navigation bar */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b">
+        <div className="container px-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 py-3 min-h-[44px] text-sm text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Destinations</span>
+          </button>
+        </div>
+      </div>
+
       {/* Hero */}
       <div className="relative h-72 md:h-[50vh] overflow-hidden">
         {city.hero_image_url || city.image_url ? (
@@ -438,9 +485,9 @@ const CityDetail = () => {
                   </Card>
                 ))}
               </div>
-            ) : attractions && attractions.length > 0 ? (
+            ) : curatedAttractions && curatedAttractions.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                {attractions.map((attraction, index) => (
+                {curatedAttractions.map((attraction, index) => (
                   <div key={attraction.id} className="relative">
                     {index < 3 && profile?.travel_preferences && (
                       <Badge className="absolute -top-2 -right-2 z-10 bg-primary text-primary-foreground text-xs">

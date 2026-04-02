@@ -44,7 +44,7 @@ const AttractionCard = ({ attraction, city = '' }: AttractionCardProps) => {
         place_name: attraction.name,
         place_type: 'attraction',
         city,
-        image_url: attraction.image_url ?? null,
+        image_url: imageUrl ?? null,
       });
       toast.success(result.action === 'saved' ? 'Saved to wishlist!' : 'Removed from wishlist');
     } catch {

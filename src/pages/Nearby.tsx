@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
@@ -49,6 +49,7 @@ const Nearby = () => {
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState(10);
+  const radiusDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const preferences = profile?.travel_preferences;
 
@@ -93,12 +94,29 @@ const Nearby = () => {
     }
   }, [latitude, longitude, radiusKm]);
 
+  // Initial load when location first becomes available
   useEffect(() => {
-    // Don't auto-retry after an error — user must manually refresh to avoid repeated toasts
     if (latitude && longitude && places.length === 0 && !loading && !fetchError) {
       fetchNearbyPlaces();
     }
   }, [latitude, longitude, fetchNearbyPlaces, places.length, loading, fetchError]);
+
+  // Debounced re-fetch when radius changes (800ms delay, skip on first render)
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!latitude || !longitude) return;
+    if (radiusDebounceRef.current) clearTimeout(radiusDebounceRef.current);
+    radiusDebounceRef.current = setTimeout(() => {
+      setPlaces([]);
+      setFetchError(false);
+      fetchNearbyPlaces();
+    }, 800);
+    return () => {
+      if (radiusDebounceRef.current) clearTimeout(radiusDebounceRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radiusKm]);
 
   const handleManualLocationSet = (lat: number, lng: number, name?: string) => {
     setManualLocation(lat, lng);

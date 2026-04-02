@@ -423,6 +423,44 @@ Deno.serve(async (req: Request) => {
           END $$;
         `,
       },
+      {
+        name: 'saved_places — favourites/wishlist table',
+        ddl: `
+          DO $$ BEGIN
+            CREATE TABLE IF NOT EXISTS public.saved_places (
+              id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+              place_name    TEXT NOT NULL,
+              place_type    TEXT NOT NULL CHECK (place_type IN ('attraction', 'restaurant', 'cafe')),
+              city          TEXT NOT NULL,
+              country       TEXT,
+              image_url     TEXT,
+              notes         TEXT,
+              viator_product_id  TEXT,
+              foursquare_id      TEXT,
+              created_at    TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            -- RLS
+            ALTER TABLE public.saved_places ENABLE ROW LEVEL SECURITY;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE schemaname = 'public' AND tablename = 'saved_places' AND policyname = 'Users can manage their own saved places'
+            ) THEN
+              CREATE POLICY "Users can manage their own saved places"
+              ON public.saved_places
+              FOR ALL
+              TO authenticated
+              USING  (auth.uid() = user_id)
+              WITH CHECK (auth.uid() = user_id);
+            END IF;
+
+            -- Index for fast user lookups
+            CREATE INDEX IF NOT EXISTS idx_saved_places_user ON public.saved_places (user_id);
+          END $$;
+        `,
+      },
     ];
 
     for (const m of migrations) {

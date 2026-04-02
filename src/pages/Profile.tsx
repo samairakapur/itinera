@@ -182,13 +182,22 @@ function SavedTab() {
                           <img
                             src={place.image_url}
                             alt={place.place_name}
+                            crossOrigin="anonymous"
                             className="w-14 h-14 rounded-md object-cover shrink-0"
+                            onError={(e) => {
+                              const el = e.currentTarget as HTMLImageElement;
+                              el.style.display = 'none';
+                              const fallback = el.nextElementSibling as HTMLElement | null;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="w-14 h-14 rounded-md bg-muted flex items-center justify-center shrink-0 text-xl">
-                            {typeEmoji[place.place_type] ?? '📍'}
-                          </div>
-                        )}
+                        ) : null}
+                        <div
+                          className="w-14 h-14 rounded-md bg-muted flex items-center justify-center shrink-0 text-xl"
+                          style={{ display: place.image_url ? 'none' : 'flex' }}
+                        >
+                          {typeEmoji[place.place_type] ?? '📍'}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm line-clamp-1">{place.place_name}</p>
                           <p className="text-xs text-muted-foreground capitalize">{place.place_type}</p>

@@ -185,18 +185,16 @@ export const TripsCalendar = ({ trips, onTripsUpdated }: TripsCalendarProps) => 
         duration: 5000,
       });
 
-      // Also show secondary toast about itinerary dates
+      // Nudge user to update day dates via Aria (single clean toast — no second popup)
+      const rescheduledTripId = trip.id;
       setTimeout(() => {
-        toast.info(
-          `Heads up: your day-by-day itinerary still references the original dates.`,
-          {
-            action: {
-              label: 'Got it',
-              onClick: () => {},
-            },
-            duration: 8000,
-          }
-        );
+        toast('Trip rescheduled! Open Aria to update day dates.', {
+          action: {
+            label: 'Open Aria',
+            onClick: () => navigate(`/trips/${rescheduledTripId}`),
+          },
+          duration: 7000,
+        });
       }, 1000);
 
       // Auto-clear undo after 5 seconds
