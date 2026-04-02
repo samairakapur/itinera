@@ -26,7 +26,6 @@ import { FlightConstraintBanner } from '@/components/trip/FlightConstraintBanner
 import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDialog';
 import { CityDayBadge } from '@/components/trip/CityDayBadge';
 import { TransitionDayCard } from '@/components/trip/TransitionDayCard';
-import { TravelTips } from '@/components/trip/TravelTips';
 import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -876,23 +875,6 @@ const TripDetail = () => {
             </Card>
           )}
 
-          {/* Travel Tips for all days */}
-          <TravelTips 
-            packingTips={[
-              'Check weather forecast for all trip days',
-              'Pack layers for variable conditions',
-              'Comfortable walking shoes recommended',
-            ]}
-            transportTips={[
-              'Consider getting a multi-day transit pass',
-              'Download offline maps for navigation',
-            ]}
-            weatherNotes={tripStartDate && endDate 
-              ? `Weather guidance for ${format(tripStartDate, 'MMM d')} - ${format(endDate, 'MMM d')}`
-              : undefined
-            }
-          />
-          
           {days.map((day, index) => {
             const dayDate = startDate ? addDays(startDate, day.dayNumber - 1) : undefined;
             const dayConstraint = dayConstraints[index];

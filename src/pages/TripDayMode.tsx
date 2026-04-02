@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useItinerary } from '@/hooks/useItineraries';
 import { useFlightDetails } from '@/hooks/useFlightDetails';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { differenceInDays, format } from 'date-fns';
 import {
   ArrowLeft,
@@ -27,9 +27,30 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+
+// ── Circular progress ring ────────────────────────────────────────────────────
+const CircleRing = ({ pct, size = 64 }: { pct: number; size?: number }) => {
+  const r = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ;
+  return (
+    <svg width={size} height={size} className="-rotate-90">
+      {/* Track */}
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth={6} className="text-muted/40" />
+      {/* Progress */}
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke="currentColor" strokeWidth={6}
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        className={pct >= 100 ? 'text-green-500' : 'text-primary'}
+        style={{ transition: 'stroke-dasharray 0.4s ease' }}
+      />
+    </svg>
+  );
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -396,6 +417,7 @@ const TripDayMode = () => {
     Record<string, Date>
   >({});
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+  const reflectionShownRef = useRef(false);
 
   const today = useMemo(() => new Date(), []);
 
@@ -478,6 +500,28 @@ const TripDayMode = () => {
   ).length;
   const progressPct = activeCount > 0 ? (doneCount / activeCount) * 100 : 0;
   const allDone = activeCount > 0 && doneCount === activeCount;
+
+  // End-of-day reflection — fires once when 80%+ done or when hour ≥ 20 (8pm)
+  useEffect(() => {
+    if (!isOnTrip || reflectionShownRef.current) return;
+    const isEveningHour = new Date().getHours() >= 20;
+    if (progressPct >= 80 || (isEveningHour && doneCount > 0)) {
+      reflectionShownRef.current = true;
+      setTimeout(() => {
+        toast(
+          <div className="space-y-1">
+            <p className="font-semibold text-sm">How's the day going? ✨</p>
+            <p className="text-xs text-muted-foreground">
+              {progressPct >= 100
+                ? "You've completed everything — what a day!"
+                : `You've done ${doneCount} of ${activeCount} activities. Any highlights?`}
+            </p>
+          </div>,
+          { duration: 10000 }
+        );
+      }, 800);
+    }
+  }, [progressPct, doneCount, activeCount, isOnTrip]);
 
   // "Next Up" = first pending activity in current or future slot
   const nextUp = useMemo(() => {
@@ -632,7 +676,7 @@ const TripDayMode = () => {
       {/* Sticky header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 border-b">
         <div className="container px-4 max-w-lg mx-auto">
-          <div className="flex items-center justify-between py-4">
+          <div className="flex items-center justify-between py-3">
             <Button
               variant="ghost"
               size="sm"
@@ -642,11 +686,20 @@ const TripDayMode = () => {
               <ArrowLeft className="w-4 h-4 mr-2" />
               {tripTitle}
             </Button>
-            <div className="flex items-center gap-2">
+
+            {/* Circular progress ring */}
+            <div className="relative w-14 h-14 flex items-center justify-center">
+              <CircleRing pct={progressPct} size={56} />
+              <span className="absolute text-[10px] font-semibold leading-none text-foreground">
+                {Math.round(progressPct)}%
+              </span>
+            </div>
+
+            <div className="flex flex-col items-end gap-0.5">
               <Badge variant="secondary" className="text-xs">
                 Day {dayNumber}/{itinerary.num_days}
               </Badge>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground">
                 {format(today, 'EEE, MMM d')}
               </span>
             </div>
@@ -655,24 +708,16 @@ const TripDayMode = () => {
       </div>
 
       <div className="container px-4 max-w-lg mx-auto space-y-5 pt-5">
-        {/* Progress bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-baseline">
-            <span className="text-sm font-medium">
-              {activeCount === 0
-                ? 'No activities scheduled'
-                : allDone
-                ? "All done today! 🎉"
-                : doneCount === 0
-                ? 'Ready to explore!'
-                : `${doneCount} of ${activeCount} done`}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {Math.round(progressPct)}%
-            </span>
-          </div>
-          <Progress value={progressPct} className="h-1.5" />
-        </div>
+        {/* Status label */}
+        <p className="text-sm font-medium text-muted-foreground">
+          {activeCount === 0
+            ? 'No activities scheduled'
+            : allDone
+            ? "All done today! 🎉"
+            : doneCount === 0
+            ? 'Ready to explore!'
+            : `${doneCount} of ${activeCount} activities done`}
+        </p>
 
         {/* Flight pill(s) for today */}
         {todaysFlights.map((flight) => {
