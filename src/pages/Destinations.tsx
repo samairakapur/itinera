@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import CityCard from '@/components/cities/CityCard';
 import { DestinationFilters } from '@/components/destinations/DestinationFilters';
 import { Search, MapPin, Sparkles, Heart, ArrowRight } from 'lucide-react';
+import { KikoConcierge } from '@/components/destinations/KikoConcierge';
 
 // Personalized city card
 const PersonalizedCityCard = ({ city }: { city: ScoredCity }) => {
@@ -239,6 +240,9 @@ const Destinations = () => {
           )}
         </section>
       </div>
+
+      {/* Kiko — floating destination guide chatbot */}
+      <KikoConcierge />
     </div>
   );
 };
