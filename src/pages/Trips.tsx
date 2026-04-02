@@ -7,8 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SavedTripCard } from '@/components/trip/SavedTripCard';
-import { 
-  Calendar, 
+import { TripsCalendar } from '@/components/trips/TripsCalendar';
+import {
+  Calendar,
+  List,
   Plus,
   Sparkles,
   History,
@@ -18,9 +20,10 @@ import {
 const Trips = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { data: itineraries, isLoading: itinerariesLoading } = useItineraries();
+  const { data: itineraries, isLoading: itinerariesLoading, refetch } = useItineraries();
   const deleteItinerary = useDeleteItinerary();
   const [activeTab, setActiveTab] = useState('upcoming');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
   // Separate trips into upcoming/current and past
   const { upcomingTrips, pastTrips } = useMemo(() => {
@@ -133,10 +136,37 @@ const Trips = () => {
             <h1 className="font-display text-3xl font-bold text-foreground mb-2">My Trips</h1>
             <p className="text-muted-foreground">Your personalized travel itineraries</p>
           </div>
-          <Button size="lg" onClick={() => navigate('/planner/new')} className="gap-2 shadow-lg">
-            <Plus className="w-5 h-5" />
-            Plan New Trip
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* List / Calendar view toggle */}
+            <div className="flex items-center border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                List
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
+                  viewMode === 'calendar'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                Calendar
+              </button>
+            </div>
+            <Button size="lg" onClick={() => navigate('/planner/new')} className="gap-2 shadow-lg">
+              <Plus className="w-5 h-5" />
+              Plan New Trip
+            </Button>
+          </div>
         </div>
 
         {itinerariesLoading ? (
@@ -151,6 +181,11 @@ const Trips = () => {
               </Card>
             ))}
           </div>
+        ) : viewMode === 'calendar' ? (
+          <TripsCalendar
+            trips={itineraries ?? []}
+            onTripsUpdated={() => refetch()}
+          />
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
