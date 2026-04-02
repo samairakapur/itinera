@@ -21,6 +21,10 @@ interface ToolCall {
 interface TripConciergeProps {
   tripId: string;
   tripName?: string;
+  /** Open the panel automatically on mount */
+  initialOpen?: boolean;
+  /** Pre-inject an Aria message when the panel first opens */
+  initialMessage?: string;
 }
 
 // Aria avatar — gradient circle with sparkle
@@ -51,10 +55,14 @@ Try asking:
   created_at: new Date().toISOString(),
 };
 
-export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
+export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage }: TripConciergeProps) => {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [open, setOpen] = useState(initialOpen);
+  const [messages, setMessages] = useState<Message[]>(() =>
+    initialMessage
+      ? [{ id: 'reflection-0', role: 'assistant', content: initialMessage, created_at: new Date().toISOString() }]
+      : []
+  );
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -101,6 +109,12 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
     }
   }, [open]);
 
+  // Get current session token for authenticated Edge Function calls
+  const getAuthHeader = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  };
+
   const handleSend = async () => {
     if (!input.trim() || loading || !user) return;
 
@@ -122,8 +136,10 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
     setLoading(true);
 
     try {
+      const authHeaders = await getAuthHeader();
       const { data, error } = await supabase.functions.invoke('trip-concierge', {
         body: { tripId, message: userMessage, userId: user.id },
+        headers: authHeaders,
       });
 
       if (error) {
@@ -199,8 +215,10 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
       setMessages(prev => [...prev, declineMsg]);
       setLoading(true);
       try {
+        const authHeaders2 = await getAuthHeader();
         const { data } = await supabase.functions.invoke('trip-concierge', {
           body: { tripId, message: "No thanks, keep the itinerary as is.", userId: user.id },
+          headers: authHeaders2,
         });
         if (data?.reply) {
           setMessages(prev => [...prev, {
@@ -258,8 +276,10 @@ export const TripConcierge = ({ tripId, tripName }: TripConciergeProps) => {
       };
       setMessages(prev => [...prev, confirmMsg]);
       setLoading(true);
+      const authHeaders3 = await getAuthHeader();
       const { data } = await supabase.functions.invoke('trip-concierge', {
         body: { tripId, message: 'The change has been applied to the itinerary successfully.', userId: user.id },
+        headers: authHeaders3,
       });
       if (data?.reply) {
         setMessages(prev => [...prev, {

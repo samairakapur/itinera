@@ -29,14 +29,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { TripConcierge } from '@/components/trip/TripConcierge';
 
 // ── Circular progress ring ────────────────────────────────────────────────────
 const CircleRing = ({ pct, size = 96 }: { pct: number; size?: number }) => {
   const r = (size - 10) / 2;
   const circ = 2 * Math.PI * r;
   const dash = (Math.min(pct, 100) / 100) * circ;
-  // Colour: green at 100%, green at 50%+, grey below 50%
-  const progressColour = pct >= 100 ? '#22C55E' : pct >= 50 ? '#22C55E' : '#D1D5DB';
+  // Colour: terracotta/orange below 50%, green at 50%+
+  const progressColour = pct >= 50 ? '#22C55E' : '#C2410C';
   return (
     <svg width={size} height={size} className="-rotate-90">
       {/* Track */}
@@ -419,6 +420,7 @@ const TripDayMode = () => {
   >({});
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const reflectionShownRef = useRef(false);
+  const [ariaReflectionMessage, setAriaReflectionMessage] = useState<string | null>(null);
 
   const today = useMemo(() => new Date(), []);
 
@@ -503,31 +505,20 @@ const TripDayMode = () => {
   const allDone = activeCount > 0 && doneCount === activeCount;
 
   // End-of-day reflection — fires once when 80%+ done or when hour ≥ 20 (8pm)
+  // Opens Aria directly with a pre-filled reflection message
   useEffect(() => {
     if (!isOnTrip || reflectionShownRef.current) return;
     const isEveningHour = new Date().getHours() >= 20;
     if (progressPct >= 80 || (isEveningHour && doneCount > 0)) {
       reflectionShownRef.current = true;
       setTimeout(() => {
-        const summary = progressPct >= 100
-          ? "You've completed everything — what a day!"
-          : `You've done ${doneCount} of ${activeCount} activities. Any highlights?`;
-        toast(
-          <div className="space-y-1">
-            <p className="font-semibold text-sm">How's the day going? ✨</p>
-            <p className="text-xs text-muted-foreground">{summary}</p>
-          </div>,
-          {
-            duration: 10000,
-            action: {
-              label: 'Chat with Aria',
-              onClick: () => navigate(`/trips/${tripId}`),
-            },
-          }
-        );
-      }, 800);
+        const msg = progressPct >= 100
+          ? `Hey! You've completed all ${activeCount} activities today ✨ What a day! Any highlights or things that didn't go as planned? I'd love to hear how it went.`
+          : `Hey! You've done ${doneCount} of ${activeCount} activities today ✨ How's it going? Any highlights or things that didn't go as planned?`;
+        setAriaReflectionMessage(msg);
+      }, 1500);
     }
-  }, [progressPct, doneCount, activeCount, isOnTrip, navigate, tripId]);
+  }, [progressPct, doneCount, activeCount, isOnTrip]);
 
   // "Next Up" = first pending activity in current or future slot
   const nextUp = useMemo(() => {
@@ -903,6 +894,16 @@ const TripDayMode = () => {
           </Card>
         )}
       </div>
+
+      {/* Aria concierge — floats over Day Mode, auto-opens for reflection */}
+      {tripId && (
+        <TripConcierge
+          tripId={tripId}
+          tripName={tripTitle}
+          initialOpen={!!ariaReflectionMessage}
+          initialMessage={ariaReflectionMessage ?? undefined}
+        />
+      )}
     </div>
   );
 };

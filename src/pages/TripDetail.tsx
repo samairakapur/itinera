@@ -30,6 +30,7 @@ import { Activity } from '@/components/trip/ActivityCard';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { OnboardingWalkthrough2, useOnboarding2 } from '@/components/onboarding/OnboardingWalkthrough';
 
 const TripDetail = () => {
   const { tripId } = useParams();
@@ -56,6 +57,8 @@ const TripDetail = () => {
     myVoteFor,
     voteCounts,
   } = useGroupTrip(tripId);
+
+  const { shouldShow: showWalkthrough2, markDone: markWalkthrough2Done } = useOnboarding2();
 
   const [days, setDays] = useState<DayData[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -1046,6 +1049,11 @@ const TripDetail = () => {
           tripId={tripId}
           tripName={itinerary.name || itinerary.cities?.name}
         />
+      )}
+
+      {/* Onboarding Walkthrough 2 — shown on first trip detail view */}
+      {showWalkthrough2 && (
+        <OnboardingWalkthrough2 onDone={markWalkthrough2Done} />
       )}
     </div>
   );

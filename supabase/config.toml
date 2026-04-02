@@ -16,9 +16,21 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+[functions.trip-concierge]
+enabled = true
+verify_jwt = false
+
+[functions.destination-concierge]
+enabled = true
+verify_jwt = false
+
+[functions.apply-migrations]
+enabled = true
+verify_jwt = false
+
 [functions.nearby-places]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 
 [functions.get-place-image]
 enabled = true

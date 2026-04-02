@@ -27,6 +27,8 @@ export interface Profile {
   avatar_url: string | null;
   travel_preferences: TravelPreferences | null;
   profile_complete: boolean;
+  has_completed_onboarding_1: boolean;
+  has_completed_onboarding_2: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -57,18 +59,26 @@ export const useUpdateProfile = () => {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (updates: { travel_preferences?: TravelPreferences; profile_complete?: boolean }) => {
+    mutationFn: async (updates: { travel_preferences?: TravelPreferences; profile_complete?: boolean; has_completed_onboarding_1?: boolean; has_completed_onboarding_2?: boolean }) => {
       if (!user?.id) throw new Error('No user');
 
       // Build the upsert payload with user id
-      const upsertPayload = {
+      const upsertPayload: Record<string, unknown> = {
         id: user.id,
         email: user.email || null,
-        travel_preferences: updates.travel_preferences 
-          ? JSON.parse(JSON.stringify(updates.travel_preferences)) 
-          : undefined,
-        profile_complete: updates.profile_complete,
       };
+      if (updates.travel_preferences !== undefined) {
+        upsertPayload.travel_preferences = JSON.parse(JSON.stringify(updates.travel_preferences));
+      }
+      if (updates.profile_complete !== undefined) {
+        upsertPayload.profile_complete = updates.profile_complete;
+      }
+      if (updates.has_completed_onboarding_1 !== undefined) {
+        upsertPayload.has_completed_onboarding_1 = updates.has_completed_onboarding_1;
+      }
+      if (updates.has_completed_onboarding_2 !== undefined) {
+        upsertPayload.has_completed_onboarding_2 = updates.has_completed_onboarding_2;
+      }
 
       // Use upsert to handle both insert (new user) and update (existing user)
       const { data, error } = await supabase

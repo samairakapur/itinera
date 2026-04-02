@@ -424,6 +424,14 @@ Deno.serve(async (req: Request) => {
         `,
       },
       {
+        name: 'profiles — add onboarding completion columns',
+        ddl: `
+          ALTER TABLE public.profiles
+            ADD COLUMN IF NOT EXISTS has_completed_onboarding_1 boolean DEFAULT false,
+            ADD COLUMN IF NOT EXISTS has_completed_onboarding_2 boolean DEFAULT false;
+        `,
+      },
+      {
         name: 'saved_places — favourites/wishlist table',
         ddl: `
           DO $$ BEGIN

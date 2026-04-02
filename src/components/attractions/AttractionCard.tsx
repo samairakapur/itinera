@@ -44,7 +44,7 @@ const AttractionCard = ({ attraction, city = '' }: AttractionCardProps) => {
         place_name: attraction.name,
         place_type: 'attraction',
         city,
-        image_url: imageUrl ?? null,
+        image_url: safeImageUrl(imageUrl),
       });
       toast.success(result.action === 'saved' ? 'Saved to wishlist!' : 'Removed from wishlist');
     } catch {
@@ -60,6 +60,19 @@ const AttractionCard = ({ attraction, city = '' }: AttractionCardProps) => {
   // Resolve the best available image: starts with a curated city/category fallback immediately,
   // then upgrades to a Wikimedia / Unsplash / Pexels / Pixabay photo via the Edge Function.
   const imageUrl = useResolvedImage(attraction.name, city || undefined, attraction.category || undefined);
+
+  // Only save images from hotlink-safe domains (Unsplash, Wikimedia, Picsum).
+  // Foursquare/Google CDN images break after a short time or block hotlinking.
+  const SAFE_IMAGE_DOMAINS = ['images.unsplash.com', 'upload.wikimedia.org', 'fastly.picsum.photos', 'live.staticflickr.com'];
+  const safeImageUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    try {
+      const hostname = new URL(url).hostname;
+      if (SAFE_IMAGE_DOMAINS.some(d => hostname.includes(d))) return url;
+    } catch { /* invalid URL */ }
+    // Fallback: Unsplash search by place name
+    return `https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=600&q=80`;
+  };
 
   return (
     <Card className="group overflow-hidden border-border/50 hover:border-primary/30 transition-all duration-300">
