@@ -317,7 +317,8 @@ export const TripPreferencesForm = ({
         </p>
       </div>
 
-      <CardContent className="p-5 sm:p-6">
+      {/* Scrollable form content — pb-28 so content never hides behind the pinned nav bar */}
+      <CardContent className="p-5 sm:p-6 overflow-y-auto pb-28 sm:pb-6">
         <StepContent
           step={currentStep}
           cities={cities}
@@ -326,37 +327,37 @@ export const TripPreferencesForm = ({
           toggleArrayPreference={toggleArrayPreference}
         />
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between mt-8 pt-4 border-t">
-          <Button
-            variant="ghost"
-            onClick={handleBack}
-            disabled={currentStep === 1}
-            className={cn(currentStep === 1 && "invisible")}
-          >
-            <ChevronLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
-
-          {currentStep < 3 ? (
-            <Button onClick={handleNext} disabled={!canProceed()}>
-              Next
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          ) : (
-            <Button onClick={handleNext} className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Generate Itinerary
-            </Button>
-          )}
-        </div>
-
         {currentStep === 3 && (
           <p className="text-xs text-muted-foreground text-center mt-3">
             Step 3 is optional — feel free to skip and generate!
           </p>
         )}
       </CardContent>
+
+      {/* Navigation — sticky at bottom so it's always visible on mobile */}
+      <div className="sticky bottom-0 left-0 right-0 flex items-center justify-between px-5 py-4 bg-card border-t safe-area-pb">
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          disabled={currentStep === 1}
+          className={cn(currentStep === 1 && "invisible")}
+        >
+          <ChevronLeft className="w-4 h-4 mr-1" />
+          Back
+        </Button>
+
+        {currentStep < 3 ? (
+          <Button onClick={handleNext} disabled={!canProceed()}>
+            Next
+            <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+        ) : (
+          <Button onClick={handleNext} className="gap-2">
+            <Sparkles className="w-4 h-4" />
+            Generate Itinerary
+          </Button>
+        )}
+      </div>
     </Card>
   );
 };

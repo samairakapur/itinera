@@ -331,8 +331,8 @@ export const ActivityCard = ({
       isCompleted && "opacity-60 bg-muted/50",
       isScheduleOverflow && "border-l-4 border-l-destructive/70",
     )}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-start gap-2 sm:gap-3">
           {/* Completion Toggle */}
           {onToggleComplete && (
             <button
@@ -380,12 +380,12 @@ export const ActivityCard = ({
                     </Badge>
                   )}
                   {activity.flexibility === 'firm' && (
-                    <Badge variant="outline" className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                    <Badge variant="outline" className="hidden xs:inline-flex text-xs px-2 py-0.5 bg-amber-500/10 text-amber-600 border-amber-500/20">
                       <Lock className="w-3 h-3 mr-1" />
                       Firm
                     </Badge>
                   )}
-                  <Badge variant="outline" className="text-xs px-2 py-0.5 border-white/15 text-muted-foreground bg-transparent font-mono">
+                  <Badge variant="outline" className="text-xs px-2 py-0.5 border-white/15 text-muted-foreground bg-transparent font-mono shrink-0">
                     {priceTier}
                   </Badge>
                 </div>

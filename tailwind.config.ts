@@ -17,8 +17,11 @@ export default {
       },
     },
     extend: {
+      screens: {
+        xs: "375px", // iPhone SE and larger — used to show/hide compact badges
+      },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["DM Sans", "system-ui", "sans-serif"],
         display: ["Playfair Display", "Georgia", "serif"],
       },
       colors: {
