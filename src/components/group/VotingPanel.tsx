@@ -1,9 +1,11 @@
+import { useEffect, useRef } from 'react';
 import { Proposal } from '@/hooks/useGroupTrip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, isPast } from 'date-fns';
 import { ThumbsUp, ThumbsDown, Minus, Clock, CheckCircle2, XCircle, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface VotingPanelProps {
   proposals: Proposal[];
@@ -24,16 +26,34 @@ const proposalTypeLabel: Record<string, string> = {
   change_day_start: 'Change day start',
 };
 
+/**
+ * Vote progress bar with a 50% threshold marker.
+ * The dotted vertical line at 50% makes it clear where the approval threshold is.
+ * Votes in favour must be STRICTLY ABOVE 50% to pass.
+ */
 const VoteBar = ({ yes, no, neutral, total }: { yes: number; no: number; neutral: number; total: number }) => {
-  if (total === 0) return <div className="h-1.5 bg-muted rounded-full" />;
+  if (total === 0) return (
+    <div className="relative h-2 bg-muted rounded-full">
+      {/* 50% threshold marker */}
+      <div className="absolute top-0 bottom-0 w-px bg-muted-foreground/40 border-l border-dashed border-muted-foreground/60" style={{ left: '50%' }} />
+    </div>
+  );
   const yesW = Math.round((yes / total) * 100);
   const noW = Math.round((no / total) * 100);
   const neutralW = 100 - yesW - noW;
   return (
-    <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-      {yesW > 0 && <div className="bg-green-500 transition-all" style={{ width: `${yesW}%` }} />}
-      {neutralW > 0 && <div className="bg-muted-foreground/30 transition-all" style={{ width: `${neutralW}%` }} />}
-      {noW > 0 && <div className="bg-destructive transition-all" style={{ width: `${noW}%` }} />}
+    <div className="relative">
+      <div className="flex h-2 rounded-full overflow-hidden gap-px">
+        {yesW > 0 && <div className="bg-green-500 transition-all duration-300" style={{ width: `${yesW}%` }} />}
+        {neutralW > 0 && <div className="bg-muted-foreground/30 transition-all duration-300" style={{ width: `${neutralW}%` }} />}
+        {noW > 0 && <div className="bg-destructive transition-all duration-300" style={{ width: `${noW}%` }} />}
+      </div>
+      {/* 50% threshold marker — dotted line overlaid on the bar */}
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-foreground/25 pointer-events-none"
+        style={{ left: 'calc(50% - 1px)', borderStyle: 'dashed', borderWidth: '0 0 0 2px', borderColor: 'hsl(var(--foreground)/0.35)' }}
+        title="50% threshold — votes must exceed this line to pass"
+      />
     </div>
   );
 };
@@ -118,14 +138,20 @@ const ProposalCard = ({
         </div>
       )}
 
-      {isExpired && counts.yes > counts.no && (
+      {/* Resolution status — driven by proposal.status, not local vote counts */}
+      {proposal.status === 'approved' && (
         <p className="text-xs text-green-600 flex items-center gap-1 font-medium">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Approved by majority
+          <CheckCircle2 className="w-3.5 h-3.5" /> Vote passed! Approved by majority (&gt;50%)
         </p>
       )}
-      {isExpired && counts.no >= counts.yes && counts.total > 0 && (
+      {proposal.status === 'rejected' && (
         <p className="text-xs text-destructive flex items-center gap-1 font-medium">
-          <XCircle className="w-3.5 h-3.5" /> Not approved
+          <XCircle className="w-3.5 h-3.5" /> Proposal rejected — not enough votes to proceed.
+        </p>
+      )}
+      {isExpired && proposal.status === 'open' && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <Clock className="w-3.5 h-3.5" /> Voting deadline passed — not resolved
         </p>
       )}
     </div>
@@ -140,6 +166,23 @@ export const VotingPanel = ({
   isLoading,
   onCreateProposal,
 }: VotingPanelProps) => {
+  // Fire toasts when proposals transition to approved or rejected
+  const prevStatuses = useRef<Record<string, string>>({});
+  useEffect(() => {
+    for (const p of proposals) {
+      const prev = prevStatuses.current[p.id];
+      if (prev && prev !== p.status) {
+        const data = p.proposal_data as Record<string, string>;
+        const label = data.title || data.name || 'Proposal';
+        if (p.status === 'approved') {
+          toast.success(`Vote passed! "${label}" has been approved.`);
+        } else if (p.status === 'rejected') {
+          toast.error(`Proposal rejected — not enough votes to proceed.`);
+        }
+      }
+      prevStatuses.current[p.id] = p.status;
+    }
+  }, [proposals]);
   if (isLoading) {
     return (
       <div className="space-y-3 animate-pulse">

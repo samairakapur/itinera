@@ -161,6 +161,48 @@ export const useGroupTrip = (tripId: string | undefined) => {
     } else {
       await supabase.from('trip_votes').insert({ proposal_id: proposalId, user_id: user.id, vote });
     }
+
+    // After casting, check whether the proposal should be resolved.
+    // Resolution rules:
+    //   - Approved:  yes votes > 50% of total group members
+    //   - Rejected:  yes votes ≤ 50% of total group members AND all members have voted
+    //     (ties count as rejected)
+    const proposal = proposals.find(p => p.id === proposalId);
+    if (!proposal || proposal.status !== 'open') return;
+
+    // Fetch the latest vote tallies from the server
+    const { data: latestVotes } = await supabase
+      .from('trip_votes')
+      .select('vote')
+      .eq('proposal_id', proposalId);
+
+    const { data: tripData } = await supabase
+      .from('itineraries')
+      .select('group_size')
+      .eq('id', tripId!)
+      .single();
+
+    const allVotes = latestVotes ?? [];
+    const yesCount = allVotes.filter(v => v.vote === 'yes').length;
+    const totalVoted = allVotes.length;
+
+    // Default group size to number of collaborators + 1 (owner) if not set
+    const groupSize = (tripData?.group_size as number | null) ?? totalVoted;
+    const threshold = groupSize / 2; // strictly more than 50%
+
+    if (yesCount > threshold) {
+      // Approve immediately — majority achieved
+      await supabase
+        .from('trip_proposals')
+        .update({ status: 'approved', resolved_at: new Date().toISOString() })
+        .eq('id', proposalId);
+    } else if (totalVoted >= groupSize && yesCount <= threshold) {
+      // All members voted and yes ≤ 50% — reject (ties go to rejected)
+      await supabase
+        .from('trip_proposals')
+        .update({ status: 'rejected', resolved_at: new Date().toISOString() })
+        .eq('id', proposalId);
+    }
   };
 
   const createProposal = async (
