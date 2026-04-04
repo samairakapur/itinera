@@ -420,7 +420,9 @@ const TripDayMode = () => {
   >({});
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const reflectionShownRef = useRef(false);
+  const ariaToastShownRef = useRef(false);
   const [ariaReflectionMessage, setAriaReflectionMessage] = useState<string | null>(null);
+  const [ariaOpen, setAriaOpen] = useState(false);
 
   const today = useMemo(() => new Date(), []);
 
@@ -559,7 +561,34 @@ const TripDayMode = () => {
   }, [activities]);
 
   const updateStatus = (id: string, status: ActivityStatus) => {
-    setActivityStatuses((prev) => ({ ...prev, [id]: status }));
+    setActivityStatuses((prev) => {
+      const next = { ...prev, [id]: status };
+
+      // After marking done: check if this is the 2nd completed activity
+      // and show a gentle Aria check-in toast (once per day session, stored in localStorage)
+      if (status === 'done' && !ariaToastShownRef.current) {
+        const todayKey = `aria_toast_shown_${new Date().toDateString()}`;
+        const alreadyShownToday = localStorage.getItem(todayKey);
+        if (!alreadyShownToday) {
+          const doneNow = Object.values(next).filter(s => s === 'done').length;
+          if (doneNow >= 2) {
+            ariaToastShownRef.current = true;
+            localStorage.setItem(todayKey, '1');
+            setTimeout(() => {
+              toast('✨ How\'s the day going? Chat with Aria →', {
+                duration: 8000,
+                action: {
+                  label: 'Open Aria',
+                  onClick: () => setAriaOpen(true),
+                },
+              });
+            }, 800);
+          }
+        }
+      }
+
+      return next;
+    });
     if (status === 'done') {
       setCompletionTimestamps((prev) => ({ ...prev, [id]: new Date() }));
       setSuggestionDismissed(false); // re-evaluate suggestion after each completion
@@ -895,7 +924,7 @@ const TripDayMode = () => {
         )}
       </div>
 
-      {/* Aria concierge — floats over Day Mode, auto-opens for reflection */}
+      {/* Aria concierge — floats over Day Mode, auto-opens for reflection or toast action */}
       {tripId && (
         <TripConcierge
           tripId={tripId}
@@ -904,6 +933,7 @@ const TripDayMode = () => {
           initialMessage={ariaReflectionMessage ?? undefined}
           isReflection={!!ariaReflectionMessage}
           dayIndex={dayNumber > 0 ? dayNumber : undefined}
+          forceOpen={ariaOpen}
         />
       )}
     </div>

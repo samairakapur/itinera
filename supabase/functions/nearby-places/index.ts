@@ -81,34 +81,46 @@ async function fetchFoursquarePlaces(
   radiusMeters: number,
   categories: string[],
   apiKey: string,
-): Promise<any[]> {
-  const categoryIds = categories.flatMap(c => FSQ_CATEGORIES[c] ?? []).join(",");
-  const fields = "fsq_id,name,categories,geocodes,location,distance,rating,price,photos";
-  const url =
-    `https://api.foursquare.com/v3/places/search?ll=${lat},${lng}&radius=${radiusMeters}` +
-    `&categories=${categoryIds}&fields=${fields}&limit=40&sort=DISTANCE`;
+): Promise<any[] | null> {
+  // Returns null when Foursquare fails (caller should fall through to Overpass)
+  try {
+    const categoryIds = categories.flatMap(c => FSQ_CATEGORIES[c] ?? []).join(",");
+    const fields = "fsq_id,name,categories,geocodes,location,distance,rating,price,photos";
+    const url =
+      `https://api.foursquare.com/v3/places/search?ll=${lat},${lng}&radius=${radiusMeters}` +
+      `&categories=${categoryIds}&fields=${fields}&limit=40&sort=DISTANCE`;
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: apiKey,
-      Accept: "application/json",
-    },
-    signal: AbortSignal.timeout(20000),
-  });
+    const res = await fetch(url, {
+      headers: {
+        Authorization: apiKey,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Foursquare API ${res.status}: ${body.slice(0, 200)}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`Foursquare API ${res.status} — falling back to Overpass:`, body.slice(0, 100));
+      return null; // fall through to Overpass
+    }
+
+    const data = await res.json();
+    const results = data.results ?? [];
+    if (results.length === 0) {
+      console.warn("Foursquare returned 0 results — falling back to Overpass");
+      return null;
+    }
+    return results;
+  } catch (e) {
+    console.warn("Foursquare fetch error — falling back to Overpass:", e);
+    return null;
   }
-
-  const data = await res.json();
-  return data.results ?? [];
 }
 
-// Overpass fallback when Foursquare key is unavailable
+// Overpass fallback — kumi.systems first (overpass-api.de is often overloaded)
 const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
@@ -186,46 +198,48 @@ serve(async (req) => {
     const clampedRadius = Math.min(radius_meters, 25000);
     const apiKey = Deno.env.get("FOURSQUARE_API_KEY");
 
-    // ── Foursquare path ─────────────────────────────────────────────────────
+    // ── Try Foursquare first ────────────────────────────────────────────────
     if (apiKey) {
       const results = await fetchFoursquarePlaces(lat, lng, clampedRadius, categories, apiKey);
+      // null = Foursquare failed → fall through to Overpass below
+      if (results !== null) {
+        const places = results
+          .filter((r: any) => r.name && r.geocodes?.main)
+          .map((r: any) => {
+            const type = mapFsqType(r.categories);
+            const distM = r.distance ?? haversine(lat, lng, r.geocodes.main.latitude, r.geocodes.main.longitude);
+            const photo = r.photos?.[0];
+            const imageUrl = buildPhotoUrl(photo);
+            const addr = r.location?.formatted_address ?? r.location?.address ?? "Address unavailable";
 
-      const places = results
-        .filter((r: any) => r.name && r.geocodes?.main)
-        .map((r: any) => {
-          const type = mapFsqType(r.categories);
-          const distM = r.distance ?? haversine(lat, lng, r.geocodes.main.latitude, r.geocodes.main.longitude);
-          const photo = r.photos?.[0];
-          const imageUrl = buildPhotoUrl(photo);
-          const addr = r.location?.formatted_address ?? r.location?.address ?? "Address unavailable";
+            return {
+              id: r.fsq_id,
+              name: r.name,
+              type,
+              description: buildDescription(type, r),
+              latitude: r.geocodes.main.latitude,
+              longitude: r.geocodes.main.longitude,
+              distanceKm: distM / 1000,
+              distance: formatDistance(distM),
+              rating: r.rating ? Math.round(r.rating * 10) / 10 : null,
+              priceLevel: r.price ?? null,
+              openNow: null,
+              address: addr,
+              imageUrl,
+              matchReason: buildMatchReason(type, r),
+              cuisine: r.categories?.find((c: any) => c.name?.toLowerCase().includes("cuisine"))?.name ?? null,
+              typicalTimeSpent: typicalTime(type),
+            };
+          })
+          .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
+          .slice(0, 20);
 
-          return {
-            id: r.fsq_id,
-            name: r.name,
-            type,
-            description: buildDescription(type, r),
-            latitude: r.geocodes.main.latitude,
-            longitude: r.geocodes.main.longitude,
-            distanceKm: distM / 1000,
-            distance: formatDistance(distM),
-            rating: r.rating ? Math.round(r.rating * 10) / 10 : null,
-            priceLevel: r.price ?? null,
-            openNow: null,
-            address: addr,
-            imageUrl,
-            matchReason: buildMatchReason(type, r),
-            cuisine: r.categories?.find((c: any) => c.name?.toLowerCase().includes("cuisine"))?.name ?? null,
-            typicalTimeSpent: typicalTime(type),
-          };
-        })
-        .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
-        .slice(0, 20);
-
-      return json({ places });
+        return json({ places });
+      }
     }
 
-    // ── Overpass fallback (no Foursquare key) ───────────────────────────────
-    console.warn("No FOURSQUARE_API_KEY — falling back to Overpass OSM");
+    // ── Overpass fallback (Foursquare unavailable or failed) ───────────────
+    console.warn("Foursquare unavailable — falling back to Overpass OSM");
     const query = buildOverpassQuery(lat, lng, clampedRadius, categories);
     const data = await fetchOverpass(query);
     const elements: any[] = data.elements || [];

@@ -67,15 +67,18 @@ const CITY_IMAGES: Record<string, string> = {
 };
 
 // ── Source 1: Wikimedia Commons ─────────────────────────────────────────────
-async function fetchWikimedia(name: string): Promise<string | null> {
+// CRITICAL: Always pass `name + ' ' + city` — using just the name returns wrong/generic images
+async function fetchWikimedia(nameWithCity: string): Promise<string | null> {
   try {
-    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(name)}&prop=pageimages&format=json&pithumbsize=800&origin=*`;
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(nameWithCity)}&prop=pageimages&format=json&pithumbsize=800&origin=*`;
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) return null;
     const data = await res.json();
     const pages = data?.query?.pages ?? {};
     for (const page of Object.values(pages) as any[]) {
-      const thumb = page?.thumbnail?.source;
+      // Skip "page not found" results (negative page IDs)
+      if ((page as any).missing !== undefined) continue;
+      const thumb = (page as any)?.thumbnail?.source;
       if (thumb) return thumb;
     }
   } catch { /* ignore */ }
@@ -176,9 +179,13 @@ Deno.serve(async (req: Request) => {
     let url: string | null = null;
     let source = 'picsum';
 
-    // 1. Wikimedia (great for famous landmarks)
+    // 1. Wikimedia with "Attraction Name, City" — city is REQUIRED to avoid wrong results
     if (!isRestaurant) {
-      url = await fetchWikimedia(name);
+      url = await fetchWikimedia(`${name}, ${city}`);
+      if (!url) {
+        // Try with just name (some landmarks are known globally without city context)
+        url = await fetchWikimedia(name);
+      }
       if (url) source = 'wikimedia';
     }
 

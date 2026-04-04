@@ -44,6 +44,8 @@ interface TripConciergeProps {
   isReflection?: boolean;
   /** Current day index (1-based) used for pace adjustment and reflection storage */
   dayIndex?: number;
+  /** Programmatically open the panel (e.g. from toast action) */
+  forceOpen?: boolean;
 }
 
 // Aria avatar — gradient circle with sparkle
@@ -74,9 +76,14 @@ Try asking:
   created_at: new Date().toISOString(),
 };
 
-export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex }: TripConciergeProps) => {
+export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex, forceOpen }: TripConciergeProps) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(initialOpen);
+
+  // Allow parent to programmatically open (e.g. toast action)
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
   const [messages, setMessages] = useState<Message[]>(() =>
     initialMessage
       ? [{ id: 'reflection-0', role: 'assistant', content: initialMessage, created_at: new Date().toISOString() }]

@@ -63,7 +63,7 @@ const AttractionCard = ({ attraction, city = '' }: AttractionCardProps) => {
 
   // Only save images from hotlink-safe domains (Unsplash, Wikimedia, Picsum).
   // Foursquare/Google CDN images break after a short time or block hotlinking.
-  const SAFE_IMAGE_DOMAINS = ['images.unsplash.com', 'upload.wikimedia.org', 'fastly.picsum.photos', 'live.staticflickr.com'];
+  const SAFE_IMAGE_DOMAINS = ['images.unsplash.com', 'upload.wikimedia.org', 'fastly.picsum.photos', 'live.staticflickr.com', 'images.pexels.com', 'cdn.pixabay.com'];
   const safeImageUrl = (url: string | null | undefined): string | null => {
     if (!url) return null;
     try {

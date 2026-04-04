@@ -3,12 +3,11 @@
 // POST /functions/v1/trip-concierge
 // Body: { tripId: string, message: string, userId: string }
 //
-// Loads the full trip context (itinerary, members, flights, prefs) and
-// answers the user's question using the same AI stack as generate-itinerary.
-// Saves the conversation to trip_messages for shared history.
+// Loads trip context and answers the user's question.
+// Saves conversation to trip_messages PRIVATE per user per trip.
 //
-// IMPORTANT: All responses return HTTP 200 (even errors) so supabase.functions.invoke
-// returns { data, error: null } and the frontend can read data.error for messages.
+// IMPORTANT: All responses return HTTP 200 so supabase.functions.invoke
+// returns { data, error: null } and the frontend reads data.error.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -17,7 +16,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Always respond with 200 so supabase.functions.invoke returns data (not FunctionsHttpError)
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -45,69 +43,51 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'tripId, message, and userId are required' });
     }
 
-    // ── AI provider cascade ────────────────────────────────────────────────
-    // Primary: Groq (llama-3.1-70b-versatile); Secondary: OpenAI-compatible fallback.
-    // Google AI has been removed from the chain (was causing 429 errors).
+    // ── AI keys ───────────────────────────────────────────────────────────
     const GROQ_API_KEY    = sanitizeKey(Deno.env.get('GROQ_API_KEY'))    || undefined;
+    const GOOGLE_AI_KEY   = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
     const LOVABLE_API_KEY = sanitizeKey(Deno.env.get('LOVABLE_API_KEY')) || undefined;
 
     console.log('[trip-concierge] AI keys present:', {
-      groq: !!GROQ_API_KEY, lovable: !!LOVABLE_API_KEY,
+      groq: !!GROQ_API_KEY, google: !!GOOGLE_AI_KEY, lovable: !!LOVABLE_API_KEY,
     });
 
-    type Provider = { key: string; url: string; model: string; name: string };
-    const providers: Provider[] = [];
-    if (GROQ_API_KEY)    providers.push({ key: GROQ_API_KEY,    url: 'https://api.groq.com/openai/v1/chat/completions',              model: 'llama-3.1-70b-versatile',  name: 'groq' });
-    if (LOVABLE_API_KEY) providers.push({ key: LOVABLE_API_KEY, url: 'https://ai.gateway.lovable.dev/v1/chat/completions',           model: 'google/gemini-2.5-flash',   name: 'lovable' });
-
-    if (providers.length === 0) {
-      return json({ error: 'AI service not configured. Please set GROQ_API_KEY in Supabase Edge Function secrets.' });
-    }
-
-    // ── Service-role client to load all trip data ──────────────────────────
+    // ── Service-role client ───────────────────────────────────────────────
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // ── Load trip data (parallel, all errors handled gracefully) ───────────
-    const [tripRes, itemsRes, collaboratorsRes, flightsRes, historyRes] = await Promise.all([
+    // ── Load trip data ────────────────────────────────────────────────────
+    const [tripRes, itemsRes, flightsRes, historyRes] = await Promise.all([
       supabase
         .from('itineraries')
         .select(`
           id, name, num_days, start_date, end_date, group_size, trip_mode,
           budget_level, pace, travel_style, dietary_preferences,
-          cities ( name, country, description )
+          cities ( name, country )
         `)
         .eq('id', tripId)
         .single(),
 
-      // itinerary_items columns: day_number, time_slot, item_type, custom_title,
-      //   custom_description, notes, order_index (NO price_tier column)
       supabase
         .from('itinerary_items')
-        .select('day_number, time_slot, item_type, custom_title, custom_description, notes')
+        .select('day_number, time_slot, item_type, custom_title, notes')
         .eq('itinerary_id', tripId)
         .order('day_number')
         .order('order_index'),
 
       supabase
-        .from('trip_collaborators')
-        .select('email, role, accepted_at, user_id')
-        .eq('itinerary_id', tripId),
-
-      // flight_details columns: leg_number, airline, flight_number,
-      //   departure_city, arrival_city, departure_time, arrival_time
-      supabase
         .from('flight_details')
         .select('leg_number, airline, flight_number, departure_city, arrival_city, departure_time, arrival_time')
         .eq('itinerary_id', tripId),
 
-      // trip_messages may not exist yet — handle null data gracefully
+      // PRIVATE per user: only fetch messages where user_id = userId (both user and assistant messages)
       supabase
         .from('trip_messages')
         .select('role, content')
         .eq('trip_id', tripId)
+        .eq('user_id', userId)
         .order('created_at', { ascending: true })
         .limit(20),
     ]);
@@ -119,12 +99,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const items = itemsRes.data ?? [];
-    const collaborators = collaboratorsRes.data ?? [];
     const flights = flightsRes.data ?? [];
     const history = historyRes.data ?? [];
 
-    // ── Build system prompt ────────────────────────────────────────────────
-    const cities = trip.cities as { name: string; country: string; description?: string } | null;
+    // ── Build system prompt (max 2000 chars) ──────────────────────────────
+    const cities = trip.cities as { name: string; country: string } | null;
     const tripName = trip.name || (cities ? `Trip to ${cities.name}` : 'Trip');
     const startDate = trip.start_date
       ? new Date(trip.start_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -133,67 +112,41 @@ Deno.serve(async (req: Request) => {
       ? new Date(trip.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : 'TBD';
 
-    // Group itinerary items by day
     const byDay: Record<number, string[]> = {};
     for (const item of items) {
       if (!byDay[item.day_number]) byDay[item.day_number] = [];
-      const title = item.custom_title || item.item_type;
       const notes = item.notes ? ` (${item.notes})` : '';
-      byDay[item.day_number].push(`  ${item.time_slot}: ${title}${notes}`);
+      byDay[item.day_number].push(`  ${item.time_slot}: ${item.custom_title || item.item_type}${notes}`);
     }
     const itineraryContext = Object.entries(byDay)
+      .slice(0, 7) // cap at 7 days to keep prompt short
       .map(([day, acts]) => `Day ${day}:\n${acts.join('\n')}`)
       .join('\n\n');
 
     const flightContext = flights.length > 0
-      ? flights.map(f =>
+      ? flights.slice(0, 3).map(f =>
           `Leg ${f.leg_number ?? ''}: ${f.airline ?? ''} ${f.flight_number ?? ''} — ${f.departure_city} → ${f.arrival_city}, departs ${f.departure_time ?? 'TBD'}`
         ).join('\n')
       : 'No flights recorded';
 
-    const memberCount = 1 + collaborators.filter(c => c.accepted_at).length;
-    const dietaryPrefs = (trip.dietary_preferences as string[] | null)?.join(', ') || 'none specified';
+    const dietaryPrefs = (trip.dietary_preferences as string[] | null)?.join(', ') || 'none';
 
-    const systemPrompt = `You are Aria, a personal travel concierge who knows both the user's specific trip AND has deep expertise on the destinations they're visiting.
+    const systemPromptFull = `You are Aria, a warm and knowledgeable travel concierge for the trip "${tripName}" to ${cities?.name ?? 'the destination'}, ${cities?.country ?? ''}.
 
-TRIP DETAILS:
-- Trip name: ${tripName}
-- Destination: ${cities?.name ?? 'Unknown'}, ${cities?.country ?? ''}
-- Dates: ${startDate} – ${endDate} (${trip.num_days} days)
-- Group size: ${trip.group_size ?? memberCount} people
-- Budget: ${trip.budget_level ?? 'not specified'}
-- Pace: ${trip.pace ?? 'not specified'}
-- Travel style: ${trip.travel_style ?? 'not specified'}
-- Dietary restrictions: ${dietaryPrefs}
-- Trip mode: ${trip.trip_mode === 'democratic' ? 'Democratic (group votes on changes)' : 'Organiser-led'}
+TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.
 
-CURRENT ITINERARY:
-${itineraryContext || 'No activities planned yet — the itinerary may not have been generated.'}
+ITINERARY:
+${itineraryContext || 'No activities planned yet.'}
 
 FLIGHTS:
 ${flightContext}
 
-YOUR DUAL ROLE AS ARIA:
-You seamlessly blend two kinds of expertise:
+Be warm, concise, and actionable. Use bullet points for lists. Reference specific days and activities from the itinerary when relevant. You are also a destination expert — share local knowledge, neighbourhood tips, and practical advice about ${cities?.name ?? 'the destination'}.`;
 
-1. TRIP-SPECIFIC CONCIERGE — you know this trip inside-out:
-   - Reference real days, activities, timings, and group preferences from the itinerary above
-   - Answer "what's on Day 3?", "are we near X on Tuesday?", "we're running late — skip what?"
-   - Propose itinerary changes when asked, using the tool functions below
-   - Never suggest moving Firm/pre-booked activities
-   - Always respect dietary restrictions when recommending restaurants
+    // Truncate system prompt to 1800 chars to stay within model limits
+    const systemPrompt = systemPromptFull.slice(0, 1800);
 
-2. DESTINATION EXPERT — you have deep knowledge of every city:
-   - Answer "Is the Sagrada Família worth the queue?", "best ramen neighbourhood in Tokyo?", "Lisbon or Porto for 3 days?"
-   - Give specific neighbourhood names, metro lines, transport apps, tipping customs, opening hours norms
-   - Distinguish between tourist traps and genuine local experiences
-   - Know seasonal patterns, major events, what to avoid
-
-When a question spans both roles (e.g. "what else should we do while in ${cities?.name ?? 'the city'}?"), blend both — reference the itinerary AND share destination knowledge.
-
-TONE: Warm, concise, and actionable. Bullet points for lists. Short paragraphs for narrative answers.`;
-
-    // ── Save user message (best-effort — table may not exist) ──────────────
+    // ── Save user message (private: user_id = userId) ─────────────────────
     try {
       await supabase.from('trip_messages').insert({
         trip_id: tripId,
@@ -212,118 +165,142 @@ TONE: Warm, concise, and actionable. Bullet points for lists. Short paragraphs f
       { role: 'user', content: message },
     ];
 
-    // ── Call AI (with provider cascade) ───────────────────────────────────
+    // ── Call AI — simplified request, NO tools ────────────────────────────
     let reply = '';
     let lastError = '';
 
-    for (const provider of providers) {
-      console.log(`[trip-concierge] trying ${provider.name} (${provider.model})`);
+    // Provider 1: Groq — try current models in order (older ones are deprecated)
+    if (GROQ_API_KEY && !reply) {
+      // Models in order of preference: newest first, fallback to smaller ones
+      const groqModels = [
+        'llama-3.3-70b-versatile',  // current Llama 3.3 (replacement for 3.1-70b)
+        'llama-3.1-8b-instant',      // fast small model, reliably available
+        'gemma2-9b-it',              // Google Gemma, stable on Groq
+        'llama3-70b-8192',           // older, may still work
+      ];
+
+      for (const model of groqModels) {
+        if (reply) break;
+        console.log(`[trip-concierge] trying groq (${model})`);
+        try {
+          const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            signal: AbortSignal.timeout(20000),
+            headers: {
+              'Authorization': `Bearer ${GROQ_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: aiMessages,
+              max_tokens: 700,
+              temperature: 0.7,
+            }),
+          });
+
+          if (groqRes.ok) {
+            const groqData = await groqRes.json();
+            const content = groqData.choices?.[0]?.message?.content;
+            if (content) {
+              reply = content;
+              console.log(`[trip-concierge] groq success (${model}), reply length:`, reply.length);
+              break;
+            } else {
+              lastError = `groq (${model}) returned empty content`;
+            }
+          } else {
+            const errText = await groqRes.text().catch(() => '');
+            console.warn(`[trip-concierge] groq (${model}) returned ${groqRes.status}:`, errText.slice(0, 200));
+            lastError = `groq error ${groqRes.status}`;
+            // 404 = model not found (deprecated), try next model
+            // 400 = bad request, also try next model
+            // 429 = rate limit, stop trying Groq
+            if (groqRes.status === 429) break;
+          }
+        } catch (fetchErr) {
+          console.warn(`[trip-concierge] groq (${model}) fetch error:`, fetchErr);
+          lastError = 'groq fetch failed';
+          break; // network error, no point trying more models
+        }
+      }
+    }
+
+    // Provider 2: Google AI (Gemini) — already key configured in Supabase secrets
+    if (GOOGLE_AI_KEY && !reply) {
+      console.log('[trip-concierge] trying Google AI (gemini-2.0-flash)');
       try {
-        const aiRes = await fetch(provider.url, {
+        const googleRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(25000),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                { role: 'user', parts: [{ text: `${systemPrompt}\n\nUser: ${message}` }] }
+              ],
+              generationConfig: { maxOutputTokens: 800, temperature: 0.7 }
+            })
+          }
+        );
+
+        if (googleRes.ok) {
+          const googleData = await googleRes.json();
+          const content = googleData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (content) {
+            reply = content;
+            console.log('[trip-concierge] google AI success, reply length:', reply.length);
+          } else {
+            lastError = 'google AI returned empty content';
+            console.warn('[trip-concierge] google AI response:', JSON.stringify(googleData).slice(0, 300));
+          }
+        } else {
+          const errText = await googleRes.text().catch(() => '');
+          console.warn(`[trip-concierge] google AI returned ${googleRes.status}:`, errText.slice(0, 300));
+          lastError = `google AI error ${googleRes.status}`;
+        }
+      } catch (fetchErr) {
+        console.warn('[trip-concierge] google AI fetch error:', fetchErr);
+        lastError = 'google AI fetch failed';
+      }
+    }
+
+    // Provider 3: Lovable gateway
+    if (LOVABLE_API_KEY && !reply) {
+      console.log('[trip-concierge] trying lovable (google/gemini-2.5-flash)');
+      try {
+        const lovableRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(25000),
           headers: {
-            'Authorization': `Bearer ${provider.key}`,
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: provider.model,
+            model: 'google/gemini-2.5-flash',
             messages: aiMessages,
             max_tokens: 800,
             temperature: 0.7,
-            tools: [
-              {
-                type: 'function',
-                function: {
-                  name: 'add_activity',
-                  description: 'Add a new activity or restaurant to a specific day of the itinerary',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      day_number: { type: 'number', description: 'Day number (1-based)' },
-                      time_slot: { type: 'string', enum: ['morning', 'afternoon', 'evening'] },
-                      activity_name: { type: 'string', description: 'Name of the activity or restaurant' },
-                      category: { type: 'string', description: 'Type: attraction, restaurant, flex, or transport' },
-                      description: { type: 'string', description: 'Brief description of the activity' },
-                    },
-                    required: ['day_number', 'time_slot', 'activity_name'],
-                  },
-                },
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'remove_activity',
-                  description: 'Remove an existing activity from the itinerary',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      day_number: { type: 'number' },
-                      activity_name: { type: 'string', description: 'Full or partial name of the activity to remove' },
-                    },
-                    required: ['day_number', 'activity_name'],
-                  },
-                },
-              },
-              {
-                type: 'function',
-                function: {
-                  name: 'swap_activity',
-                  description: 'Replace one activity with a different one on the same day',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      day_number: { type: 'number' },
-                      old_activity: { type: 'string', description: 'Name of the activity to replace' },
-                      new_activity: { type: 'string', description: 'Name of the replacement activity' },
-                      new_category: { type: 'string', description: 'Category of the new activity: attraction, restaurant, flex' },
-                    },
-                    required: ['day_number', 'old_activity', 'new_activity'],
-                  },
-                },
-              },
-            ],
-            tool_choice: 'auto',
           }),
         });
 
-        if (!aiRes.ok) {
-          const errText = await aiRes.text().catch(() => '');
-          console.warn(`[trip-concierge] ${provider.name} returned ${aiRes.status}:`, errText.slice(0, 200));
-          lastError = `${provider.name} error ${aiRes.status}`;
-          // 401/403 = bad key → try next provider; 429 = rate limit → also try next
-          continue;
+        if (lovableRes.ok) {
+          const lovableData = await lovableRes.json();
+          const content = lovableData.choices?.[0]?.message?.content;
+          if (content) {
+            reply = content;
+            console.log('[trip-concierge] lovable success, reply length:', reply.length);
+          } else {
+            lastError = 'lovable returned empty content';
+          }
+        } else {
+          const errText = await lovableRes.text().catch(() => '');
+          console.warn(`[trip-concierge] lovable returned ${lovableRes.status}:`, errText.slice(0, 300));
+          lastError = `lovable error ${lovableRes.status}`;
         }
-
-        const aiData = await aiRes.json();
-        const choice = aiData.choices?.[0];
-        const content: string | undefined = choice?.message?.content;
-        const toolCalls = choice?.message?.tool_calls;
-
-        // AI wants to invoke a tool — return the proposed change for user confirmation
-        if (toolCalls && toolCalls.length > 0) {
-          const tc = toolCalls[0];
-          let toolArgs: Record<string, unknown> = {};
-          try { toolArgs = JSON.parse(tc.function?.arguments ?? '{}'); } catch { /* keep empty */ }
-          const toolReply = content || 'I can make this change to your itinerary. Shall I apply it?';
-          console.log(`[trip-concierge] tool call via ${provider.name}:`, tc.function?.name, toolArgs);
-          // Best-effort save Aria's message
-          try {
-            await supabase.from('trip_messages').insert({ trip_id: tripId, user_id: null, role: 'assistant', content: toolReply });
-          } catch { /* ignore */ }
-          return json({ reply: toolReply, toolCall: { name: tc.function?.name, args: toolArgs } });
-        }
-
-        if (content) {
-          reply = content;
-          console.log(`[trip-concierge] success via ${provider.name}, reply length:`, reply.length);
-          break;
-        }
-        lastError = `${provider.name} returned empty content`;
       } catch (fetchErr) {
-        console.warn(`[trip-concierge] ${provider.name} fetch error:`, fetchErr);
-        lastError = `${provider.name} fetch failed`;
-        continue;
+        console.warn('[trip-concierge] lovable fetch error:', fetchErr);
+        lastError = 'lovable fetch failed';
       }
     }
 
@@ -331,11 +308,11 @@ TONE: Warm, concise, and actionable. Bullet points for lists. Short paragraphs f
       return json({ error: `Aria couldn't respond (${lastError}). Please try again in a moment.` });
     }
 
-    // ── Save assistant reply (best-effort) ────────────────────────────────
+    // ── Save assistant reply PRIVATE per user (user_id = userId) ─────────
     try {
       await supabase.from('trip_messages').insert({
         trip_id: tripId,
-        user_id: null,
+        user_id: userId,   // private: associate assistant messages with the user who triggered them
         role: 'assistant',
         content: reply,
       });
