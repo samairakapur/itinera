@@ -66,6 +66,7 @@ const HomeVariation1 = () => {
               size="lg"
               asChild
               className="h-13 px-8 text-base font-semibold rounded-2xl shadow-warm hover:shadow-lg hover:scale-[1.02] transition-all"
+              data-tour="create-trip"
             >
               <Link to={user ? '/planner/new' : '/auth'}>
                 Plan my trip

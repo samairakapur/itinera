@@ -3,11 +3,11 @@ import { Home, MapPin, Calendar, Navigation, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { href: '/',             label: 'Home',        icon: Home      },
-  { href: '/destinations', label: 'Explore',     icon: MapPin    },
-  { href: '/trips',        label: 'My Trips',    icon: Calendar  },
-  { href: '/nearby',       label: 'Nearby',      icon: Navigation },
-  { href: '/profile',      label: 'Profile',     icon: User      },
+  { href: '/',             label: 'Home',        icon: Home,       tourAttr: undefined       },
+  { href: '/destinations', label: 'Explore',     icon: MapPin,     tourAttr: 'nav-explore'   },
+  { href: '/trips',        label: 'My Trips',    icon: Calendar,   tourAttr: undefined       },
+  { href: '/nearby',       label: 'Nearby',      icon: Navigation, tourAttr: 'nav-nearby'    },
+  { href: '/profile',      label: 'Profile',     icon: User,       tourAttr: 'nav-profile'   },
 ];
 
 const MobileBottomNav = () => {
@@ -22,7 +22,7 @@ const MobileBottomNav = () => {
       )}
     >
       <div className="grid grid-cols-5 h-16">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.map(({ href, label, icon: Icon, tourAttr }) => {
           const isActive =
             href === '/'
               ? location.pathname === '/'
@@ -32,6 +32,7 @@ const MobileBottomNav = () => {
             <Link
               key={href}
               to={href}
+              {...(tourAttr ? { 'data-tour': tourAttr } : {})}
               className={cn(
                 'flex flex-col items-center justify-center gap-1 text-xs font-medium transition-colors',
                 isActive

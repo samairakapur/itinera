@@ -314,6 +314,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     <>
       {/* Floating button — sits above mobile bottom nav */}
       <button
+        data-tour="aria-button"
         onClick={() => setOpen(true)}
         className={cn(
           // Mobile: above 64px bottom nav

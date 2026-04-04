@@ -622,12 +622,14 @@ const TripDetail = () => {
               )}
               {/* Only show Share once the trip is confirmed saved in the user's profile */}
               {tripId && itinerary && (
-                <InviteCollaboratorDialog
-                  itineraryId={tripId}
-                  tripName={itinerary.name || itinerary.cities?.name}
-                  cityName={[itinerary.cities?.name, itinerary.cities?.country].filter(Boolean).join(', ')}
-                  inviteToken={(itinerary as any).invite_token || undefined}
-                />
+                <span data-tour="invite-button">
+                  <InviteCollaboratorDialog
+                    itineraryId={tripId}
+                    tripName={itinerary.name || itinerary.cities?.name}
+                    cityName={[itinerary.cities?.name, itinerary.cities?.country].filter(Boolean).join(', ')}
+                    inviteToken={(itinerary as any).invite_token || undefined}
+                  />
+                </span>
               )}
               {tripId && (
                 <FlightDetailsDialog
@@ -697,6 +699,7 @@ const TripDetail = () => {
                   </CardTitle>
                   <div className="flex gap-1">
                     <Button
+                      data-tour="votes-tab"
                       variant={groupTab === 'votes' ? 'default' : 'ghost'}
                       size="sm"
                       className="h-7 px-3 text-xs gap-1.5"
@@ -705,6 +708,7 @@ const TripDetail = () => {
                       Votes {proposals.length > 0 && `(${proposals.length})`}
                     </Button>
                     <Button
+                      data-tour="group-chat-tab"
                       variant={groupTab === 'chat' ? 'default' : 'ghost'}
                       size="sm"
                       className="h-7 px-3 text-xs gap-1.5"

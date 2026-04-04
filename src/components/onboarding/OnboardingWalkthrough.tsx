@@ -1,5 +1,5 @@
 /**
- * OnboardingWalkthrough — two-part DB-persisted walkthrough.
+ * OnboardingWalkthrough — two-part DB-persisted spotlight walkthrough.
  *
  * Walkthrough 1 (7 steps): shown to new users on first sign-up.
  *   Trigger: profiles.has_completed_onboarding_1 === false
@@ -9,125 +9,92 @@
  *   Trigger: profiles.has_completed_onboarding_2 === false, fires 2s after mount.
  *   Rendered by: TripDetail.tsx
  */
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import {
-  Sparkles,
-  Map,
-  MapPin,
-  Navigation,
-  Sun,
-  Heart,
-  Users,
-  X,
-  ChevronRight,
-  ChevronLeft,
-  MessageCircle,
-  UserPlus,
-  CalendarDays,
-  LayoutList,
-} from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useProfile, useUpdateProfile } from '@/hooks/useProfile';
 
 // ---------------------------------------------------------------------------
 // Step definitions
 // ---------------------------------------------------------------------------
 
-interface Step {
-  icon: React.ElementType;
+interface SpotlightStep {
+  /** CSS selector for the spotlight target. Undefined = centered modal (no cut-out). */
+  targetSelector?: string;
   title: string;
   description: string;
-  accent: string; // Tailwind bg gradient classes
 }
 
-const STEPS_1: Step[] = [
+const STEPS_1: SpotlightStep[] = [
   {
-    icon: Sparkles,
     title: 'Welcome to Itinera',
     description:
-      'Your AI travel companion that builds day-by-day itineraries tailored to your preferences — in seconds.',
-    accent: 'from-primary/20 to-primary/5',
+      "Plan smarter trips with AI. We'll show you around in under a minute.",
   },
   {
-    icon: Map,
-    title: 'Plan Your Trip',
+    targetSelector: '[data-tour="create-trip"]',
+    title: 'Create your first trip',
     description:
-      'Tell us your destination, dates, and travel style. Our AI creates a personalised itinerary with timings, restaurants, and attractions.',
-    accent: 'from-blue-500/20 to-blue-500/5',
+      'Tap here to build a multi-city itinerary in minutes. Tell us your cities, dates, and travel style — the AI does the rest.',
   },
   {
-    icon: MapPin,
-    title: 'Explore Destinations',
+    targetSelector: '[data-tour="nav-explore"]',
+    title: 'Explore destinations',
     description:
-      'Browse curated cities with top attractions, dining, and local tips. Chat with Kiko, our destination expert, for tailored advice.',
-    accent: 'from-amber-500/20 to-amber-500/5',
+      'Browse cities and chat with Kiko 🌍, your destination guide. Ask her anything about a city before you commit to going.',
   },
   {
-    icon: Navigation,
-    title: 'Nearby Places',
+    targetSelector: '[data-tour="nav-nearby"]',
+    title: 'Nearby places',
     description:
-      'Discover attractions, cafés, and restaurants close to where you are right now — sorted by distance and matched to your interests.',
-    accent: 'from-green-500/20 to-green-500/5',
+      "When you're travelling, the Nearby tab shows you what's around you right now — restaurants, cafés, and attractions within walking distance.",
   },
   {
-    icon: Sun,
+    targetSelector: '[data-tour="nav-profile"]',
+    title: 'Save your favourites',
+    description:
+      'Heart any place to save it to your wishlist. Find everything you\'ve saved in Profile → Saved tab.',
+  },
+  {
     title: 'Day Mode',
     description:
-      "While you're travelling, Day Mode guides you through each activity with real-time progress tracking and smart suggestions if you're running late.",
-    accent: 'from-orange-500/20 to-orange-500/5',
+      'During your trip, Day Mode keeps you on track — see what\'s next, check off activities, and track your daily progress.',
   },
   {
-    icon: Heart,
-    title: 'Save Your Favourites',
+    title: "You're ready! 🌏",
     description:
-      "Heart any attraction, restaurant, or café to add it to your wishlist. Find everything you've saved in your Profile → Saved tab.",
-    accent: 'from-red-500/20 to-red-500/5',
-  },
-  {
-    icon: Users,
-    title: 'Plan with Friends',
-    description:
-      "Invite collaborators to your trip and vote on activities together. Group trips made easy — everyone gets a say.",
-    accent: 'from-purple-500/20 to-purple-500/5',
+      "That's the tour! Create your first trip when you're ready. Have a great adventure.",
   },
 ];
 
-const STEPS_2: Step[] = [
+const STEPS_2: SpotlightStep[] = [
   {
-    icon: LayoutList,
-    title: 'Your Trip at a Glance',
+    targetSelector: '[data-tour="aria-button"]',
+    title: 'Meet Aria ✨',
     description:
-      'The overview card shows destination, dates, weather, and budget. Tap the pencil to edit any detail at any time.',
-    accent: 'from-primary/20 to-primary/5',
+      'This is Aria — your personal trip concierge. Ask her anything about your trip or the cities you\'re visiting. She can also update your itinerary based on your conversation.',
   },
   {
-    icon: CalendarDays,
-    title: 'Day by Day',
+    targetSelector: '[data-tour="group-chat-tab"]',
+    title: 'Group chat',
     description:
-      'Each day is a collapsible card. Drag activities to reorder them, tap to edit, or add new ones with the + button.',
-    accent: 'from-blue-500/20 to-blue-500/5',
+      'Use the Chat tab to talk with your travel group right inside the itinerary — no more switching to WhatsApp.',
   },
   {
-    icon: MessageCircle,
-    title: 'Chat with Aria',
+    targetSelector: '[data-tour="votes-tab"]',
+    title: 'Voting',
     description:
-      'Aria is your AI trip concierge. Ask her to swap a restaurant, add a backup rainy-day plan, or recalculate your schedule.',
-    accent: 'from-violet-500/20 to-violet-500/5',
+      'When someone proposes a change, it appears here. Vote yes or no — the majority decides. Changes only apply when 50%+ of the group approves.',
   },
   {
-    icon: UserPlus,
-    title: 'Invite Your Crew',
+    targetSelector: '[data-tour="invite-button"]',
+    title: 'Invite your crew',
     description:
-      'Tap the Invite button to share a link with friends. Collaborators can vote on activities and chat in real time.',
-    accent: 'from-green-500/20 to-green-500/5',
+      "Invite friends to join this trip and plan together. They'll get access to the itinerary, chat, and voting instantly.",
   },
   {
-    icon: Sun,
-    title: 'Hit the Road',
+    title: 'You\'re set! 🗺️',
     description:
-      "When travel day arrives, tap \"Day Mode\" to get a live guide — tick off activities as you go and see your day unfold.",
-    accent: 'from-orange-500/20 to-orange-500/5',
+      'Your itinerary is ready. Aria is always here if you need help. Enjoy the trip!',
   },
 ];
 
@@ -187,89 +154,283 @@ export function useOnboarding2() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared modal UI
+// useTargetRect — tracks the bounding rect of a target element
 // ---------------------------------------------------------------------------
 
-interface WalkthroughModalProps {
-  steps: Step[];
+function useTargetRect(selector: string | undefined): DOMRect | null {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  useEffect(() => {
+    if (!selector) {
+      setRect(null);
+      return;
+    }
+
+    const update = () => {
+      const el = document.querySelector(selector);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Small delay to let scroll settle before measuring
+        const t = setTimeout(() => {
+          const r = el.getBoundingClientRect();
+          setRect(r);
+        }, 300);
+        return t;
+      } else {
+        setRect(null);
+        return undefined;
+      }
+    };
+
+    const timer = update();
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [selector]);
+
+  return rect;
+}
+
+// ---------------------------------------------------------------------------
+// useWindowSize — responsive overlay dimensions
+// ---------------------------------------------------------------------------
+
+function useWindowSize() {
+  const [size, setSize] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 375,
+    height: typeof window !== 'undefined' ? window.innerHeight : 812,
+  });
+
+  useEffect(() => {
+    const observer = new ResizeObserver(() => {
+      setSize({ width: window.innerWidth, height: window.innerHeight });
+    });
+    observer.observe(document.documentElement);
+    return () => observer.disconnect();
+  }, []);
+
+  return size;
+}
+
+// ---------------------------------------------------------------------------
+// SpotlightOverlay — SVG with mask cut-out
+// ---------------------------------------------------------------------------
+
+interface SpotlightOverlayProps {
+  rect: DOMRect | null;
+  padding?: number;
+  vw: number;
+  vh: number;
+}
+
+function SpotlightOverlay({ rect, padding = 10, vw, vh }: SpotlightOverlayProps) {
+  if (!rect) {
+    return (
+      <div
+        className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+        style={{ zIndex: 49 }}
+      />
+    );
+  }
+
+  const x = Math.max(0, rect.left - padding);
+  const y = Math.max(0, rect.top - padding);
+  const w = rect.width + padding * 2;
+  const h = rect.height + padding * 2;
+  const r = 12;
+
+  return (
+    <svg
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 49, width: vw, height: vh }}
+      viewBox={`0 0 ${vw} ${vh}`}
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <mask id="spotlight-mask">
+          <rect width={vw} height={vh} fill="white" />
+          <rect x={x} y={y} width={w} height={h} rx={r} ry={r} fill="black" />
+        </mask>
+      </defs>
+      {/* Dark backdrop with hole */}
+      <rect
+        width={vw}
+        height={vh}
+        fill="rgba(0,0,0,0.75)"
+        mask="url(#spotlight-mask)"
+      />
+      {/* Glow ring around the cut-out */}
+      <rect
+        x={x - 2}
+        y={y - 2}
+        width={w + 4}
+        height={h + 4}
+        rx={r + 2}
+        ry={r + 2}
+        fill="none"
+        stroke="rgba(255,255,255,0.3)"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TooltipCard — positioned near the spotlight cut-out
+// ---------------------------------------------------------------------------
+
+interface TooltipCardProps {
+  rect: DOMRect | null;
+  step: SpotlightStep;
+  totalSteps: number;
+  stepIndex: number;
+  onNext: () => void;
+  onSkip: () => void;
+  isLast: boolean;
+  vw: number;
+  vh: number;
+}
+
+function TooltipCard({
+  rect,
+  step,
+  totalSteps,
+  stepIndex,
+  onNext,
+  onSkip,
+  isLast,
+  vw,
+  vh,
+}: TooltipCardProps) {
+  const cardWidth = Math.min(320, vw - 32);
+  const cardHeight = 200; // approximate
+  const padding = 10;
+  const gap = 16;
+
+  let top: number;
+  let left: number;
+
+  if (!rect) {
+    // Centered fallback
+    top = vh / 2 - cardHeight / 2;
+    left = vw / 2 - cardWidth / 2;
+  } else {
+    const spaceBelow = vh - (rect.bottom + padding + gap);
+    if (spaceBelow >= cardHeight) {
+      top = rect.bottom + padding + gap;
+    } else {
+      top = Math.max(8, rect.top - padding - gap - cardHeight);
+    }
+    left = Math.max(
+      16,
+      Math.min(
+        rect.left + rect.width / 2 - cardWidth / 2,
+        vw - cardWidth - 16,
+      ),
+    );
+  }
+
+  const lastLabel = stepIndex === 0 ? "Let's go" : isLast ? "Let's go" : 'Next';
+
+  return (
+    <div
+      className="fixed bg-card border border-border rounded-2xl shadow-2xl p-5 animate-in fade-in-0 zoom-in-95 duration-200"
+      style={{ zIndex: 51, top, left, width: cardWidth }}
+    >
+      <h3 className="font-semibold text-lg text-foreground mb-1">{step.title}</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+        {step.description}
+      </p>
+
+      {/* Step dots */}
+      <div className="flex gap-1.5 mb-4">
+        {Array.from({ length: totalSteps }).map((_, i) => (
+          <div
+            key={i}
+            className={`h-1.5 rounded-full transition-all ${
+              i === stepIndex
+                ? 'w-5 bg-primary'
+                : 'w-1.5 bg-muted-foreground/30'
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onSkip}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Skip tour
+        </button>
+        <button
+          onClick={onNext}
+          className="ml-auto flex items-center gap-1.5 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          {isLast ? lastLabel : 'Next'}
+          {!isLast && <ChevronRight className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SpotlightWalkthrough — main component
+// ---------------------------------------------------------------------------
+
+interface SpotlightWalkthroughProps {
+  steps: SpotlightStep[];
   onDone: () => void;
 }
 
-function WalkthroughModal({ steps, onDone }: WalkthroughModalProps) {
-  const [step, setStep] = useState(0);
-  const current = steps[step];
-  const Icon = current.icon;
-  const isLast = step === steps.length - 1;
+function SpotlightWalkthrough({ steps, onDone }: SpotlightWalkthroughProps) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const { width: vw, height: vh } = useWindowSize();
 
-  const next = () => {
-    if (isLast) { onDone(); return; }
-    setStep(s => s + 1);
-  };
-  const prev = () => setStep(s => Math.max(0, s - 1));
+  const currentStep = steps[stepIndex];
+  const rect = useTargetRect(currentStep.targetSelector);
+  const isLast = stepIndex === steps.length - 1;
 
+  const handleNext = useCallback(() => {
+    if (isLast) {
+      onDone();
+    } else {
+      setStepIndex((i) => i + 1);
+    }
+  }, [isLast, onDone]);
+
+  const handleSkip = useCallback(() => {
+    onDone();
+  }, [onDone]);
+
+  // Intercept backdrop clicks (not the cut-out area) so users don't accidentally dismiss
+  // The SVG is pointer-events-none, so we add a transparent intercept layer behind the tooltip
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200">
-        {/* Dismiss / Skip */}
-        <button
-          onClick={onDone}
-          className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-muted transition-colors text-muted-foreground z-10"
-          aria-label="Skip walkthrough"
-        >
-          <X className="w-4 h-4" />
-        </button>
+    <>
+      {/* Invisible click-blocker layer — sits between page and spotlight SVG */}
+      <div
+        className="fixed inset-0"
+        style={{ zIndex: 48 }}
+        onClick={(e) => e.stopPropagation()}
+      />
 
-        {/* Illustration area */}
-        <div className={cn('w-full h-36 flex items-center justify-center bg-gradient-to-br', current.accent)}>
-          <div className="w-20 h-20 rounded-2xl bg-background/80 flex items-center justify-center shadow-lg">
-            <Icon className="w-10 h-10 text-primary" />
-          </div>
-        </div>
+      {/* SVG overlay with mask cut-out (pointer-events: none so spotlight target stays interactive) */}
+      <SpotlightOverlay rect={rect} vw={vw} vh={vh} />
 
-        {/* Content */}
-        <div className="px-6 pt-5 pb-3">
-          <h2 className="font-display text-2xl font-semibold text-foreground mb-2">
-            {current.title}
-          </h2>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {current.description}
-          </p>
-        </div>
-
-        {/* Step dots */}
-        <div className="flex items-center justify-center gap-1.5 py-3">
-          {steps.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setStep(i)}
-              className={cn(
-                'h-1.5 rounded-full transition-all',
-                i === step ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30',
-              )}
-              aria-label={`Go to step ${i + 1}`}
-            />
-          ))}
-        </div>
-
-        {/* Navigation */}
-        <div className="flex items-center justify-between px-6 pb-6 gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={prev}
-            disabled={step === 0}
-            className="gap-1.5"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Back
-          </Button>
-          <Button size="sm" onClick={next} className="gap-1.5 flex-1">
-            {isLast ? 'Get Started' : 'Next'}
-            {!isLast && <ChevronRight className="w-4 h-4" />}
-          </Button>
-        </div>
-      </div>
-    </div>
+      {/* Tooltip card */}
+      <TooltipCard
+        rect={rect}
+        step={currentStep}
+        totalSteps={steps.length}
+        stepIndex={stepIndex}
+        onNext={handleNext}
+        onSkip={handleSkip}
+        isLast={isLast}
+        vw={vw}
+        vh={vh}
+      />
+    </>
   );
 }
 
@@ -283,10 +444,10 @@ interface OnboardingWalkthroughProps {
 
 /** Walkthrough 1 — 7-step welcome guide for new sign-ups */
 export function OnboardingWalkthrough({ onDone }: OnboardingWalkthroughProps) {
-  return <WalkthroughModal steps={STEPS_1} onDone={onDone} />;
+  return <SpotlightWalkthrough steps={STEPS_1} onDone={onDone} />;
 }
 
 /** Walkthrough 2 — 5-step guide on first trip detail view */
 export function OnboardingWalkthrough2({ onDone }: OnboardingWalkthroughProps) {
-  return <WalkthroughModal steps={STEPS_2} onDone={onDone} />;
+  return <SpotlightWalkthrough steps={STEPS_2} onDone={onDone} />;
 }
