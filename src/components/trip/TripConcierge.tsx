@@ -18,6 +18,21 @@ interface ToolCall {
   args: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// Sentiment detection for Day Mode reflections
+// ---------------------------------------------------------------------------
+
+type ReflectionSentiment = 'fatigue' | 'positive' | 'neutral';
+
+function detectSentiment(text: string): ReflectionSentiment {
+  const lower = text.toLowerCase();
+  const fatigueWords = ['tired', 'exhausted', 'pain', 'hurting', 'sore', 'legs', 'slow', 'jet lag', 'jetlag', 'kids', 'rough', 'hard', 'difficult', 'overwhelming', 'too much'];
+  const positiveWords = ['amazing', 'great', 'loved', 'fantastic', 'perfect', 'energetic', 'incredible', 'best', 'want more', 'awesome', 'brilliant', 'excellent', 'wonderful'];
+  if (fatigueWords.some((w) => lower.includes(w))) return 'fatigue';
+  if (positiveWords.some((w) => lower.includes(w))) return 'positive';
+  return 'neutral';
+}
+
 interface TripConciergeProps {
   tripId: string;
   tripName?: string;
@@ -25,6 +40,10 @@ interface TripConciergeProps {
   initialOpen?: boolean;
   /** Pre-inject an Aria message when the panel first opens */
   initialMessage?: string;
+  /** Reflection mode: enables adaptive action buttons after user responds */
+  isReflection?: boolean;
+  /** Current day index (1-based) used for pace adjustment and reflection storage */
+  dayIndex?: number;
 }
 
 // Aria avatar — gradient circle with sparkle
@@ -55,7 +74,7 @@ Try asking:
   created_at: new Date().toISOString(),
 };
 
-export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage }: TripConciergeProps) => {
+export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex }: TripConciergeProps) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(initialOpen);
   const [messages, setMessages] = useState<Message[]>(() =>
@@ -68,6 +87,13 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<{ toolCall: ToolCall; messageId: string } | null>(null);
   const [applyingTool, setApplyingTool] = useState(false);
+
+  // Reflection-mode state
+  const reflectionUserMsgIdRef = useRef<string | null>(null); // id of user's reflection reply
+  const [reflectionSentiment, setReflectionSentiment] = useState<ReflectionSentiment | null>(null);
+  const [reflectionAriaMsgId, setReflectionAriaMsgId] = useState<string | null>(null); // aria response msg id
+  const [paceAdjusting, setPaceAdjusting] = useState(false);
+  const [paceAdjusted, setPaceAdjusted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -122,8 +148,9 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     setInput('');
 
     // Optimistically add user message
+    const tempUserMsgId = `temp-${Date.now()}`;
     const tempUserMsg: Message = {
-      id: `temp-${Date.now()}`,
+      id: tempUserMsgId,
       role: 'user',
       content: userMessage,
       created_at: new Date().toISOString(),
@@ -134,6 +161,22 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
       return [...base, tempUserMsg];
     });
     setLoading(true);
+
+    // Reflection mode: if this is the user's first reply to the reflection question, detect sentiment
+    const isFirstReflectionReply = isReflection && reflectionUserMsgIdRef.current === null;
+    if (isFirstReflectionReply) {
+      reflectionUserMsgIdRef.current = tempUserMsgId;
+      setReflectionSentiment(detectSentiment(userMessage));
+      // Store in trip_reflections table (fire-and-forget)
+      if (user && dayIndex) {
+        supabase.from('trip_reflections').insert({
+          trip_id: tripId,
+          user_id: user.id,
+          day_index: dayIndex,
+          reflection_text: userMessage,
+        }).then(() => { /* silent */ });
+      }
+    }
 
     try {
       const authHeaders = await getAuthHeader();
@@ -175,6 +218,21 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
       // If Aria proposes a tool action, store it for user confirmation
       if (data.toolCall) {
         setPendingToolCall({ toolCall: data.toolCall as ToolCall, messageId: msgId });
+      }
+      // Mark this as the reflection aria response so we can attach action buttons to it
+      if (isFirstReflectionReply) {
+        setReflectionAriaMsgId(msgId);
+        // Update trip_reflections with aria_response (best-effort)
+        if (user && dayIndex) {
+          supabase.from('trip_reflections')
+            .update({ aria_response: data.reply })
+            .eq('trip_id', tripId)
+            .eq('user_id', user.id)
+            .eq('day_index', dayIndex)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .then(() => { /* silent */ });
+        }
       }
     } catch (err) {
       const errorText = err instanceof Error ? err.message : 'The concierge is temporarily unavailable.';
@@ -299,6 +357,80 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     }
   };
 
+  // Pace adjustment — remove ~30% of future flex activities
+  const handleAdjustPace = async () => {
+    if (!dayIndex || !tripId || paceAdjusted) return;
+    setPaceAdjusting(true);
+    try {
+      const { data: flexItems } = await supabase
+        .from('itinerary_items')
+        .select('id')
+        .eq('itinerary_id', tripId)
+        .eq('item_type', 'flex')
+        .gt('day_number', dayIndex)
+        .order('day_number', { ascending: true });
+
+      if (flexItems && flexItems.length > 0) {
+        const removeCount = Math.max(1, Math.ceil(flexItems.length * 0.3));
+        const toRemove = flexItems.slice(0, removeCount).map((i: { id: string }) => i.id);
+        await supabase.from('itinerary_items').delete().in('id', toRemove);
+        // Update pace_adjustment_made in trip_reflections
+        if (user) {
+          supabase.from('trip_reflections')
+            .update({ pace_adjustment_made: true })
+            .eq('trip_id', tripId)
+            .eq('user_id', user.id)
+            .eq('day_index', dayIndex)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .then(() => { /* silent */ });
+        }
+      }
+      setPaceAdjusted(true);
+      setMessages(prev => [...prev, {
+        id: `aria-pace-${Date.now()}`,
+        role: 'assistant',
+        content: "Done! I've lightened the load for your remaining days — removed some optional flex activities so you have more breathing room. Enjoy the rest of your trip! 🌿",
+        created_at: new Date().toISOString(),
+      }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        id: `aria-pace-err-${Date.now()}`,
+        role: 'error',
+        content: 'Could not adjust the pace right now. Please try again.',
+        created_at: new Date().toISOString(),
+      }]);
+    } finally {
+      setPaceAdjusting(false);
+    }
+  };
+
+  const handleKeepPace = () => {
+    setPaceAdjusted(true); // dismiss the buttons
+    setMessages(prev => [...prev, {
+      id: `aria-keep-${Date.now()}`,
+      role: 'assistant',
+      content: "No problem — keeping everything as planned. You've got this! 💪",
+      created_at: new Date().toISOString(),
+    }]);
+  };
+
+  const handleAddMore = () => {
+    setPaceAdjusted(true); // dismiss the buttons
+    setInput("Can you suggest something extra to add to tomorrow?");
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const handleKeepAsIs = () => {
+    setPaceAdjusted(true);
+    setMessages(prev => [...prev, {
+      id: `aria-keepasis-${Date.now()}`,
+      role: 'assistant',
+      content: "Sounds great — keeping the itinerary as is. Keep up the amazing energy! 🚀",
+      created_at: new Date().toISOString(),
+    }]);
+  };
+
   // Show welcome message if no real messages exist yet (after history is loaded)
   const displayMessages: Message[] =
     historyLoaded && messages.length === 0 ? [WELCOME_MESSAGE] : messages;
@@ -392,6 +524,62 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
                       <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-muted/60">
                         <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                       </div>
+                      {/* Reflection adaptive action buttons */}
+                      {isReflection && msg.id === reflectionAriaMsgId && !paceAdjusted && reflectionSentiment && (
+                        <div className="flex flex-col gap-2 mt-2 pl-0.5">
+                          {reflectionSentiment === 'fatigue' && (
+                            <>
+                              <p className="text-xs text-muted-foreground">Would you like me to ease the pace for your remaining days?</p>
+                              <div className="flex gap-2 flex-wrap">
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white gap-1"
+                                  onClick={handleAdjustPace}
+                                  disabled={paceAdjusting}
+                                >
+                                  {paceAdjusting && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  Yes, adjust pace
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs"
+                                  onClick={handleKeepPace}
+                                  disabled={paceAdjusting}
+                                >
+                                  Keep as planned
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                          {reflectionSentiment === 'positive' && (
+                            <>
+                              <p className="text-xs text-muted-foreground">Want me to make tomorrow a bit fuller?</p>
+                              <div className="flex gap-2 flex-wrap">
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white"
+                                  onClick={handleAddMore}
+                                >
+                                  Add more
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs"
+                                  onClick={handleKeepAsIs}
+                                >
+                                  Keep as is
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                          {reflectionSentiment === 'neutral' && (
+                            <p className="text-xs text-muted-foreground italic">Thanks for sharing! I'll keep your feedback in mind for this trip.</p>
+                          )}
+                        </div>
+                      )}
+
                       {/* Tool-call confirmation — shown only for the message that triggered the tool */}
                       {pendingToolCall?.messageId === msg.id && (
                         <div className="flex gap-2 mt-2 pl-0.5">

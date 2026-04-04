@@ -902,6 +902,8 @@ const TripDayMode = () => {
           tripName={tripTitle}
           initialOpen={!!ariaReflectionMessage}
           initialMessage={ariaReflectionMessage ?? undefined}
+          isReflection={!!ariaReflectionMessage}
+          dayIndex={dayNumber > 0 ? dayNumber : undefined}
         />
       )}
     </div>

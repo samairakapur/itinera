@@ -424,6 +424,37 @@ Deno.serve(async (req: Request) => {
         `,
       },
       {
+        name: 'trip_reflections — end-of-day reflection log',
+        ddl: `
+          CREATE TABLE IF NOT EXISTS public.trip_reflections (
+            id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            trip_id              UUID NOT NULL REFERENCES public.itineraries(id) ON DELETE CASCADE,
+            user_id              UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+            day_index            INTEGER NOT NULL,
+            reflection_text      TEXT NOT NULL,
+            aria_response        TEXT,
+            pace_adjustment_made BOOLEAN DEFAULT false,
+            created_at           TIMESTAMPTZ DEFAULT NOW()
+          );
+          ALTER TABLE public.trip_reflections ENABLE ROW LEVEL SECURITY;
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_policies
+              WHERE tablename = 'trip_reflections'
+                AND policyname = 'Users can manage their own reflections'
+            ) THEN
+              CREATE POLICY "Users can manage their own reflections"
+              ON public.trip_reflections FOR ALL TO authenticated
+              USING  (auth.uid() = user_id)
+              WITH CHECK (auth.uid() = user_id);
+            END IF;
+          END $$;
+          CREATE INDEX IF NOT EXISTS idx_trip_reflections_trip_id
+            ON public.trip_reflections (trip_id, day_index);
+        `,
+      },
+      {
         name: 'profiles — add onboarding completion columns',
         ddl: `
           ALTER TABLE public.profiles
