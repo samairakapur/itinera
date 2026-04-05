@@ -380,7 +380,7 @@ export const ActivityCard = ({
                     </Badge>
                   )}
                   {activity.flexibility === 'firm' && (
-                    <Badge variant="outline" className="hidden xs:inline-flex text-xs px-2 py-0.5 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                    <Badge variant="outline" className="hidden xs:inline-flex text-xs px-2 py-0.5 bg-white/5 text-muted-foreground border-white/10">
                       <Lock className="w-3 h-3 mr-1" />
                       Firm
                     </Badge>
@@ -532,7 +532,7 @@ export const ActivityCard = ({
                     'flex items-start gap-1.5 text-xs rounded-sm px-2 py-1.5 border',
                     showCallWarning
                       ? 'bg-destructive/10 border-destructive/20 text-destructive'
-                      : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+                      : 'bg-white/5 border-white/10 text-muted-foreground'
                   )}>
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
                     <span>

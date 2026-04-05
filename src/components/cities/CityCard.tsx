@@ -20,7 +20,7 @@ const CityCard = ({ city }: CityCardProps) => {
 
   return (
     <Link to={`/city/${city.id}`} className="group block">
-      <div className="rounded-2xl overflow-hidden bg-white border border-border shadow-card hover:shadow-md hover:-translate-y-1 transition-all duration-300">
+      <div className="rounded-sm overflow-hidden bg-card border border-border shadow-card hover:shadow-glow hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
 
         {/* Image */}
         <div className="relative aspect-[4/3] overflow-hidden bg-muted">
@@ -47,7 +47,7 @@ const CityCard = ({ city }: CityCardProps) => {
 
           {/* City name on image */}
           <div className="absolute bottom-0 left-0 right-0 p-4">
-            <h3 className="font-display text-xl font-normal text-white leading-snug">{city.name}</h3>
+            <h3 className="font-display text-2xl font-semibold tracking-wide text-white leading-snug">{city.name}</h3>
             <div className="flex items-center gap-1 text-white/75 text-xs mt-0.5">
               <MapPin className="w-3 h-3" />
               {city.country}
@@ -62,7 +62,7 @@ const CityCard = ({ city }: CityCardProps) => {
               <Badge
                 key={tag}
                 variant="outline"
-                className="text-xs font-normal border-border text-muted-foreground bg-muted/40 capitalize"
+                className="text-xs font-normal border-white/15 text-white/50 bg-transparent capitalize"
               >
                 {tag}
               </Badge>

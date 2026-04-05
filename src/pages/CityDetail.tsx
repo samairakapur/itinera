@@ -165,7 +165,7 @@ const CityDetail = () => {
       <div className="container px-4 py-6 md:py-8">
         <Tabs defaultValue="overview" className="space-y-6 md:space-y-8">
           {/* Mobile-friendly tabs with icons AND text */}
-          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto gap-1 bg-muted/30 p-1 border border-white/5">
+          <TabsList className="w-full grid grid-cols-3 md:grid-cols-6 h-auto gap-1 bg-muted/30 p-1 border border-white/5 rounded-sm">
             <TabsTrigger value="overview" className="flex flex-col md:flex-row items-center gap-1 md:gap-2 py-2 px-2 text-xs md:text-sm">
               <Info className="w-4 h-4" />
               <span>Overview</span>
