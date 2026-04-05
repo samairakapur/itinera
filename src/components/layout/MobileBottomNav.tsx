@@ -17,7 +17,7 @@ const MobileBottomNav = () => {
     <nav
       className={cn(
         'fixed bottom-0 left-0 right-0 z-50 md:hidden',
-        'bg-black/85 backdrop-blur-md border-t border-white/5',
+        'bg-white/95 backdrop-blur-md border-t border-border',
         'safe-area-pb',
       )}
     >

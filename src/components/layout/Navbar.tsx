@@ -48,14 +48,14 @@ const Navbar = () => {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-black/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-white/90 backdrop-blur-md supports-[backdrop-filter]:bg-white/85">
       <div className="container flex h-16 items-center justify-between px-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-sm bg-gradient-primary flex items-center justify-center transition-transform group-hover:scale-105">
+          <div className="w-9 h-9 rounded-xl bg-gradient-primary flex items-center justify-center shadow-warm transition-transform group-hover:scale-105">
             <Compass className="w-4.5 h-4.5 text-white" />
           </div>
-          <span className="font-display text-xl font-normal tracking-widest uppercase text-foreground hidden sm:block">
+          <span className="font-display text-xl font-normal tracking-wide text-foreground hidden sm:block">
             Itinera
           </span>
         </Link>
@@ -71,10 +71,10 @@ const Navbar = () => {
                 key={link.href}
                 to={link.href}
                 className={cn(
-                  "flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-all border-b-2",
+                  "flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all",
                   isActive
-                    ? "text-primary border-primary"
-                    : "text-foreground/60 hover:text-foreground hover:bg-white/5 border-transparent"
+                    ? "text-primary bg-primary/8 font-semibold"
+                    : "text-foreground/60 hover:text-foreground hover:bg-muted"
                 )}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -97,7 +97,7 @@ const Navbar = () => {
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 shadow-lg">
+              <DropdownMenuContent align="end" className="w-56 bg-white shadow-lg border-border">
                 <div className="px-2 py-1.5">
                   <p className="text-sm font-medium text-foreground">{user.user_metadata?.full_name || 'Traveler'}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>
@@ -120,7 +120,7 @@ const Navbar = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button asChild className="rounded-sm">
+            <Button asChild className="rounded-xl shadow-warm">
               <Link to="/auth">Sign In</Link>
             </Button>
           )}
@@ -132,10 +132,10 @@ const Navbar = () => {
                 <Menu className="h-5 w-5 text-foreground/70" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-72 bg-black/90 border-l border-white/10">
+            <SheetContent side="right" className="w-72 bg-white border-l border-border">
               {/* Sheet header */}
               <div className="flex items-center gap-2.5 mb-8 mt-2">
-                <div className="w-8 h-8 rounded-sm bg-gradient-primary flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
                   <Compass className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-display text-lg font-normal text-foreground">Itinera</span>
@@ -151,10 +151,10 @@ const Navbar = () => {
                       to={link.href}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-sm text-base font-medium transition-all",
+                        "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all",
                         isActive
-                          ? "text-primary bg-white/5"
-                          : "text-foreground/60 hover:text-foreground hover:bg-white/5"
+                          ? "text-primary bg-primary/8 font-semibold"
+                          : "text-foreground/60 hover:text-foreground hover:bg-muted"
                       )}
                     >
                       <Icon className="w-5 h-5" />

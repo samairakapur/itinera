@@ -126,25 +126,34 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
 
   // Load message history when panel opens
   useEffect(() => {
-    if (!open || historyLoaded || !tripId) return;
+    if (!open || historyLoaded || !tripId || !user) return;
 
     const loadHistory = async () => {
       const { data } = await supabase
         .from('trip_messages')
         .select('id, role, content, created_at')
         .eq('trip_id', tripId)
+        .eq('user_id', user.id)  // Privacy: only load this user's messages
         .order('created_at', { ascending: true })
         .limit(30);
 
       if (data && data.length > 0) {
-        setMessages(data as Message[]);
+        // Strip <!--CHANGE:...--> blocks from loaded assistant messages and attach parsedChange
+        const parsed = data.map(m => {
+          if (m.role === 'assistant') {
+            const { cleanText, change } = parseChangeBlock(m.content);
+            return { ...m, content: cleanText, parsedChange: change ?? undefined };
+          }
+          return m;
+        });
+        setMessages(parsed as Message[]);
       }
       // If no history, leave messages empty — welcome message is shown via displayMessages
       setHistoryLoaded(true);
     };
 
     loadHistory();
-  }, [open, historyLoaded, tripId]);
+  }, [open, historyLoaded, tripId, user]);
 
   // Scroll to bottom when messages update
   useEffect(() => {

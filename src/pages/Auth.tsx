@@ -209,7 +209,7 @@ const Auth = () => {
           <div className="w-9 h-9 rounded-sm bg-gradient-primary flex items-center justify-center">
             <Plane className="w-5 h-5 text-primary-foreground" />
           </div>
-          <span className="font-display text-xl font-bold tracking-widest uppercase text-foreground">Itinera</span>
+          <span className="font-display text-xl font-bold text-foreground">Itinera</span>
         </a>
       </header>
 
@@ -484,13 +484,13 @@ const Auth = () => {
                 </div>
                 <div className="p-4">
                   <div className="w-10 h-10 mx-auto mb-2 rounded-sm border border-primary/20 flex items-center justify-center">
-                    <Users className="w-6 h-6 text-primary" />
+                    <Users className="w-6 h-6 text-secondary-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">Personalized</p>
                 </div>
                 <div className="p-4">
                   <div className="w-10 h-10 mx-auto mb-2 rounded-sm border border-primary/20 flex items-center justify-center">
-                    <Plane className="w-6 h-6 text-primary" />
+                    <Plane className="w-6 h-6 text-accent-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">AI Advisor</p>
                 </div>

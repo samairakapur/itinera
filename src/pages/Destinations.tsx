@@ -16,7 +16,7 @@ const PersonalizedCityCard = ({ city }: { city: ScoredCity }) => {
 
   return (
     <div
-      className="group rounded-sm overflow-hidden bg-card border border-border shadow-card hover:shadow-glow hover:border-primary/30 hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+      className="group rounded-2xl overflow-hidden bg-white border border-border shadow-card hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer"
       onClick={() => navigate(`/city/${city.id}`)}
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
@@ -94,7 +94,7 @@ const Destinations = () => {
     <div className="min-h-screen bg-background">
 
       {/* ── Page header ── */}
-      <div className="bg-card border-b border-border">
+      <div className="bg-white border-b border-border">
         <div className="container px-4 py-10 max-w-3xl mx-auto text-center">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-3">
             104 destinations
@@ -139,7 +139,7 @@ const Destinations = () => {
         {showPersonalized && personalizedCities.length > 0 && (
           <section className="mb-14">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-sm border border-primary/15 flex items-center justify-center text-primary">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                 <Sparkles className="w-4.5 h-4.5 text-primary" />
               </div>
               <div>
@@ -159,7 +159,7 @@ const Destinations = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-sm border-border"
+                  className="rounded-xl border-border"
                   onClick={() => setShowAllPersonalized(true)}
                 >
                   View all {personalizedCities.length} personalized picks
@@ -172,8 +172,8 @@ const Destinations = () => {
 
         {/* Profile prompt */}
         {!hasPersonalization && !searchQuery && selectedCountry === 'all' && (
-          <div className="mb-12 rounded-sm border border-white/10 bg-muted p-6 flex flex-col md:flex-row items-center gap-6 shadow-card">
-            <div className="w-12 h-12 rounded-sm border border-primary/15 flex items-center justify-center shrink-0 text-primary">
+          <div className="mb-12 rounded-2xl border border-border bg-white p-6 flex flex-col md:flex-row items-center gap-6 shadow-card">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
               <Sparkles className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1 text-center md:text-left">
@@ -184,7 +184,7 @@ const Destinations = () => {
                 Complete your travel profile and we'll match destinations to your style and interests.
               </p>
             </div>
-            <Button asChild className="rounded-sm shrink-0">
+            <Button asChild className="rounded-xl shadow-warm shrink-0">
               <Link to="/profile-setup">
                 Set up profile
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -209,7 +209,7 @@ const Destinations = () => {
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div key={i} className="rounded-sm overflow-hidden bg-card border border-border shadow-card animate-pulse">
+                <div key={i} className="rounded-2xl overflow-hidden bg-white border border-border shadow-card animate-pulse">
                   <div className="aspect-[4/3] bg-muted" />
                   <div className="p-4">
                     <div className="h-4 bg-muted rounded-lg w-3/4 mb-2" />
@@ -233,7 +233,7 @@ const Destinations = () => {
               <p className="text-muted-foreground text-sm">
                 Try adjusting your search or clearing the filters
               </p>
-              <Button variant="outline" size="sm" onClick={handleClearFilters} className="mt-4 rounded-sm border-border">
+              <Button variant="outline" size="sm" onClick={handleClearFilters} className="mt-4 rounded-xl border-border">
                 Clear filters
               </Button>
             </div>

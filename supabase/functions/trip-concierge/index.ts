@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
     );
 
     // ── Load trip data ────────────────────────────────────────────────────
-    const [tripRes, itemsRes, flightsRes, historyRes] = await Promise.all([
+    const [tripRes, itemsRes, flightsRes, historyRes, legsRes] = await Promise.all([
       supabase
         .from('itineraries')
         .select(`
@@ -90,6 +90,13 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', userId)
         .order('created_at', { ascending: true })
         .limit(20),
+
+      // Multi-leg: load all legs with city info
+      supabase
+        .from('trip_legs')
+        .select('leg_number, start_day, end_day, cities ( name, country )')
+        .eq('itinerary_id', tripId)
+        .order('leg_number'),
     ]);
 
     const trip = tripRes.data;
@@ -101,6 +108,7 @@ Deno.serve(async (req: Request) => {
     const items = itemsRes.data ?? [];
     const flights = flightsRes.data ?? [];
     const history = historyRes.data ?? [];
+    const legs = legsRes.data ?? [];
 
     // ── Build system prompt (max 2000 chars) ──────────────────────────────
     const cities = trip.cities as { name: string; country: string } | null;
@@ -111,6 +119,16 @@ Deno.serve(async (req: Request) => {
     const endDate = trip.end_date
       ? new Date(trip.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : 'TBD';
+
+    // ── Helper: find city name for a day number from legs ─────────────────
+    type LegRow = { leg_number: number; start_day: number; end_day: number; cities: { name: string; country: string } | null };
+    const typedLegs = legs as LegRow[];
+
+    function cityForDay(dayNum: number): string {
+      if (typedLegs.length === 0) return cities?.name ?? 'the destination';
+      const leg = typedLegs.find(l => l.start_day <= dayNum && l.end_day >= dayNum);
+      return (leg?.cities as { name: string } | null)?.name ?? cities?.name ?? 'the destination';
+    }
 
     // ── Calculate current trip phase context ──────────────────────────────
     const today = new Date();
@@ -127,6 +145,9 @@ Deno.serve(async (req: Request) => {
       const dayIndex = Math.floor((today.getTime() - tripStartDate.getTime()) / msPerDay);
       const dayNum = dayIndex + 1; // 1-based
 
+      // Determine current city — use leg data for multi-city trips
+      const currentCity = cityForDay(dayNum);
+
       // Find today's items
       const todayItems = items.filter(item => item.day_number === dayNum);
       const todaySchedule = todayItems.length > 0
@@ -134,20 +155,32 @@ Deno.serve(async (req: Request) => {
         : '  No activities planned for today.';
 
       tripPhaseContext = `TODAY IS DAY ${dayNum} OF THE TRIP (out of ${trip.num_days} days total).
-The user is currently in ${cities?.name ?? 'the destination'} on Day ${dayNum}.
+The user is currently in ${currentCity} on Day ${dayNum}.
 Today's planned activities:
 ${todaySchedule}`;
     }
 
-    const byDay: Record<number, string[]> = {};
+    // ── Multi-leg overview ────────────────────────────────────────────────
+    let legOverview = '';
+    if (typedLegs.length > 1) {
+      legOverview = '\nTRIP LEGS:\n' + typedLegs.map(l => {
+        const legCity = (l.cities as { name: string } | null)?.name ?? '?';
+        return `  Leg ${l.leg_number}: ${legCity} (Days ${l.start_day}–${l.end_day})`;
+      }).join('\n');
+    }
+
+    // ── Full itinerary with per-day city annotation ───────────────────────
+    const byDay: Record<number, { acts: string[]; city: string }> = {};
     for (const item of items) {
-      if (!byDay[item.day_number]) byDay[item.day_number] = [];
+      if (!byDay[item.day_number]) {
+        byDay[item.day_number] = { acts: [], city: cityForDay(item.day_number) };
+      }
       const notes = item.notes ? ` (${item.notes})` : '';
-      byDay[item.day_number].push(`  ${item.time_slot}: ${item.custom_title || item.item_type}${notes}`);
+      byDay[item.day_number].acts.push(`  ${item.time_slot}: ${item.custom_title || item.item_type}${notes}`);
     }
     const itineraryContext = Object.entries(byDay)
-      .slice(0, 7) // cap at 7 days to keep prompt short
-      .map(([day, acts]) => `Day ${day}:\n${acts.join('\n')}`)
+      .slice(0, 10) // cap at 10 days to keep prompt reasonable
+      .map(([day, { acts, city }]) => `Day ${day} — ${city}:\n${acts.join('\n')}`)
       .join('\n\n');
 
     const flightContext = flights.length > 0
@@ -158,9 +191,9 @@ ${todaySchedule}`;
 
     const dietaryPrefs = (trip.dietary_preferences as string[] | null)?.join(', ') || 'none';
 
-    const systemPromptFull = `You are Aria, a warm and knowledgeable travel concierge for the trip "${tripName}" to ${cities?.name ?? 'the destination'}, ${cities?.country ?? ''}.
+    const systemPromptFull = `You are Aria, a warm and knowledgeable travel concierge for the trip "${tripName}".
 
-TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.
+TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.${legOverview}
 
 ITINERARY CHANGES — CRITICAL INSTRUCTIONS:
 When the user asks you to modify the itinerary (swap, add, remove an activity), do NOT just write out a new itinerary in text. Instead:
@@ -179,7 +212,7 @@ ${itineraryContext || 'No activities planned yet.'}
 FLIGHTS:
 ${flightContext}
 
-Be warm, concise, and actionable. Use bullet points for lists. Reference specific days and activities from the itinerary when relevant. You are also a destination expert — share local knowledge, neighbourhood tips, and practical advice about ${cities?.name ?? 'the destination'}.`;
+Be warm, concise, and actionable. Use bullet points for lists. Reference specific days, cities, and activities from the itinerary when relevant. You are a multi-destination expert for all cities on this trip — share local knowledge, neighbourhood tips, and practical advice for each city.`;
 
     // Truncate system prompt to 1800 chars to stay within model limits
     const systemPrompt = systemPromptFull.slice(0, 1800);

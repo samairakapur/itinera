@@ -32,17 +32,19 @@ const HomeVariation1 = () => {
   return (
     <div className="min-h-screen">
 
-      {/* ── Hero ── cinematic dark, editorial ── */}
-      <section className="relative overflow-hidden bg-background">
+      {/* ── Hero ── warm gradient, editorial, joyful ── */}
+      <section className="relative overflow-hidden" style={{ background: 'var(--gradient-hero)' }}>
 
-        {/* Cinematic radial vignette */}
-        <div className="pointer-events-none absolute inset-0"
-          style={{ background: 'radial-gradient(ellipse at center top, hsl(43 58% 54% / 0.05) 0%, transparent 60%)' }} />
+        {/* Decorative blobs — soft warm shapes */}
+        <div className="pointer-events-none absolute -top-32 -right-32 w-[600px] h-[600px] rounded-full opacity-30"
+          style={{ background: 'radial-gradient(circle, hsl(35 78% 72% / 0.5) 0%, transparent 70%)' }} />
+        <div className="pointer-events-none absolute -bottom-20 -left-20 w-[400px] h-[400px] rounded-full opacity-25"
+          style={{ background: 'radial-gradient(circle, hsl(160 45% 60% / 0.45) 0%, transparent 70%)' }} />
 
         <div className="container relative px-4 pt-20 pb-24 md:pt-28 md:pb-32 text-center max-w-4xl mx-auto">
 
           {/* Eyebrow pill */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-white/5 text-xs font-medium mb-8 tracking-widest uppercase text-primary">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/20 bg-white/60 backdrop-blur-sm text-xs font-semibold mb-8 tracking-wider uppercase text-primary shadow-sm">
             <Compass className="w-3.5 h-3.5" />
             Your world, perfectly planned
           </div>
@@ -50,7 +52,7 @@ const HomeVariation1 = () => {
           {/* Headline */}
           <h1 className="font-display text-5xl md:text-7xl text-foreground mb-6 leading-[1.1]" style={{ fontWeight: 400 }}>
             Travel that feels like{' '}
-            <em className="not-italic text-gradient">you</em>
+            <em className="not-italic text-gradient-primary">you</em>
           </h1>
 
           {/* Sub */}
@@ -63,7 +65,7 @@ const HomeVariation1 = () => {
             <Button
               size="lg"
               asChild
-              className="h-14 px-10 text-base font-medium tracking-widest uppercase rounded-sm hover:shadow-lg hover:scale-[1.02] transition-all"
+              className="h-13 px-8 text-base font-semibold rounded-2xl shadow-warm hover:shadow-lg hover:scale-[1.02] transition-all"
               data-tour="create-trip"
             >
               <Link to={user ? '/planner/new' : '/auth'}>
@@ -75,7 +77,7 @@ const HomeVariation1 = () => {
               size="lg"
               variant="outline"
               asChild
-              className="h-14 px-10 text-base rounded-sm border-white/10 bg-white/5 hover:bg-white/10 transition-all text-foreground/70 hover:text-foreground"
+              className="h-13 px-8 text-base rounded-2xl border-border bg-white/70 hover:bg-white transition-all text-foreground/70 hover:text-foreground"
             >
               <Link to="/destinations">
                 Browse destinations
@@ -92,7 +94,7 @@ const HomeVariation1 = () => {
       </section>
 
       {/* ── Feature trio ── */}
-      <section className="py-16 bg-card border-y border-border">
+      <section className="py-16 bg-white border-y border-border">
         <div className="container px-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             {features.map(({ icon: Icon, title, description }) => (
@@ -118,7 +120,7 @@ const HomeVariation1 = () => {
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-2">Popular right now</p>
               <h2 className="font-display text-3xl md:text-4xl text-foreground" style={{ fontWeight: 400 }}>
-                Destinations Worth The Journey
+                Destinations worth the journey
               </h2>
             </div>
             <Button variant="ghost" asChild className="hidden md:flex text-muted-foreground hover:text-foreground gap-1.5">
@@ -150,7 +152,7 @@ const HomeVariation1 = () => {
           )}
 
           <div className="text-center mt-10 md:hidden">
-            <Button variant="outline" size="lg" asChild className="rounded-sm border-white/10 text-foreground/70">
+            <Button variant="outline" size="lg" asChild className="rounded-2xl border-border text-foreground/70">
               <Link to="/destinations">
                 View all destinations
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -161,7 +163,7 @@ const HomeVariation1 = () => {
       </section>
 
       {/* ── Bottom CTA banner ── */}
-      <section className="py-16 bg-card border-t border-border">
+      <section className="py-16 bg-white border-t border-border">
         <div className="container px-4 text-center max-w-2xl mx-auto">
           <h2 className="font-display text-3xl md:text-4xl text-foreground mb-4" style={{ fontWeight: 400 }}>
             Ready for your next adventure?
@@ -169,7 +171,7 @@ const HomeVariation1 = () => {
           <p className="text-muted-foreground mb-8 text-lg leading-relaxed font-light">
             Join thousands of travellers who've discovered the joy of perfectly planned trips.
           </p>
-          <Button size="lg" asChild className="h-14 px-10 rounded-sm hover:shadow-lg hover:scale-[1.02] transition-all font-medium tracking-widest uppercase">
+          <Button size="lg" asChild className="h-13 px-10 rounded-2xl shadow-warm hover:shadow-lg hover:scale-[1.02] transition-all font-semibold">
             <Link to={user ? '/planner/new' : '/auth'}>
               {user ? 'Plan a new trip' : 'Get started free'}
               <ArrowRight className="w-4 h-4 ml-2" />

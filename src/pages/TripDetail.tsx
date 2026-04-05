@@ -485,34 +485,65 @@ const TripDetail = () => {
     }
   }, [createProposal]);
 
-  // ── Reflection toast — show once per day when trip is active and it's after 2pm ──
+  // ── Reflection toast — show when 40%+ of today's activities are done, or after 8pm ──
+  const showReflectionToast = () => {
+    const reflectionKey = `reflection_shown_${tripId}_${new Date().toDateString()}`;
+    if (localStorage.getItem(reflectionKey)) return;
+    localStorage.setItem(reflectionKey, 'true');
+    toast("✨ How's the day going?", {
+      description: 'Check in with Aria about the rest of your day.',
+      duration: 10000,
+      action: {
+        label: 'Chat with Aria',
+        onClick: () => {
+          document.querySelector<HTMLButtonElement>('[data-tour="aria-button"]')?.click();
+        },
+      },
+    });
+  };
+
+  // Trigger on 40% activity completion
+  useEffect(() => {
+    if (!itinerary?.start_date || !itinerary?.end_date || days.length === 0) return;
+
+    const now = new Date();
+    const start = new Date(itinerary.start_date);
+    const end = new Date(itinerary.end_date);
+    if (now < start || now > end) return;
+
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const dayIndex = Math.floor((now.getTime() - start.getTime()) / msPerDay);
+    const todayDayNum = dayIndex + 1;
+    const todayDay = days.find(d => d.dayNumber === todayDayNum);
+    if (!todayDay) return;
+
+    const todayActivities = [
+      ...(todayDay.morning || []),
+      ...(todayDay.afternoon || []),
+      ...(todayDay.evening || []),
+    ].filter(a => a.type !== 'transport');
+
+    if (todayActivities.length === 0) return;
+
+    const completedCount = todayActivities.filter(a => completedActivityIds.has(a.id)).length;
+    const progress = completedCount / todayActivities.length;
+
+    if (progress >= 0.4) showReflectionToast();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedActivityIds, days, itinerary, tripId]);
+
+  // Fallback: trigger at 8pm if active trip day and toast not yet shown
   useEffect(() => {
     if (!itinerary?.start_date || !itinerary?.end_date) return;
 
     const now = new Date();
     const start = new Date(itinerary.start_date);
     const end = new Date(itinerary.end_date);
-    const isActiveDay = now >= start && now <= end;
-    const isAfternoon = now.getHours() >= 14; // after 2pm
+    if (now < start || now > end) return;
+    if (now.getHours() < 20) return; // only after 8pm
 
-    if (!isActiveDay || !isAfternoon) return;
-
-    const reflectionKey = `reflection_shown_${tripId}_${now.toDateString()}`;
-    if (localStorage.getItem(reflectionKey)) return;
-
-    localStorage.setItem(reflectionKey, 'true');
-    setTimeout(() => {
-      toast("✨ How's the day going?", {
-        description: 'Check in with Aria about the rest of your day.',
-        duration: 10000,
-        action: {
-          label: 'Chat with Aria',
-          onClick: () => {
-            document.querySelector<HTMLButtonElement>('[data-tour="aria-button"]')?.click();
-          },
-        },
-      });
-    }, 3000); // 3 second delay after page load
+    setTimeout(showReflectionToast, 3000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itinerary, tripId]);
 
   // ── Auto-apply approved proposals ───────────────────────────────────────
