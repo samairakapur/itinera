@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
   Heart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsSaved, useToggleSavedPlace } from '@/hooks/useSavedPlaces';
 import { toast } from 'sonner';
@@ -68,6 +69,18 @@ export const NearbyCard = ({ place, city = '' }: NearbyCardProps) => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const { user } = useAuth();
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(place.imageUrl ?? null);
+
+  useEffect(() => {
+    if (!place.imageUrl && place.name && city) {
+      supabase.functions
+        .invoke('resolve-image', { body: { name: place.name, city, category: place.type } })
+        .then(({ data }) => {
+          if (data?.url) setResolvedImageUrl(data.url);
+        })
+        .catch(() => {}); // silent fallback
+    }
+  }, [place.name, place.imageUrl, city]);
   const isSaved = useIsSaved(place.name, city);
   const toggleSave = useToggleSavedPlace();
 
@@ -109,9 +122,9 @@ export const NearbyCard = ({ place, city = '' }: NearbyCardProps) => {
     <>
       <Card className="overflow-hidden hover:shadow-lg transition-shadow">
         <div className="aspect-video relative overflow-hidden">
-          {place.imageUrl && !imgError ? (
+          {resolvedImageUrl && !imgError ? (
             <img
-              src={place.imageUrl}
+              src={resolvedImageUrl}
               alt={place.name}
               className="w-full h-full object-cover"
               onError={() => setImgError(true)}

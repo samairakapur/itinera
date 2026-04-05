@@ -112,6 +112,33 @@ Deno.serve(async (req: Request) => {
       ? new Date(trip.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : 'TBD';
 
+    // ── Calculate current trip phase context ──────────────────────────────
+    const today = new Date();
+    const tripStartDate = trip.start_date ? new Date(trip.start_date) : null;
+    const tripEndDate = trip.end_date ? new Date(trip.end_date) : null;
+    let tripPhaseContext = '';
+
+    if (tripStartDate && today < tripStartDate) {
+      tripPhaseContext = `The trip has NOT started yet. It begins on ${tripStartDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. The user is in the PLANNING phase.`;
+    } else if (tripEndDate && today > tripEndDate) {
+      tripPhaseContext = `The trip has ENDED (ended ${tripEndDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}). The user may be reflecting.`;
+    } else if (tripStartDate) {
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const dayIndex = Math.floor((today.getTime() - tripStartDate.getTime()) / msPerDay);
+      const dayNum = dayIndex + 1; // 1-based
+
+      // Find today's items
+      const todayItems = items.filter(item => item.day_number === dayNum);
+      const todaySchedule = todayItems.length > 0
+        ? todayItems.map(i => `  - ${i.time_slot}: ${i.custom_title || i.item_type}`).join('\n')
+        : '  No activities planned for today.';
+
+      tripPhaseContext = `TODAY IS DAY ${dayNum} OF THE TRIP (out of ${trip.num_days} days total).
+The user is currently in ${cities?.name ?? 'the destination'} on Day ${dayNum}.
+Today's planned activities:
+${todaySchedule}`;
+    }
+
     const byDay: Record<number, string[]> = {};
     for (const item of items) {
       if (!byDay[item.day_number]) byDay[item.day_number] = [];
@@ -135,7 +162,18 @@ Deno.serve(async (req: Request) => {
 
 TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.
 
-ITINERARY:
+ITINERARY CHANGES — CRITICAL INSTRUCTIONS:
+When the user asks you to modify the itinerary (swap, add, remove an activity), do NOT just write out a new itinerary in text. Instead:
+1. Describe what you're proposing in ONE sentence.
+2. Append a hidden JSON change block at the END of your response (after all text), on its own line:
+   <!--CHANGE:{"action":"add"|"remove"|"swap","day":N,"remove":"exact activity name","add":{"name":"New Activity","time":"14:00","category":"attraction|restaurant|flex|transport","description":"Brief description"}}-->
+
+For "add": include "day", "add" object. Omit "remove".
+For "remove": include "day", "remove" (activity name). Omit "add".
+For "swap": include "day", "remove", and "add".
+Only include this block when proposing an actual database change. Do NOT include it for informational responses.${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
+
+FULL ITINERARY:
 ${itineraryContext || 'No activities planned yet.'}
 
 FLIGHTS:

@@ -455,6 +455,28 @@ Deno.serve(async (req: Request) => {
         `,
       },
       {
+        name: 'trip_messages — RLS: users can only read their own concierge messages',
+        ddl: `
+          DROP POLICY IF EXISTS "Trip members can view concierge messages" ON public.trip_messages;
+          DROP POLICY IF EXISTS "Trip members can insert concierge messages" ON public.trip_messages;
+
+          CREATE POLICY "Users can view own concierge messages"
+          ON public.trip_messages FOR SELECT TO authenticated
+          USING (user_id = auth.uid());
+
+          CREATE POLICY "Users can insert own concierge messages"
+          ON public.trip_messages FOR INSERT TO authenticated
+          WITH CHECK (
+            user_id = auth.uid()
+            AND (
+              EXISTS (SELECT 1 FROM public.itineraries WHERE id = trip_id AND user_id = auth.uid())
+              OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND email = auth.email())
+              OR EXISTS (SELECT 1 FROM public.trip_collaborators WHERE itinerary_id = trip_id AND user_id = auth.uid())
+            )
+          );
+        `,
+      },
+      {
         name: 'profiles — add onboarding completion columns',
         ddl: `
           ALTER TABLE public.profiles

@@ -485,6 +485,36 @@ const TripDetail = () => {
     }
   }, [createProposal]);
 
+  // ── Reflection toast — show once per day when trip is active and it's after 2pm ──
+  useEffect(() => {
+    if (!itinerary?.start_date || !itinerary?.end_date) return;
+
+    const now = new Date();
+    const start = new Date(itinerary.start_date);
+    const end = new Date(itinerary.end_date);
+    const isActiveDay = now >= start && now <= end;
+    const isAfternoon = now.getHours() >= 14; // after 2pm
+
+    if (!isActiveDay || !isAfternoon) return;
+
+    const reflectionKey = `reflection_shown_${tripId}_${now.toDateString()}`;
+    if (localStorage.getItem(reflectionKey)) return;
+
+    localStorage.setItem(reflectionKey, 'true');
+    setTimeout(() => {
+      toast("✨ How's the day going?", {
+        description: 'Check in with Aria about the rest of your day.',
+        duration: 10000,
+        action: {
+          label: 'Chat with Aria',
+          onClick: () => {
+            document.querySelector<HTMLButtonElement>('[data-tour="aria-button"]')?.click();
+          },
+        },
+      });
+    }, 3000); // 3 second delay after page load
+  }, [itinerary, tripId]);
+
   // ── Auto-apply approved proposals ───────────────────────────────────────
   useEffect(() => {
     if (approvedProposals.length === 0) return;

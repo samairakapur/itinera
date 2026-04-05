@@ -6,16 +6,24 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
+interface ParsedChange {
+  action: 'add' | 'remove' | 'swap';
+  day: number;
+  remove?: string; // activity name to remove
+  add?: {
+    name: string;
+    time?: string;
+    category?: string;
+    description?: string;
+  };
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'error';
-  content: string;
+  content: string; // already stripped of the CHANGE block
   created_at: string;
-}
-
-interface ToolCall {
-  name: 'add_activity' | 'remove_activity' | 'swap_activity';
-  args: Record<string, unknown>;
+  parsedChange?: ParsedChange; // attached when Aria proposes a change
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +69,18 @@ const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
   </div>
 );
 
+function parseChangeBlock(text: string): { cleanText: string; change: ParsedChange | null } {
+  const match = text.match(/<!--CHANGE:(.*?)-->/s);
+  if (!match) return { cleanText: text, change: null };
+  try {
+    const change = JSON.parse(match[1]) as ParsedChange;
+    const cleanText = text.replace(/\n?<!--CHANGE:.*?-->/s, '').trim();
+    return { cleanText, change };
+  } catch {
+    return { cleanText: text.replace(/\n?<!--CHANGE:.*?-->/s, '').trim(), change: null };
+  }
+}
+
 // Static welcome message shown when there are no saved messages
 const WELCOME_MESSAGE: Message = {
   id: 'aria-welcome',
@@ -92,8 +112,8 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [pendingToolCall, setPendingToolCall] = useState<{ toolCall: ToolCall; messageId: string } | null>(null);
-  const [applyingTool, setApplyingTool] = useState(false);
+  const [appliedChangeIds, setAppliedChangeIds] = useState<Set<string>>(new Set());
+  const [applyingChange, setApplyingChange] = useState(false);
 
   // Reflection-mode state
   const reflectionUserMsgIdRef = useRef<string | null>(null); // id of user's reflection reply
@@ -215,17 +235,15 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
       if (data?.error) throw new Error(data.error);
 
       const msgId = `assistant-${Date.now()}`;
+      const { cleanText, change } = parseChangeBlock(data.reply);
       const assistantMsg: Message = {
         id: msgId,
         role: 'assistant',
-        content: data.reply,
+        content: cleanText,
         created_at: new Date().toISOString(),
+        parsedChange: change ?? undefined,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-      // If Aria proposes a tool action, store it for user confirmation
-      if (data.toolCall) {
-        setPendingToolCall({ toolCall: data.toolCall as ToolCall, messageId: msgId });
-      }
       // Mark this as the reflection aria response so we can attach action buttons to it
       if (isFirstReflectionReply) {
         setReflectionAriaMsgId(msgId);
@@ -264,103 +282,55 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     }
   };
 
-  // Execute an Aria-proposed itinerary change after user confirms
-  const handleApplyTool = async (confirm: boolean) => {
-    if (!pendingToolCall || !user) return;
-    const { toolCall } = pendingToolCall;
-    setPendingToolCall(null);
-
-    if (!confirm) {
-      // User declined — let Aria know
-      const declineMsg: Message = {
-        id: `user-${Date.now()}`, role: 'user',
-        content: "No thanks, keep the itinerary as is.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, declineMsg]);
-      setLoading(true);
-      try {
-        const authHeaders2 = await getAuthHeader();
-        const { data } = await supabase.functions.invoke('trip-concierge', {
-          body: { tripId, message: "No thanks, keep the itinerary as is.", userId: user.id },
-          headers: authHeaders2,
-        });
-        if (data?.reply) {
-          setMessages(prev => [...prev, {
-            id: `assistant-${Date.now()}`, role: 'assistant',
-            content: data.reply, created_at: new Date().toISOString(),
-          }]);
-        }
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-      return;
-    }
-
-    setApplyingTool(true);
+  // Apply an Aria-proposed itinerary change to the database
+  const handleApplyChange = async (msgId: string, change: ParsedChange) => {
+    if (!user) return;
+    setApplyingChange(true);
     try {
-      const args = toolCall.args;
-
-      if (toolCall.name === 'remove_activity') {
-        await supabase.from('itinerary_items')
+      if (change.action === 'remove' || change.action === 'swap') {
+        await supabase
+          .from('itinerary_items')
           .delete()
           .eq('itinerary_id', tripId)
-          .eq('day_number', args.day_number as number)
-          .ilike('custom_title', `%${args.activity_name}%`);
-
-      } else if (toolCall.name === 'add_activity') {
+          .eq('day_number', change.day)
+          .ilike('custom_title', `%${change.remove}%`);
+      }
+      if ((change.action === 'add' || change.action === 'swap') && change.add) {
+        // Determine time slot from change.add.time
+        let time_slot = 'afternoon';
+        if (change.add.time) {
+          const h = parseInt(change.add.time.split(':')[0], 10);
+          if (h < 12) time_slot = 'morning';
+          else if (h >= 18) time_slot = 'evening';
+          else time_slot = 'afternoon';
+        }
         await supabase.from('itinerary_items').insert({
           itinerary_id: tripId,
-          day_number: args.day_number as number,
-          time_slot: (args.time_slot as string) || 'morning',
-          item_type: (args.category as string) || 'attraction',
-          custom_title: args.activity_name as string,
-          custom_description: (args.description as string) || '',
-          order_index: 999,
-        });
-
-      } else if (toolCall.name === 'swap_activity') {
-        await supabase.from('itinerary_items')
-          .delete()
-          .eq('itinerary_id', tripId)
-          .eq('day_number', args.day_number as number)
-          .ilike('custom_title', `%${args.old_activity}%`);
-        await supabase.from('itinerary_items').insert({
-          itinerary_id: tripId,
-          day_number: args.day_number as number,
-          item_type: (args.new_category as string) || 'attraction',
-          custom_title: args.new_activity as string,
+          day_number: change.day,
+          time_slot,
+          item_type: change.add.category ?? 'attraction',
+          custom_title: change.add.name,
+          custom_description: change.add.description ?? '',
           order_index: 999,
         });
       }
-
-      // Confirm to Aria that the change was applied
-      const confirmMsg: Message = {
-        id: `user-${Date.now()}`, role: 'user',
-        content: "Done, please apply the change.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, confirmMsg]);
-      setLoading(true);
-      const authHeaders3 = await getAuthHeader();
-      const { data } = await supabase.functions.invoke('trip-concierge', {
-        body: { tripId, message: 'The change has been applied to the itinerary successfully.', userId: user.id },
-        headers: authHeaders3,
-      });
-      if (data?.reply) {
-        setMessages(prev => [...prev, {
-          id: `assistant-${Date.now()}`, role: 'assistant',
-          content: data.reply, created_at: new Date().toISOString(),
-        }]);
-      }
-    } catch {
+      setAppliedChangeIds(prev => new Set([...prev, msgId]));
+      // Confirm to Aria
       setMessages(prev => [...prev, {
-        id: `error-${Date.now()}`, role: 'error',
+        id: `aria-confirm-${Date.now()}`,
+        role: 'assistant',
+        content: `Done! I've updated your itinerary. ${change.add ? `${change.add.name} is now on Day ${change.day}.` : `${change.remove} has been removed from Day ${change.day}.`}`,
+        created_at: new Date().toISOString(),
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: `aria-err-${Date.now()}`,
+        role: 'error',
         content: 'Could not apply the change. Please edit the itinerary manually.',
         created_at: new Date().toISOString(),
       }]);
     } finally {
-      setApplyingTool(false);
-      setLoading(false);
+      setApplyingChange(false);
     }
   };
 
@@ -587,24 +557,23 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
                         </div>
                       )}
 
-                      {/* Tool-call confirmation — shown only for the message that triggered the tool */}
-                      {pendingToolCall?.messageId === msg.id && (
+                      {/* Itinerary change confirmation — shown when Aria proposes a change */}
+                      {msg.parsedChange && !appliedChangeIds.has(msg.id) && (
                         <div className="flex gap-2 mt-2 pl-0.5">
                           <Button
                             size="sm"
                             className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white gap-1"
-                            onClick={() => handleApplyTool(true)}
-                            disabled={applyingTool}
+                            onClick={() => handleApplyChange(msg.id, msg.parsedChange!)}
+                            disabled={applyingChange}
                           >
-                            {applyingTool && <Loader2 className="w-3 h-3 animate-spin" />}
-                            Apply this change
+                            {applyingChange && <Loader2 className="w-3 h-3 animate-spin" />}
+                            Apply to itinerary
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-8 text-xs"
-                            onClick={() => handleApplyTool(false)}
-                            disabled={applyingTool}
+                            onClick={() => setAppliedChangeIds(prev => new Set([...prev, msg.id]))}
                           >
                             No thanks
                           </Button>
