@@ -94,6 +94,29 @@ const Nearby = () => {
     }
   }, [latitude, longitude, radiusKm]);
 
+  // Regression guard: silently health-check nearby-places on mount with hardcoded Singapore coords.
+  // If the edge function is broken, logs the error without blocking the app.
+  useEffect(() => {
+    const healthCheck = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('nearby-places', {
+          body: { lat: 1.3521, lng: 103.8198, radius_meters: 5000, categories: ['attraction'] },
+        });
+        if (error) {
+          console.error('[Nearby health-check] edge function error:', error);
+        } else if (data?.error) {
+          console.error('[Nearby health-check] server-side error:', data.error);
+        } else {
+          console.log('[Nearby health-check] OK — returned', data?.places?.length ?? 0, 'places');
+        }
+      } catch (err) {
+        console.error('[Nearby health-check] unexpected error:', err);
+      }
+    };
+    healthCheck();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Initial load when location first becomes available
   useEffect(() => {
     if (latitude && longitude && places.length === 0 && !loading && !fetchError) {

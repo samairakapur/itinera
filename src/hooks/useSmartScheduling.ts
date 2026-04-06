@@ -173,7 +173,16 @@ export const calculateDayConstraints = (
     try { return isSameDay(new Date(f.departure_date), dayDate); } catch { return false; }
   });
 
-  const isArrivalDay   = !!arrivalFlight;
+  // isArrivalDay: true only when this calendar day is the first day in the ARRIVAL city.
+  // If the departure happens BEFORE the arrival on the same day (e.g. fly out at 19:10,
+  // arrive at 22:05), this is the DEPARTURE city's day — the arrival belongs to the next
+  // leg. We detect this by checking whether departure_time < arrival_time.
+  const sameDayDepartureBeforeArrival =
+    !!arrivalFlight?.arrival_time &&
+    !!departureFlight?.departure_time &&
+    timeToMinutes(departureFlight.departure_time) < timeToMinutes(arrivalFlight.arrival_time);
+
+  const isArrivalDay   = !!arrivalFlight && !sameDayDepartureBeforeArrival;
   const isDepartureDay = !!departureFlight;
 
   // Detect overnight transit: a flight that departed in the very early hours of the morning
@@ -200,7 +209,17 @@ export const calculateDayConstraints = (
 
   // ── Arrival day: work out what time the user can realistically start ────
   // Buffer = immigration + baggage + city transit + hotel check-in
-  if (arrivalFlight?.arrival_time) {
+  //
+  // KEY RULE: Only apply arrival buffer when this is genuinely the ARRIVAL city's day.
+  // If the departure flight departs BEFORE the arrival (Singapore 19:10 → Bali 22:05),
+  // this day belongs to the DEPARTURE city (Singapore). The arrival in Bali applies to
+  // the NEXT day in the itinerary. Applying both would produce an impossible 23:00 start.
+  const departureBeforeArrival =
+    departureFlight?.departure_time &&
+    arrivalFlight?.arrival_time &&
+    timeToMinutes(departureFlight.departure_time) < timeToMinutes(arrivalFlight.arrival_time);
+
+  if (arrivalFlight?.arrival_time && !departureBeforeArrival) {
     const delayMins    = arrivalFlight.delay_minutes ?? 0;
     const transitMins  = getTransitMinutes(arrivalFlight.destination_iata);
 
@@ -217,9 +236,12 @@ export const calculateDayConstraints = (
     const cappedMins   = Math.min(adjustedMins, timeToMinutes('23:00'));
     const adjustedTime = minutesToTime(cappedMins);
 
-    // Arrival buffer always takes priority — it tells the user when they can
-    // *realistically* start sightseeing after landing, clearing customs and checking in.
-    earliestStart = adjustedTime;
+    // NEVER start activities before 08:00 — even after very early-morning arrivals
+    // (red-eye flights). Travellers need sleep; 08:00 is the hard floor.
+    const EARLIEST_POSSIBLE_START_MINS = 8 * 60; // 08:00
+    const finalStart = minutesToTime(Math.max(cappedMins, EARLIEST_POSSIBLE_START_MINS));
+
+    earliestStart = finalStart;
 
     arrivalBreakdown = {
       landingTime:          arrivalFlight.arrival_time.slice(0, 5),

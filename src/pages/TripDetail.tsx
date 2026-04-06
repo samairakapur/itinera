@@ -16,7 +16,7 @@ import { VotingPanel } from '@/components/group/VotingPanel';
 import { GroupChat } from '@/components/group/GroupChat';
 import { ProposeChangeDialog } from '@/components/group/ProposeChangeDialog';
 import { TripConcierge } from '@/components/trip/TripConcierge';
-import { DayCard, DayData } from '@/components/trip/DayCard';
+import { DayCard, DayData, DayWeather } from '@/components/trip/DayCard';
 import { TripOverviewCard } from '@/components/trip/TripOverviewCard';
 import { AddActivityDialog } from '@/components/trip/AddActivityDialog';
 import { FlightDetailsDialog } from '@/components/trip/FlightDetailsDialog';
@@ -31,6 +31,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { OnboardingWalkthrough2, useOnboarding2 } from '@/components/onboarding/OnboardingWalkthrough';
+import { supabase as supabaseClient } from '@/integrations/supabase/client';
 
 const TripDetail = () => {
   const { tripId } = useParams();
@@ -70,6 +71,8 @@ const TripDetail = () => {
   const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
   const [ariaForceOpen, setAriaForceOpen] = useState(false);
   const [ariaReflectionMessage, setAriaReflectionMessage] = useState<string | undefined>(undefined);
+  // weatherByDay: Map from 1-based dayNumber → DayWeather (fetched fresh from Open-Meteo on load)
+  const [weatherByDay, setWeatherByDay] = useState<Map<number, DayWeather>>(new Map());
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [flightJustSaved, setFlightJustSaved] = useState(false);
   // Proposal creation dialog state
@@ -486,6 +489,60 @@ const TripDetail = () => {
       throw error; // Re-throw so the dialog stays open
     }
   }, [createProposal]);
+
+  // ── Weather fetch — load fresh forecast per city leg on mount ────────────
+  useEffect(() => {
+    if (!itinerary) return;
+    const primaryCity = itinerary.cities?.name;
+    if (!primaryCity) return;
+
+    const fetchWeatherForLegs = async () => {
+      try {
+        const map = new Map<number, DayWeather>();
+
+        // Build list of (city, startDay, endDay) from trip legs or single-city fallback
+        type LegInfo = { city: string; startDay: number; endDay: number };
+        const legsInfo: LegInfo[] = tripLegs.length > 0
+          ? tripLegs.map(l => ({
+              city: (l as any).city?.name || primaryCity,
+              startDay: l.start_day,
+              endDay: l.end_day,
+            }))
+          : [{ city: primaryCity, startDay: 1, endDay: itinerary.num_days }];
+
+        for (const leg of legsInfo) {
+          const { data, error } = await supabaseClient.functions.invoke('get-weather', {
+            body: { city: leg.city },
+          });
+          if (error || !data?.daily) continue;
+
+          // Map forecast days (from today) to itinerary day numbers
+          // For future trips, day index offsets won't perfectly align with calendar dates
+          // but we show weather for as many days as we have forecast data
+          const legDays = leg.endDay - leg.startDay + 1;
+          data.daily.slice(0, legDays).forEach((w: any, i: number) => {
+            const dayNum = leg.startDay + i;
+            const weatherCode = w.weather?.[0] ?? { main: 'Variable', description: 'Variable', icon: '01d' };
+            map.set(dayNum, {
+              date: w.dt ? new Date(w.dt * 1000).toISOString().split('T')[0] : '',
+              condition: weatherCode.main,
+              tempMin: w.temp?.min ?? 0,
+              tempMax: w.temp?.max ?? 0,
+              precipChance: Math.round((w.pop ?? 0) * 100),
+              recommendation: '',
+            });
+          });
+        }
+
+        if (map.size > 0) setWeatherByDay(map);
+      } catch (e) {
+        console.warn('[TripDetail] weather fetch failed silently', e);
+      }
+    };
+
+    fetchWeatherForLegs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itinerary?.id, tripLegs.length]);
 
   // ── Reflection toast — show when 40%+ of today's activities are done, or after 8pm ──
   const showReflectionToast = (completedCount?: number, totalCount?: number, currentCity?: string) => {
@@ -976,11 +1033,12 @@ const TripDetail = () => {
             const isFirstDayOfLeg = legForDay?.start_day === day.dayNumber;
             const isLastDayOfLeg = legForDay?.end_day === day.dayNumber;
             
-            // Generate engaging title
+            // Generate engaging title + merge live weather data
             const engagingTitle = getDayTitle(day);
-            const dayWithTitle = { 
-              ...day, 
-              title: engagingTitle 
+            const dayWithTitle = {
+              ...day,
+              title: engagingTitle,
+              weather: weatherByDay.get(day.dayNumber) ?? day.weather,
             };
 
             return (
@@ -1001,11 +1059,11 @@ const TripDetail = () => {
                   <FlightConstraintBanner constraints={dayConstraint} />
                 )}
                 
-                {/* Arrival flights at start of day */}
-                {arrivalFlights.map(flight => (
-                  <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
+                {/* Departure flights at start of travel day — departure always happens before arrival */}
+                {departureFlights.map(flight => (
+                  <FlightCard key={`departure-${flight.id}`} flight={flight} type="departure" />
                 ))}
-                
+
                 <DayCard
                   day={dayWithTitle}
                   cityName={cityForDay}
@@ -1028,9 +1086,9 @@ const TripDetail = () => {
                   onProposeSwap={(isDemocratic || showSuggestToOrganiser) ? handleProposeSwap : undefined}
                 />
 
-                {/* Departure flights at end of day */}
-                {departureFlights.map(flight => (
-                  <FlightCard key={`departure-${flight.id}`} flight={flight} type="departure" />
+                {/* Arrival flights at end of travel day — arrive after departing */}
+                {arrivalFlights.map(flight => (
+                  <FlightCard key={`arrival-${flight.id}`} flight={flight} type="arrival" />
                 ))}
 
                 {/* TransitionDayCard — shown after the last day of every leg except the final one */}

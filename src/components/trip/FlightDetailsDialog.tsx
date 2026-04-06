@@ -259,13 +259,11 @@ export const FlightDetailsDialog = ({
 
       if (error) throw error;
 
-      if (data.error) {
-        toast.error(data.error);
-        return;
-      }
-
-      if (!data.flights || data.flights.length === 0) {
-        toast.error('No flight details found in the image. Try a clearer screenshot.');
+      if (data.error || !data.flights || data.flights.length === 0) {
+        toast.error("We couldn't read your flight details from this image. Please enter them manually below.", {
+          duration: 6000,
+          action: { label: 'Add manually', onClick: () => setIsAdding(true) },
+        });
         return;
       }
 
@@ -293,7 +291,10 @@ export const FlightDetailsDialog = ({
       toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
     } catch (err) {
       console.error('Error parsing flight:', err);
-      toast.error('Failed to parse flight details. Try entering manually.');
+      toast.error("Couldn't read your flight details from this image. Please enter them manually below.", {
+        duration: 6000,
+        action: { label: 'Add manually', onClick: () => setIsAdding(true) },
+      });
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -358,8 +359,8 @@ export const FlightDetailsDialog = ({
                       <Camera className="w-5 h-5 text-primary" />
                       <Upload className="w-5 h-5 text-primary" />
                     </div>
-                    <span className="text-sm font-medium">Upload Flight Confirmation</span>
-                    <span className="text-xs text-muted-foreground">Take a photo or upload a screenshot — AI will extract all details</span>
+                    <span className="text-sm font-medium">Upload Flight Confirmation (optional)</span>
+                    <span className="text-xs text-muted-foreground">Upload a screenshot — AI will try to extract details. Manual entry is more reliable.</span>
                   </>
                 )}
               </Button>
