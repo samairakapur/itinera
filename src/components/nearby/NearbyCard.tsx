@@ -72,15 +72,17 @@ export const NearbyCard = ({ place, city = '' }: NearbyCardProps) => {
   const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(place.imageUrl ?? null);
 
   useEffect(() => {
-    if (!place.imageUrl && place.name && city) {
+    if (!place.imageUrl && place.name) {
+      // city may be empty before reverse-geocoding; try to extract a hint from the address
+      const cityHint = city || place.address?.split(',').slice(-2, -1)[0]?.trim() || '';
       supabase.functions
-        .invoke('resolve-image', { body: { name: place.name, city, category: place.type } })
+        .invoke('resolve-image', { body: { name: place.name, city: cityHint, category: place.type } })
         .then(({ data }) => {
           if (data?.url) setResolvedImageUrl(data.url);
         })
         .catch(() => {}); // silent fallback
     }
-  }, [place.name, place.imageUrl, city]);
+  }, [place.name, place.imageUrl, city, place.address]);
   const isSaved = useIsSaved(place.name, city);
   const toggleSave = useToggleSavedPlace();
 

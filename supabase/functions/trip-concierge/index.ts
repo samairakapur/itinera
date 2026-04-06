@@ -196,15 +196,24 @@ ${todaySchedule}`;
 TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.${legOverview}
 
 ITINERARY CHANGES — CRITICAL INSTRUCTIONS:
-When the user asks you to modify the itinerary (swap, add, remove an activity), do NOT just write out a new itinerary in text. Instead:
-1. Describe what you're proposing in ONE sentence.
-2. Append a hidden JSON change block at the END of your response (after all text), on its own line:
-   <!--CHANGE:{"action":"add"|"remove"|"swap","day":N,"remove":"exact activity name","add":{"name":"New Activity","time":"14:00","category":"attraction|restaurant|flex|transport","description":"Brief description"}}-->
+When the user asks you to modify the itinerary (swap, add, remove an activity), do NOT just write out a new itinerary in text. Instead follow this exact flow:
+
+BEFORE proposing a change, provide ALL of the following:
+• Activity name and a one-sentence description
+• Estimated duration (e.g. "2 hours")
+• Approximate cost (e.g. "~$25/person" or "free")
+• Best time slot (morning/afternoon/evening) and WHY
+• Which existing activity would need to move or be removed to make room
+• If adding would over-schedule the day, warn the user and say which activity to drop
+
+THEN add the hidden JSON block at the END of your response on its own line:
+<!--CHANGE:{"action":"add"|"remove"|"swap","day":N,"remove":"exact activity name","add":{"name":"New Activity","time":"14:00","category":"attraction|restaurant|flex|transport","description":"Brief description"}}-->
 
 For "add": include "day", "add" object. Omit "remove".
 For "remove": include "day", "remove" (activity name). Omit "add".
 For "swap": include "day", "remove", and "add".
-Only include this block when proposing an actual database change. Do NOT include it for informational responses.${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
+NEVER add an activity without warning the user what will be displaced.
+Only include the JSON block when proposing an actual database change. Do NOT include it for informational responses.${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
 
 FULL ITINERARY:
 ${itineraryContext || 'No activities planned yet.'}

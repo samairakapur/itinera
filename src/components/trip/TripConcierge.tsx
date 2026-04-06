@@ -70,14 +70,16 @@ const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
 );
 
 function parseChangeBlock(text: string): { cleanText: string; change: ParsedChange | null } {
-  const match = text.match(/<!--CHANGE:(.*?)-->/s);
-  if (!match) return { cleanText: text, change: null };
+  // Use [\s\S]*? to match across newlines and handle emoji in activity names
+  const match = text.match(/<!--CHANGE:([\s\S]*?)-->/);
+  // Strip ALL change blocks (g flag) whether or not we parse one
+  const cleanText = text.replace(/\n?<!--CHANGE:[\s\S]*?-->/g, '').trim();
+  if (!match) return { cleanText, change: null };
   try {
     const change = JSON.parse(match[1]) as ParsedChange;
-    const cleanText = text.replace(/\n?<!--CHANGE:.*?-->/s, '').trim();
     return { cleanText, change };
   } catch {
-    return { cleanText: text.replace(/\n?<!--CHANGE:.*?-->/s, '').trim(), change: null };
+    return { cleanText, change: null };
   }
 }
 
@@ -100,10 +102,24 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const { user } = useAuth();
   const [open, setOpen] = useState(initialOpen);
 
-  // Allow parent to programmatically open (e.g. toast action)
+  // Allow parent to programmatically open with an optional pre-seeded greeting
   useEffect(() => {
-    if (forceOpen) setOpen(true);
-  }, [forceOpen]);
+    if (forceOpen) {
+      setOpen(true);
+      // If a new initialMessage was passed, inject it as the first message
+      // and reset history so the reflection greeting appears fresh
+      if (initialMessage) {
+        setMessages([{
+          id: `reflection-${Date.now()}`,
+          role: 'assistant',
+          content: initialMessage,
+          created_at: new Date().toISOString(),
+        }]);
+        setHistoryLoaded(true); // prevent history loading from overwriting greeting
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceOpen, initialMessage]);
   const [messages, setMessages] = useState<Message[]>(() =>
     initialMessage
       ? [{ id: 'reflection-0', role: 'assistant', content: initialMessage, created_at: new Date().toISOString() }]

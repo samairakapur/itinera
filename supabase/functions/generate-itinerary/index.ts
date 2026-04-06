@@ -333,8 +333,14 @@ serve(async (req) => {
       ? cities
       : [{ cityId: '', cityName, countryName, daysToSpend: numDays, cityDescription }];
 
-    // ── Weather ─────────────────────────────────────────────────────────────
-    const weatherByDay = await fetchWeather(cityLegs[0].cityName, numDays);
+    // ── Weather — fetch per leg so each city gets its own forecast ──────────
+    console.log('[generate-itinerary] WEATHER ENFORCER RUNNING — fetching per-leg weather for', cityLegs.map(l => l.cityName));
+    const weatherByDay: DayWeather[] = [];
+    for (const leg of cityLegs) {
+      const legWeather = await fetchWeather(leg.cityName, leg.daysToSpend);
+      // Take up to daysToSpend entries for this leg
+      weatherByDay.push(...legWeather.slice(0, leg.daysToSpend));
+    }
 
     const weatherContext = weatherByDay.length > 0
       ? weatherByDay.map((w, i) =>

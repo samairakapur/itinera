@@ -13,22 +13,39 @@ export interface ParsedItinerary {
 // Schedule validation — trims over-scheduled days before save
 // ---------------------------------------------------------------------------
 
-/** Parse a duration string like "45 min", "1.5 hours", "2h", "30 min" → minutes */
-function parseDurationMinutes(duration: string | undefined): number {
-  if (!duration) return 60; // default 1 hour if unknown
-  const d = duration.toLowerCase().trim();
-  // "X hour(s) Y min" or "Xh Ymin"
-  const hoursMinutes = d.match(/(\d+(?:\.\d+)?)\s*h(?:our)?s?\s*(?:(\d+)\s*m(?:in)?)?/);
-  if (hoursMinutes) {
-    return Math.round(parseFloat(hoursMinutes[1]) * 60 + (parseInt(hoursMinutes[2] || '0')));
+/**
+ * Parse a duration string like "45 min", "1.5 hours", "2h", "30 min" → minutes.
+ * Per-type defaults MUST match reflowEngine.parseDurationMins to ensure the enforcer
+ * and the display engine agree on how long activities take.
+ */
+function parseDurationMinutes(duration: string | undefined, type?: string): number {
+  if (duration) {
+    const d = duration.toLowerCase().trim();
+    // "X hour(s) Y min" or "Xh Ymin"
+    const hoursMinutes = d.match(/(\d+(?:\.\d+)?)\s*h(?:our)?s?\s*(?:(\d+)\s*m(?:in)?)?/);
+    if (hoursMinutes) {
+      return Math.round(parseFloat(hoursMinutes[1]) * 60 + (parseInt(hoursMinutes[2] || '0')));
+    }
+    // "X min" or "Xmin"
+    const minsOnly = d.match(/(\d+)\s*m(?:in)?/);
+    if (minsOnly) return parseInt(minsOnly[1]);
+    // Plain number — assume minutes
+    const plain = d.match(/^(\d+)$/);
+    if (plain) return parseInt(plain[1]);
   }
-  // "X min" or "Xmin"
-  const minsOnly = d.match(/(\d+)\s*m(?:in)?/);
-  if (minsOnly) return parseInt(minsOnly[1]);
-  // Plain number — assume minutes
-  const plain = d.match(/^(\d+)$/);
-  if (plain) return parseInt(plain[1]);
-  return 60;
+  // Per-type defaults — keep in sync with reflowEngine.parseDurationMins
+  switch (type) {
+    case 'attraction':
+    case 'museum':
+    case 'landmark':   return 120;  // 2h sightseeing
+    case 'restaurant':
+    case 'food':       return 90;   // 1.5h meal
+    case 'shopping':   return 60;
+    case 'transport':  return 30;
+    case 'prebooked':  return 120;
+    case 'flex':       return 90;
+    default:           return 90;   // use 90 (not 60) to be conservative
+  }
 }
 
 /** Convert "10:30 AM" / "14:00" style strings → decimal hours */
@@ -82,7 +99,7 @@ function trimDayToSchedule(day: DayData, pace: string): DayData {
     // Use the last activity's time + duration to estimate end
     const lastAct = allActivities[allActivities.length - 1];
     const lastTime = parseTimeToHours(lastAct?.time);
-    const lastDur = parseDurationMinutes(lastAct?.duration) / 60;
+    const lastDur = parseDurationMinutes(lastAct?.duration, lastAct?.type) / 60;
     if (!lastTime || lastTime + lastDur <= endCap) return day; // fits fine
   }
 
@@ -103,7 +120,7 @@ function trimDayToSchedule(day: DayData, pace: string): DayData {
       const t = parseTimeToHours(act.time);
       if (t !== null) runningHour = t;
       if (runningHour !== null) {
-        runningHour += parseDurationMinutes(act.duration) / 60;
+        runningHour += parseDurationMinutes(act.duration, act.type) / 60;
         if (act.type !== 'transport' && act.type !== 'flex') {
           runningHour += 0.4; // ~25 min travel to next
         }
@@ -161,6 +178,7 @@ function isMealActivity(act: Activity): boolean {
  * they may push the schedule slightly past the cap but are never removed.
  */
 function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
+  console.log('[enforceScheduleLimits] ENFORCER RUNNING — pace:', pace, 'days:', days.length);
   // Soft caps — meals may exceed these slightly; attractions/flex cannot
   const END_CAPS_MINS: Record<string, number> = {
     light:    18 * 60,          // 6:00 PM
@@ -187,7 +205,7 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
         if (actMins > t) t = actMins;
       }
 
-      const dur = parseDurationMinutes(act.duration);
+      const dur = parseDurationMinutes(act.duration, act.type);
       const travel = (act.type === 'transport' || act.type === 'flex') ? 0 : 25;
       const endMins = t + dur;
       const meal = isMealActivity(act);
@@ -318,17 +336,21 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
         const rainMatch = weatherSection.match(/Rain:\s*(\d+)/i);
         const noteMatch = weatherSection.match(/Note:\s*([^\n]+)/i);
 
-        if (conditionMatch || tempMatch) {
-          const tempRange = tempMatch?.[1]?.match(/(-?\d+)[°\s]*[-–—]\s*(-?\d+)/);
-          dayData.weather = {
-            date: '',
-            condition: conditionMatch?.[1]?.trim() || 'Variable',
-            tempMin: tempRange ? parseInt(tempRange[1]) : 10,
-            tempMax: tempRange ? parseInt(tempRange[2]) : 20,
-            precipChance: rainMatch ? parseInt(rainMatch[1]) : 0,
-            recommendation: noteMatch?.[1]?.trim() || '',
-          };
-          dayData.weatherNote = noteMatch?.[1]?.trim();
+        if ((conditionMatch || tempMatch) && tempMatch?.[1]) {
+          const tempRange = tempMatch[1].match(/(-?\d+)[°\s]*[-–—]\s*(-?\d+)/);
+          // Only create weather object if we actually have a parseable temperature range
+          // Never fall back to hardcoded 10/20 — that produces wrong data for hot cities
+          if (tempRange) {
+            dayData.weather = {
+              date: '',
+              condition: conditionMatch?.[1]?.trim() || 'Variable',
+              tempMin: parseInt(tempRange[1]),
+              tempMax: parseInt(tempRange[2]),
+              precipChance: rainMatch ? parseInt(rainMatch[1]) : 0,
+              recommendation: noteMatch?.[1]?.trim() || '',
+            };
+            dayData.weatherNote = noteMatch?.[1]?.trim();
+          }
         }
       }
 

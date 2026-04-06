@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { GuidedStepCard } from "@/components/trip/guided";
+import { supabase } from "@/integrations/supabase/client";
 import { Slider } from "@/components/ui/slider";
 import { ProfilePhotoUpload } from "@/components/profile/ProfilePhotoUpload";
 
@@ -108,6 +109,47 @@ interface EditingSectionState {
 }
 
 // ---------------------------------------------------------------------------
+// SavedPlaceImage — resolves a fresh image for a saved place so stale/wrong
+// thumbnails are automatically corrected on render.
+// ---------------------------------------------------------------------------
+function SavedPlaceImage({ name, city, type, fallbackEmoji }: {
+  name: string;
+  city: string;
+  type: string;
+  fallbackEmoji: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const resolvedRef = useRef(false);
+
+  useEffect(() => {
+    if (resolvedRef.current) return;
+    resolvedRef.current = true;
+    supabase.functions
+      .invoke('resolve-image', { body: { name, city, category: type } })
+      .then(({ data }) => { if (data?.url) setUrl(data.url); })
+      .catch(() => {});
+  }, [name, city, type]);
+
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt={name}
+        crossOrigin="anonymous"
+        className="w-14 h-14 rounded-md object-cover shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div className="w-14 h-14 rounded-md bg-muted flex items-center justify-center shrink-0 text-xl">
+      {fallbackEmoji}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Saved Places tab — standalone component so hooks run unconditionally
 // ---------------------------------------------------------------------------
 function SavedTab() {
@@ -178,26 +220,12 @@ function SavedTab() {
                         key={place.id}
                         className="flex items-center gap-3 rounded-lg border border-border/50 p-3 group hover:border-primary/20 transition-colors"
                       >
-                        {place.image_url ? (
-                          <img
-                            src={place.image_url}
-                            alt={place.place_name}
-                            crossOrigin="anonymous"
-                            className="w-14 h-14 rounded-md object-cover shrink-0"
-                            onError={(e) => {
-                              const el = e.currentTarget as HTMLImageElement;
-                              el.style.display = 'none';
-                              const fallback = el.nextElementSibling as HTMLElement | null;
-                              if (fallback) fallback.style.display = 'flex';
-                            }}
-                          />
-                        ) : null}
-                        <div
-                          className="w-14 h-14 rounded-md bg-muted flex items-center justify-center shrink-0 text-xl"
-                          style={{ display: place.image_url ? 'none' : 'flex' }}
-                        >
-                          {typeEmoji[place.place_type] ?? '📍'}
-                        </div>
+                        <SavedPlaceImage
+                          name={place.place_name}
+                          city={place.city || ''}
+                          type={place.place_type}
+                          fallbackEmoji={typeEmoji[place.place_type] ?? '📍'}
+                        />
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm line-clamp-1">{place.place_name}</p>
                           <p className="text-xs text-muted-foreground capitalize">{place.place_type}</p>

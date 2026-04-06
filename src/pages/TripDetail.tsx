@@ -68,6 +68,8 @@ const TripDetail = () => {
   const [addDialogTimeSlot, setAddDialogTimeSlot] = useState<'morning' | 'afternoon' | 'evening'>('morning');
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
   const [completedActivityIds, setCompletedActivityIds] = useState<Set<string>>(new Set());
+  const [ariaForceOpen, setAriaForceOpen] = useState(false);
+  const [ariaReflectionMessage, setAriaReflectionMessage] = useState<string | undefined>(undefined);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [flightJustSaved, setFlightJustSaved] = useState(false);
   // Proposal creation dialog state
@@ -486,17 +488,26 @@ const TripDetail = () => {
   }, [createProposal]);
 
   // ── Reflection toast — show when 40%+ of today's activities are done, or after 8pm ──
-  const showReflectionToast = () => {
+  const showReflectionToast = (completedCount?: number, totalCount?: number, currentCity?: string) => {
     const reflectionKey = `reflection_shown_${tripId}_${new Date().toDateString()}`;
     if (localStorage.getItem(reflectionKey)) return;
     localStorage.setItem(reflectionKey, 'true');
+
+    // Build the proactive Aria greeting with stats
+    const pct = completedCount != null && totalCount ? Math.round((completedCount / totalCount) * 100) : null;
+    const city = currentCity || itinerary?.cities?.name || 'your destination';
+    const greeting = pct != null
+      ? `Hey! 🎉 You've completed ${completedCount} out of ${totalCount} activities today in ${city} — that's ${pct}%!\n\nHow's the day been so far? Anything you loved? Anything that didn't go as planned?`
+      : `Hey! ✨ How's your day going in ${city}?\n\nAnything you loved so far? Anything that didn't go as planned, or want to adjust for the rest of the day?`;
+
     toast("✨ How's the day going?", {
       description: 'Check in with Aria about the rest of your day.',
       duration: 10000,
       action: {
         label: 'Chat with Aria',
         onClick: () => {
-          document.querySelector<HTMLButtonElement>('[data-tour="aria-button"]')?.click();
+          setAriaReflectionMessage(greeting);
+          setAriaForceOpen(true);
         },
       },
     });
@@ -527,8 +538,11 @@ const TripDetail = () => {
 
     const completedCount = todayActivities.filter(a => completedActivityIds.has(a.id)).length;
     const progress = completedCount / todayActivities.length;
+    const currentCity = itinerary?.cities?.name;
 
-    if (progress >= 0.4) showReflectionToast();
+    console.log('[Reflection check] progress=', progress.toFixed(2), 'completed=', completedCount, '/', todayActivities.length, 'city=', currentCity);
+
+    if (progress >= 0.4) showReflectionToast(completedCount, todayActivities.length, currentCity);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedActivityIds, days, itinerary, tripId]);
 
@@ -1113,6 +1127,9 @@ const TripDetail = () => {
         <TripConcierge
           tripId={tripId}
           tripName={itinerary.name || itinerary.cities?.name}
+          forceOpen={ariaForceOpen}
+          initialMessage={ariaReflectionMessage}
+          isReflection={!!ariaReflectionMessage}
         />
       )}
 
