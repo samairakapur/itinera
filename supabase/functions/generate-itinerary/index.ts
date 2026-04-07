@@ -410,10 +410,20 @@ serve(async (req) => {
       legContext = '\n\nTRIP LEGS (MULTI-CITY):\n';
       cityLegs.forEach((leg, idx) => {
         const endDay = currentDay + leg.daysToSpend - 1;
-        legContext += `Leg ${idx + 1}: ${leg.cityName}, ${leg.countryName} — Days ${currentDay}–${endDay}\n`;
+        legContext += `Leg ${idx + 1}: ${leg.cityName}, ${leg.countryName} — Days ${currentDay}–${endDay} (${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''})\n`;
         currentDay = endDay + 1;
       });
-      legContext += '\n⚠️ CRITICAL: Day numbers are SEQUENTIAL across ALL legs. NEVER restart at "Day 1" for a new city. If Leg 1 ends on Day 4, Leg 2\'s first day is "## Day 5". Never use "## Day 1" more than once in the entire itinerary.';
+      legContext += '\n⚠️ CRITICAL — DAY NUMBERING: Day numbers are SEQUENTIAL across ALL legs. NEVER restart at "Day 1" for a new city. Example: if Leg 1 ends on Day 3, Leg 2\'s first day header must be "## Day 4", not "## Day 1".\n';
+
+      // Build explicit per-city generation checklist
+      let dayChecklistStart = 1;
+      legContext += '\nYOU MUST GENERATE ACTIVITIES FOR EVERY CITY LISTED BELOW — NO EXCEPTIONS:\n';
+      cityLegs.forEach((leg, idx) => {
+        const endDay = dayChecklistStart + leg.daysToSpend - 1;
+        legContext += `  City ${idx + 1}: ${leg.cityName} → Days ${dayChecklistStart}–${endDay} — generate FULL days for ALL ${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''}\n`;
+        dayChecklistStart = endDay + 1;
+      });
+      legContext += `  TOTAL: ${numDays} days — do NOT stop after the first city. Incomplete output is NOT acceptable.`;
     }
 
     const destinationsList = isMultiCity
@@ -581,7 +591,17 @@ ${cityDescription ? `\nAbout the destination:\n${cityDescription}` : ''}
 Weather forecast:
 ${weatherContext}
 
-Generate exactly ${numDays} days${isMultiCity ? ` across ${cityLegs.length} city legs` : ''}.
+${isMultiCity ? (() => {
+      let d = 1;
+      return 'GENERATE FULL CONTENT FOR EVERY CITY — DO NOT STOP EARLY:\n' +
+        cityLegs.map(leg => {
+          const start = d;
+          const end = d + leg.daysToSpend - 1;
+          d = end + 1;
+          return `  → ${leg.cityName}: Days ${start}–${end} (${leg.daysToSpend} days)`;
+        }).join('\n') +
+        `\nThe itinerary is NOT complete until ALL ${numDays} days are written. Write each city fully before moving to the next.`;
+    })() : `Generate exactly ${numDays} days.`}
 Every day requires ALL of the following:
 - Breakfast (morning)
 - A 🚶 travel block between every sightseeing activity
@@ -600,6 +620,12 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
     // Lovable gateway uses a shared key pool with higher effective rate limits
     // than the individual 15 RPM free tier on the direct Google API.
     console.log(`Calling ${AI_MODEL} via ${AI_PROVIDER} for ${destinationsList} (${numDays} days)`);
+    if (isMultiCity) {
+      console.log('=== MULTI-CITY GENERATION PROMPT ===');
+      console.log('legContext:', legContext);
+      console.log('cityLegs:', JSON.stringify(cityLegs.map(l => ({ city: l.cityName, days: l.daysToSpend }))));
+      console.log('=== END PROMPT ===');
+    }
 
     const aiPayload = {
       method: "POST",
@@ -609,7 +635,9 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
       },
       body: JSON.stringify({
         model: AI_MODEL,
-        max_tokens: 8192,
+        // 16 384 tokens allows ~8 full days in verbose format without truncation.
+        // Groq llama-3.3-70b supports up to 32 768; Gemini 2.5-flash up to 65 536.
+        max_tokens: 16384,
         stream: true,
         messages: [
           { role: "system", content: systemPrompt },

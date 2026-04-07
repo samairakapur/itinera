@@ -118,14 +118,22 @@ async function syncTripLegs(itineraryId: string): Promise<void> {
       return Math.max(1, diff + 1);
     }
 
-    // For each segment, find the city_id in the cities table (case-insensitive)
+    // ── Fetch existing legs (needed as city_id fallback below) ───────────────
+    const { data: existingLegsData } = await supabase
+      .from('trip_legs')
+      .select('city_id, leg_number, start_day, end_day, cities(id, name)')
+      .eq('itinerary_id', itineraryId)
+      .order('leg_number');
+    const existingLegs = existingLegsData ?? [];
+
+    // ── Resolve city_id for each segment ─────────────────────────────────────
+    // Priority: exact DB match → fuzzy DB match → matching existing leg city name
     const cityNames = [...new Set(segments.map(s => s.city))];
     const { data: cityRows } = await supabase
       .from('cities')
       .select('id, name')
       .in('name', cityNames);
 
-    // Also try ilike for each city not found by exact match
     const cityMap: Record<string, string> = {};
     for (const row of cityRows ?? []) {
       cityMap[row.name.toLowerCase()] = row.id;
@@ -133,21 +141,38 @@ async function syncTripLegs(itineraryId: string): Promise<void> {
 
     for (const name of cityNames) {
       if (!cityMap[name.toLowerCase()]) {
+        // Fuzzy DB search
         const { data: fuzzy } = await supabase
           .from('cities')
           .select('id, name')
           .ilike('name', `%${name}%`)
           .limit(1)
           .maybeSingle();
-        if (fuzzy) cityMap[name.toLowerCase()] = fuzzy.id;
+        if (fuzzy) {
+          cityMap[name.toLowerCase()] = fuzzy.id;
+        } else {
+          // Fall back to existing leg whose city name overlaps with this segment's city
+          const nameLower = name.toLowerCase();
+          const legMatch = existingLegs.find(l => {
+            const legCityName = ((l as any).cities?.name ?? '').toLowerCase();
+            return legCityName && (legCityName.includes(nameLower) || nameLower.includes(legCityName));
+          });
+          if (legMatch?.city_id) {
+            console.log(`[syncTripLegs] City "${name}" not in DB — matched to existing leg city_id ${legMatch.city_id}`);
+            cityMap[name.toLowerCase()] = legMatch.city_id;
+          }
+        }
       }
     }
 
-    // Build trip_legs rows
+    // ── Build new leg rows ────────────────────────────────────────────────────
     const legRows = segments
       .map((seg, index) => {
         const cityId = cityMap[seg.city.toLowerCase()];
-        if (!cityId) return null; // skip if city not in our database
+        if (!cityId) {
+          console.warn(`[syncTripLegs] Could not resolve city_id for "${seg.city}" — aborting sync to preserve existing legs`);
+          return null;
+        }
 
         const startDay = toDay(seg.startDate);
         const endDay = toDay(seg.endDate);
@@ -165,7 +190,15 @@ async function syncTripLegs(itineraryId: string): Promise<void> {
 
     if (legRows.length === 0) return;
 
-    // Delete existing legs then insert fresh ones (cleaner than complex upsert)
+    // ── Safety check: if we built FEWER legs than currently exist AND
+    //    any original segment is unresolved, keep existing legs intact ─────────
+    const unresolvedCount = segments.length - legRows.length;
+    if (unresolvedCount > 0) {
+      console.warn(`[syncTripLegs] ${unresolvedCount} segment(s) could not be resolved — preserving existing leg structure`);
+      return;
+    }
+
+    // ── Replace legs only when we have a complete, fully-resolved set ─────────
     await supabase.from('trip_legs').delete().eq('itinerary_id', itineraryId);
     await supabase.from('trip_legs').insert(legRows);
   } catch (err) {
