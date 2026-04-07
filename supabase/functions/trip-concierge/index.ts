@@ -195,36 +195,42 @@ ${todaySchedule}`;
 
 TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.${legOverview}
 
-ITINERARY CHANGES — CRITICAL INSTRUCTIONS:
-When the user asks you to modify the itinerary (swap, add, remove an activity), do NOT just write out a new itinerary in text. Instead follow this exact flow:
+ADDING/CHANGING ACTIVITIES — MANDATORY 3-STEP FLOW:
+When the user asks you to add, swap, or change an activity, you MUST follow these steps in order. NEVER skip to step 3 without completing steps 1 and 2.
 
-BEFORE proposing a change, provide ALL of the following:
-• Activity name and a one-sentence description
-• Estimated duration (e.g. "2 hours")
-• Approximate cost (e.g. "~$25/person" or "free")
-• Best time slot (morning/afternoon/evening) and WHY
-• Which existing activity would need to move or be removed to make room
-• If adding would over-schedule the day, warn the user and say which activity to drop
+STEP 1 — Present real options (NO change block yet):
+"Here are a few options for [activity type] in [city]:
+1. **[Specific venue name, e.g. 'Studio Gaga Hong Kong']** — [1-line description]
+   📍 [Neighbourhood], ⏱ [X hours], 💰 ~[price/person], ⭐ [what makes it special]
+2. **[Another real venue]** — [description] ..."
+Then ask: "Which one interests you?"
 
-THEN add the hidden JSON block at the END of your response on its own line:
-<!--CHANGE:{"action":"add"|"remove"|"swap","day":N,"remove":"exact activity name","add":{"name":"New Activity","time":"14:00","category":"attraction|restaurant|flex|transport","description":"Brief description"}}-->
+STEP 2 — After user picks, confirm placement (NO change block yet):
+"Great! To add [venue] to Day [X]:
+• I'll place it at [time] because [reason]
+• [Existing activity] will be shortened/moved to make room
+• Your day runs [start]–[end] total
+Ready to make this change?"
 
-For "add": include "day", "add" object. Omit "remove".
-For "remove": include "day", "remove" (activity name). Omit "add".
-For "swap": include "day", "remove", and "add".
-NEVER add an activity without warning the user what will be displaced.
-Only include the JSON block when proposing an actual database change. Do NOT include it for informational responses.${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
+STEP 3 — Only after user confirms, add the CHANGE block at the very end:
+<!--CHANGE:{"action":"add","day":N,"add":{"name":"Exact Venue Name","time":"14:00","category":"attraction","description":"Brief description"}}-->
 
-FULL ITINERARY:
-${itineraryContext || 'No activities planned yet.'}
+RULES:
+• ALWAYS use REAL, named venues — never say "a popular dance studio in Central"
+• NEVER include the <!--CHANGE:--> block in steps 1 or 2
+• For remove: <!--CHANGE:{"action":"remove","day":N,"remove":"exact activity title"}-->
+• For swap: <!--CHANGE:{"action":"swap","day":N,"remove":"old title","add":{...}}-->
+• Only include the CHANGE block when the user has confirmed they want the change${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
 
-FLIGHTS:
-${flightContext}
+ITINERARY (showing up to 10 days):
+${itineraryContext || 'No activities yet.'}
 
-Be warm, concise, and actionable. Use bullet points for lists. Reference specific days, cities, and activities from the itinerary when relevant. You are a multi-destination expert for all cities on this trip — share local knowledge, neighbourhood tips, and practical advice for each city.`;
+FLIGHTS: ${flightContext}
 
-    // Truncate system prompt to 1800 chars to stay within model limits
-    const systemPrompt = systemPromptFull.slice(0, 1800);
+Be warm, concise, practical. Use bullet points. Reference specific days and cities.`;
+
+    // Truncate system prompt to 2800 chars to keep key instructions intact
+    const systemPrompt = systemPromptFull.slice(0, 2800);
 
     // ── Save user message (private: user_id = userId) ─────────────────────
     try {

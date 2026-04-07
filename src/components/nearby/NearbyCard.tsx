@@ -190,7 +190,7 @@ export const NearbyCard = ({ place, city = '' }: NearbyCardProps) => {
           </div>
 
           <div className="flex items-center gap-3 text-sm text-muted-foreground mb-3 flex-wrap">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" title="Straight-line distance — actual travel distance may be longer">
               <Navigation className="w-3.5 h-3.5" />
               <span>{place.distance}</span>
             </div>

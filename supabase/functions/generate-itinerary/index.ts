@@ -413,6 +413,7 @@ serve(async (req) => {
         legContext += `Leg ${idx + 1}: ${leg.cityName}, ${leg.countryName} — Days ${currentDay}–${endDay}\n`;
         currentDay = endDay + 1;
       });
+      legContext += '\n⚠️ CRITICAL: Day numbers are SEQUENTIAL across ALL legs. NEVER restart at "Day 1" for a new city. If Leg 1 ends on Day 4, Leg 2\'s first day is "## Day 5". Never use "## Day 1" more than once in the entire itinerary.';
     }
 
     const destinationsList = isMultiCity
@@ -560,7 +561,7 @@ STRICT RULES:
 12. Insert booking warnings (⚠️) for ALL activities that typically require advance reservation
 13. Insert exactly 1 flex block per day (🗺️ Wander & Explore format)
 14. EVERY activity including restaurants, transport, and flex blocks MUST have a price tier in the pipe fields (€, €€, €€€, or €€€€). This field is mandatory — never omit it.
-${isMultiCity ? `15. Use "## Leg N: CityName" header before each city section
+${isMultiCity ? `15. Use "## Leg N: CityName" header before each city section, then CONTINUE day numbers. NEVER restart at "Day 1" for a second city — use the next sequential day number
 16. Start each new city leg with transit/arrival logistics` : ''}
 ${flightConstraintContext ? '17. STRICTLY honour all flight constraints listed above — do not schedule activities outside allowed windows' : ''}`;
 

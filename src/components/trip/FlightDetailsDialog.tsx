@@ -259,36 +259,68 @@ export const FlightDetailsDialog = ({
 
       if (error) throw error;
 
-      if (data.error || !data.flights || data.flights.length === 0) {
-        toast.error("We couldn't read your flight details from this image. Please enter them manually below.", {
-          duration: 6000,
-          action: { label: 'Add manually', onClick: () => setIsAdding(true) },
-        });
+      const flightsList: typeof data.flights = data.flights ?? [];
+
+      // Case 1: Complete flights found → save them all automatically
+      const completeFlights = flightsList.filter(
+        (f: any) => f.departure_city && f.arrival_city && f.departure_date && f.arrival_date
+      );
+
+      if (completeFlights.length > 0) {
+        let addedCount = 0;
+        for (const flight of completeFlights) {
+          await createFlight.mutateAsync({
+            itinerary_id: itineraryId,
+            leg_number: flights.length + addedCount + 1,
+            airline: flight.airline || undefined,
+            flight_number: flight.flight_number || undefined,
+            departure_city: flight.departure_city,
+            arrival_city: flight.arrival_city,
+            departure_date: flight.departure_date,
+            departure_time: flight.departure_time || undefined,
+            arrival_date: flight.arrival_date,
+            arrival_time: flight.arrival_time || undefined,
+            notes: flight.notes || undefined,
+          });
+          addedCount++;
+        }
+        toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
         return;
       }
 
-      let addedCount = 0;
-      for (const flight of data.flights) {
-        if (!flight.departure_city || !flight.arrival_city || !flight.departure_date || !flight.arrival_date) {
-          continue;
-        }
-        await createFlight.mutateAsync({
-          itinerary_id: itineraryId,
-          leg_number: flights.length + addedCount + 1,
-          airline: flight.airline || undefined,
-          flight_number: flight.flight_number || undefined,
-          departure_city: flight.departure_city,
-          arrival_city: flight.arrival_city,
-          departure_date: flight.departure_date,
-          departure_time: flight.departure_time || undefined,
-          arrival_date: flight.arrival_date,
-          arrival_time: flight.arrival_time || undefined,
-          notes: flight.notes || undefined,
+      // Case 2: Partial data found (some fields extracted) → pre-fill form
+      const partialFlight = flightsList[0];
+      const hasPartialData = partialFlight && (
+        partialFlight.airline || partialFlight.flight_number ||
+        partialFlight.departure_city || partialFlight.arrival_city
+      );
+
+      if (hasPartialData) {
+        setFormData({
+          airline: partialFlight.airline || '',
+          flight_number: partialFlight.flight_number || '',
+          departure_city: partialFlight.departure_city || '',
+          arrival_city: partialFlight.arrival_city || '',
+          departure_date: partialFlight.departure_date || '',
+          departure_time: partialFlight.departure_time || '',
+          arrival_date: partialFlight.arrival_date || '',
+          arrival_time: partialFlight.arrival_time || '',
+          notes: partialFlight.notes || '',
+          departure_airport_iata: '',
+          arrival_airport_iata: '',
+          departure_terminal: '',
+          arrival_terminal: '',
         });
-        addedCount++;
+        setIsAdding(true);
+        toast.info('We found some details from your image — please complete the missing fields below.', { duration: 6000 });
+        return;
       }
 
-      toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+      // Case 3: Nothing extracted → show error
+      toast.error("Couldn't read your flight details from this image. Please enter them manually below.", {
+        duration: 6000,
+        action: { label: 'Add manually', onClick: () => setIsAdding(true) },
+      });
     } catch (err) {
       console.error('Error parsing flight:', err);
       toast.error("Couldn't read your flight details from this image. Please enter them manually below.", {
@@ -321,7 +353,7 @@ export const FlightDetailsDialog = ({
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-lg w-[95vw] max-h-[90vh] overflow-y-auto sm:w-full">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plane className="w-5 h-5" />
@@ -477,7 +509,7 @@ export const FlightDetailsDialog = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Airline</Label>
                     <Input placeholder="e.g., British Airways" value={formData.airline} onChange={(e) => handleInputChange('airline', e.target.value)} />
@@ -488,7 +520,7 @@ export const FlightDetailsDialog = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">From City *</Label>
                     <Input placeholder="Departure city" value={formData.departure_city} onChange={(e) => handleInputChange('departure_city', e.target.value)} required />
@@ -499,7 +531,7 @@ export const FlightDetailsDialog = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Departure Date *</Label>
                     <Input type="date" value={formData.departure_date} onChange={(e) => handleInputChange('departure_date', e.target.value)} required />
@@ -510,7 +542,7 @@ export const FlightDetailsDialog = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Arrival Date *</Label>
                     <Input type="date" value={formData.arrival_date} onChange={(e) => handleInputChange('arrival_date', e.target.value)} required />

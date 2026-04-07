@@ -176,8 +176,15 @@ function isMealActivity(act: Activity): boolean {
  * would exceed the pace's day-end cap are dropped. Meals (restaurants and
  * any activity whose title includes breakfast/lunch/dinner) are ALWAYS kept —
  * they may push the schedule slightly past the cap but are never removed.
+ *
+ * @param flightCapByDay  Optional map of dayNumber → hard end cap in minutes (e.g. flight buffer).
+ *                        When present, the flight cap overrides the pace cap for that day.
  */
-function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
+function enforceScheduleLimits(
+  days: DayData[],
+  pace: string,
+  flightCapByDay?: Map<number, number>,
+): DayData[] {
   console.log('[enforceScheduleLimits] ENFORCER RUNNING — pace:', pace, 'days:', days.length);
   // Soft caps — meals may exceed these slightly; attractions/flex cannot
   const END_CAPS_MINS: Record<string, number> = {
@@ -185,11 +192,14 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
     moderate: 20 * 60,          // 8:00 PM
     full:     21 * 60 + 30,     // 9:30 PM
   };
-  const cap = END_CAPS_MINS[pace] ?? END_CAPS_MINS.moderate;
+  const paceCap = END_CAPS_MINS[pace] ?? END_CAPS_MINS.moderate;
 
   return days.map(day => {
     const all = [...day.morning, ...day.afternoon, ...day.evening];
     if (all.length === 0) return day;
+
+    // Use flight-adjusted cap when available (e.g. departure buffer), else pace cap
+    const cap = flightCapByDay?.get(day.dayNumber) ?? paceCap;
 
     const firstTime = parseTimeToHours(all[0].time);
     let t = firstTime !== null ? Math.round(firstTime * 60) : 9 * 60;
@@ -242,7 +252,26 @@ function enforceScheduleLimits(days: DayData[], pace: string): DayData[] {
   });
 }
 
-export const parseItineraryText = (text: string, numDays: number, weatherData?: DayWeather[], pace?: string): ParsedItinerary => {
+export interface FlightConstraintForParser {
+  type: 'arrival' | 'departure';
+  dayNumber: number;           // 1-based
+  time: string;                // HH:MM 24h
+  isInternational?: boolean;
+}
+
+/** Convert HH:MM string → minutes since midnight */
+function hmToMins(hm: string): number {
+  const [h, m] = hm.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+export const parseItineraryText = (
+  text: string,
+  numDays: number,
+  weatherData?: DayWeather[],
+  pace?: string,
+  flightConstraints?: FlightConstraintForParser[],
+): ParsedItinerary => {
   const result: ParsedItinerary = {
     summary: '',
     days: [],
@@ -273,6 +302,25 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
       title: match[2].trim().replace(/^[-–—:\s]+/, '').trim(),
       startIndex: match.index,
     });
+  }
+
+  // Fix restarted day numbering in multi-city trips.
+  // Some LLMs restart at "Day 1" for each new city leg instead of continuing
+  // the sequence (e.g., "Day 1-4" for Singapore then "Day 1-3" for HK instead
+  // of "Day 5-7"). Detect restarts and apply a cumulative offset so numbers
+  // are always sequential across the full trip.
+  {
+    let maxDayNum = 0;
+    let offset = 0;
+    for (const section of daySections) {
+      if (section.dayNumber + offset <= maxDayNum) {
+        // Day number went backwards → the AI restarted for a new city leg
+        offset = maxDayNum;
+        console.log(`[itineraryParser] Day restart detected at raw Day ${section.dayNumber} — applying offset ${offset}`);
+      }
+      section.dayNumber += offset;
+      maxDayNum = Math.max(maxDayNum, section.dayNumber);
+    }
   }
 
   // Parse each day
@@ -562,7 +610,22 @@ export const parseItineraryText = (text: string, numDays: number, weatherData?: 
   // Hard enforcement — second pass that drops any activity (including restaurants)
   // that would push the day past its end cap even after trimDayToSchedule ran.
   const paceMapped = pace === 'fast' ? 'full' : pace === 'relaxed' ? 'light' : pace === 'balanced' ? 'moderate' : (pace ?? 'moderate');
-  result.days = enforceScheduleLimits(result.days, paceMapped);
+
+  // Build per-day flight end caps from flight constraints (departure days only)
+  const flightCapByDay = new Map<number, number>();
+  if (flightConstraints?.length) {
+    for (const fc of flightConstraints) {
+      if (fc.type === 'departure') {
+        const bufferMins = fc.isInternational ? 150 : 90; // 2h30m or 1h30m airport buffer
+        const depMins = hmToMins(fc.time);
+        const capMins = Math.max(depMins - bufferMins, 8 * 60); // never before 8am
+        flightCapByDay.set(fc.dayNumber, capMins);
+        console.log(`[enforceScheduleLimits] Departure Day ${fc.dayNumber}: flight ${fc.time}, cap = ${Math.floor(capMins/60)}:${String(capMins%60).padStart(2,'0')}`);
+      }
+    }
+  }
+
+  result.days = enforceScheduleLimits(result.days, paceMapped, flightCapByDay);
 
   // Parse packing tips
   const packingMatch = text.match(/##\s*Packing\s*Tips?\s*\n([\s\S]*?)(?=##|$)/i);

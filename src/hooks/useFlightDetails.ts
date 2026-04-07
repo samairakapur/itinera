@@ -211,12 +211,19 @@ export const useCreateFlightDetail = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: async (_, variables) => {
+    onSuccess: async (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['flight-details', variables.itinerary_id] });
       toast.success('Flight added successfully');
       // Sync trip legs based on new flight data
       await syncTripLegs(variables.itinerary_id);
       queryClient.invalidateQueries({ queryKey: ['trip-legs', variables.itinerary_id] });
+      // Remind user to check the departure day schedule
+      if (variables.departure_time) {
+        toast.info(
+          `Check your departure day — activities should end at least ${variables.departure_airport_iata ? '2h 30m' : '1h 30m'} before your ${variables.departure_time} flight.`,
+          { duration: 6000 }
+        );
+      }
     },
     onError: (error) => {
       console.error('Error adding flight:', error);

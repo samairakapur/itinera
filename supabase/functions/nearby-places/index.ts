@@ -30,8 +30,9 @@ const FSQ_CATEGORIES: Record<string, string[]> = {
 };
 
 function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)}m`;
-  return `${(meters / 1000).toFixed(1)} km`;
+  // Haversine (straight-line) distance — label as approximate so users aren't misled
+  if (meters < 1000) return `~${Math.round(meters)}m`;
+  return `~${(meters / 1000).toFixed(1)} km`;
 }
 
 function mapFsqType(categories: any[]): "attraction" | "cafe" | "restaurant" {
@@ -233,6 +234,28 @@ serve(async (req) => {
           })
           .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
           .slice(0, 20);
+
+        // Fetch photos for places that didn't get one in the search response
+        // (Foursquare search sometimes omits photos even when requested via fields=)
+        const placesNeedingPhotos = places.filter(p => !p.imageUrl).slice(0, 10);
+        if (placesNeedingPhotos.length > 0) {
+          await Promise.all(placesNeedingPhotos.map(async (place) => {
+            try {
+              const photoRes = await fetch(
+                `https://api.foursquare.com/v3/places/${place.id}/photos?limit=1`,
+                {
+                  headers: { Authorization: apiKey, Accept: "application/json" },
+                  signal: AbortSignal.timeout(5000),
+                }
+              );
+              if (photoRes.ok) {
+                const photos = await photoRes.json();
+                const url = buildPhotoUrl(photos[0]);
+                if (url) place.imageUrl = url;
+              }
+            } catch { /* photo fetch failures are non-fatal */ }
+          }));
+        }
 
         return json({ places });
       }

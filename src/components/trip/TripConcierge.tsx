@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ParsedChange {
   action: 'add' | 'remove' | 'swap';
@@ -100,31 +101,16 @@ Try asking:
 
 export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex, forceOpen }: TripConciergeProps) => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(initialOpen);
 
-  // Allow parent to programmatically open with an optional pre-seeded greeting
-  useEffect(() => {
-    if (forceOpen) {
-      setOpen(true);
-      // If a new initialMessage was passed, inject it as the first message
-      // and reset history so the reflection greeting appears fresh
-      if (initialMessage) {
-        setMessages([{
-          id: `reflection-${Date.now()}`,
-          role: 'assistant',
-          content: initialMessage,
-          created_at: new Date().toISOString(),
-        }]);
-        setHistoryLoaded(true); // prevent history loading from overwriting greeting
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceOpen, initialMessage]);
-  const [messages, setMessages] = useState<Message[]>(() =>
-    initialMessage
-      ? [{ id: 'reflection-0', role: 'assistant', content: initialMessage, created_at: new Date().toISOString() }]
-      : []
-  );
+  // Ref to hold a pending reflection greeting that should be injected AFTER history loads.
+  // Using a ref (not state) means it is readable synchronously inside the loadHistory async function,
+  // avoiding the race where the forceOpen effect's setHistoryLoaded(true) hasn't applied yet when
+  // the history loading effect reads historyLoaded.
+  const pendingReflectionMsg = useRef<string | null>(null);
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -140,6 +126,21 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Allow parent to programmatically open with a pre-seeded greeting (e.g. reflection toast).
+  // We store the greeting in a ref so loadHistory can read it synchronously and inject it
+  // AFTER history loads (avoiding the race with state-update timing).
+  useEffect(() => {
+    if (forceOpen && initialMessage) {
+      pendingReflectionMsg.current = initialMessage;
+      setOpen(true);
+      // Reset historyLoaded so the history effect re-runs and injects the greeting at the end
+      setHistoryLoaded(false);
+    } else if (forceOpen) {
+      setOpen(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceOpen, initialMessage]);
+
   // Load message history when panel opens
   useEffect(() => {
     if (!open || historyLoaded || !tripId || !user) return;
@@ -153,8 +154,18 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
         .order('created_at', { ascending: true })
         .limit(30);
 
-      if (data && data.length > 0) {
-        // Strip <!--CHANGE:...--> blocks from loaded assistant messages and attach parsedChange
+      // If a reflection greeting is pending, inject it as the ONLY message (fresh start)
+      const pending = pendingReflectionMsg.current;
+      if (pending) {
+        pendingReflectionMsg.current = null;
+        setMessages([{
+          id: `reflection-${Date.now()}`,
+          role: 'assistant',
+          content: pending,
+          created_at: new Date().toISOString(),
+        }]);
+      } else if (data && data.length > 0) {
+        // Normal history load — strip CHANGE blocks from assistant messages
         const parsed = data.map(m => {
           if (m.role === 'assistant') {
             const { cleanText, change } = parseChangeBlock(m.content);
@@ -164,7 +175,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
         });
         setMessages(parsed as Message[]);
       }
-      // If no history, leave messages empty — welcome message is shown via displayMessages
+      // If no history and no pending message, leave messages empty — welcome message shown via displayMessages
       setHistoryLoaded(true);
     };
 
@@ -311,14 +322,16 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const handleApplyChange = async (msgId: string, change: ParsedChange) => {
     if (!user) return;
     setApplyingChange(true);
+    console.log('[Aria] Applying change:', change);
     try {
       if (change.action === 'remove' || change.action === 'swap') {
-        await supabase
+        const { error: delError } = await supabase
           .from('itinerary_items')
           .delete()
           .eq('itinerary_id', tripId)
           .eq('day_number', change.day)
           .ilike('custom_title', `%${change.remove}%`);
+        if (delError) console.error('[Aria] Delete error:', delError);
       }
       if ((change.action === 'add' || change.action === 'swap') && change.add) {
         // Determine time slot from change.add.time
@@ -329,7 +342,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           else if (h >= 18) time_slot = 'evening';
           else time_slot = 'afternoon';
         }
-        await supabase.from('itinerary_items').insert({
+        const insertPayload = {
           itinerary_id: tripId,
           day_number: change.day,
           time_slot,
@@ -337,9 +350,19 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           custom_title: change.add.name,
           custom_description: change.add.description ?? '',
           order_index: 999,
-        });
+        };
+        console.log('[Aria] Inserting itinerary_item:', insertPayload);
+        const { data: inserted, error: insError } = await supabase
+          .from('itinerary_items')
+          .insert(insertPayload)
+          .select('id, custom_title')
+          .single();
+        console.log('[Aria] Insert result:', inserted, 'error:', insError);
+        if (insError) throw insError;
       }
       setAppliedChangeIds(prev => new Set([...prev, msgId]));
+      // Invalidate so TripDetail re-fetches itinerary_items
+      queryClient.invalidateQueries({ queryKey: ['itinerary', tripId] });
       // Confirm to Aria
       setMessages(prev => [...prev, {
         id: `aria-confirm-${Date.now()}`,
@@ -348,6 +371,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
         created_at: new Date().toISOString(),
       }]);
     } catch (err) {
+      console.error('[Aria] handleApplyChange error:', err);
       setMessages(prev => [...prev, {
         id: `aria-err-${Date.now()}`,
         role: 'error',
