@@ -196,37 +196,29 @@ function getDeepCityContext(destinations: string): string {
 
   if (dest.includes('tokyo')) {
     blocks.push(`
-TOKYO AGENT CONTEXT:
-- Neighbourhoods: Shinjuku (entertainment, nightlife, Kabukicho), Shibuya (youth culture, crossing, Daikanyama boutiques), Harajuku (Takeshita-dori youth fashion, Omotesando luxury), Asakusa (old Tokyo, Senso-ji, craft shops), Ginza (luxury retail, galleries, Michelin dining), Akihabara (electronics, anime, maid cafés), Shimokitazawa (indie music, vintage fashion, live houses), Yanaka (old-Tokyo atmosphere, preserved temple district), Roppongi (nightlife, art museums: Mori, National Art Centre), Nakameguro (canal walks, boutique cafés, especially beautiful in cherry blossom season).
-- Transport: Tokyo Metro + Toei Subway + JR lines. Get a Suica/Pasmo IC card — works on all rail, some buses, and vending machines. Day passes: Tokyo Metro 24h ¥600. Avoid trains 7:30–9:00 and 17:30–19:30 rush hours. Taxis expensive but safe (flag-drop ¥420). Night buses limited — plan last trains (around midnight).
-- Booking lead times: Popular ramen shops (Ichiran, Fuunji) — queue expected, arrive early; no booking. Sushi omakase (Sukiyabashi Jiro, Saito, Sushi Yoshitake) — book 1–3 months ahead via concierge. Wagyu teppanyaki (Mikawa Zezankyo, Kawamura) — 2–4 weeks ahead. Teamlab digital art museums — book online days ahead. DisneySea — book 30+ days ahead for popular rides via Premier Access.
-- Seasonal warnings: Cherry blossom (late March–early April) — crowds peak, book all accommodation 3+ months ahead. Golden Week (late April–early May) — domestic travel surge, everything more expensive. Summer (July–August) — extreme humidity and heat 30–35°C, plan indoor breaks. Typhoon season September–October — check JMA forecasts. Autumn foliage (mid-November) — Shinjuku Gyoen, Rikugien best spots.
-- Safety & etiquette: Extremely safe. Quiet on trains — no phone calls, headphones only. Carry cash — many small restaurants and shrines are cash-only. Remove shoes when entering temples/ryokans. Tattoos may bar entry to some onsen.
-- Hidden gems: Koenji antique markets (weekends), Yanesen neighbourhood walking, Shimokitazawa record stores, Nezu Shrine (less crowded than Fushimi Inari), Kagurazaka (French-Japanese neighbourhood), rooftop gardens at department stores.`);
+TOKYO CONTEXT:
+- Key neighbourhoods: Shinjuku (nightlife), Shibuya (youth culture, crossing), Harajuku (Omotesando luxury), Asakusa (old Tokyo, Senso-ji), Ginza (luxury/Michelin), Akihabara (anime/electronics), Shimokitazawa (indie/vintage), Yanaka (old-Tokyo atmosphere), Roppongi (art museums, nightlife), Nakameguro (canal cafés).
+- Transport: Suica/Pasmo IC card — works on all rail and vending machines. Avoid trains 7:30–9:00 and 17:30–19:30 (rush hour). Last trains ~midnight.
+- Bookings: Sushi omakase — 1–3 months ahead. Teamlab — book online days ahead. DisneySea — 30+ days ahead. Ramen: queue, no booking.
+- Etiquette: Cash-only at many small restaurants/shrines. Remove shoes at temples/ryokans. Quiet on trains.`);
   }
 
   if (dest.includes('barcelona')) {
     blocks.push(`
-BARCELONA AGENT CONTEXT:
-- Neighbourhoods: Gothic Quarter (Barri Gòtic — medieval lanes, Cathedral, Plaça Reial), El Born/Sant Pere (trendy bars, Picasso Museum, Mercat de Santa Caterina), La Barceloneta (beach, seafood, younger crowd), Eixample (Gaudí architecture, gay-friendly, upscale dining — Dreta and Esquerra sides), Gràcia (bohemian, Plaça del Sol, local vibe, less touristy), Poble Sec (Avinguda del Paral·lel, Montjuïc base, tapas bars), Sarrià-Sant Gervasi (quiet residential, upscale, Tibidabo views), Poblenou (emerging arts, craft beer, beach access, design scene), Sant Antoni (vintage market Sundays, neo-tapas, bookshops).
-- Transport: TMB Metro (T-Casual 10-trip card is best value). Buses cover gaps not reached by Metro. Bicing bike-share for short rides. Taxis (Free Now app) safe and metered. Aerobus from T1/T2 to Plaça Catalunya (35 min). AVOID tourist buses — waste of time vs Metro.
-- Booking lead times: Sagrada Família — book online AT LEAST 2 weeks ahead (often sells out same-day). Park Güell (paid section) — book 2 weeks ahead. Casa Batlló / Casa Milà (La Pedrera) — book 1 week ahead, magic nights evenings worth the premium. Popular tapas bars (Bar Cañete, Bodega 1900, Tickets by Albert Adrià) — Tickets needs 2 months ahead via specific booking window; others 1–2 weeks.
-- Seasonal warnings: Summer (July–August) — extreme heat 32–38°C, beaches packed, tourist density highest, many locals leave for August. Book everything further ahead. Spring (April–May) and autumn (Sept–Oct) — best weather 20–25°C, lower crowds, local festivals. Sant Jordi (23 April) — roses and books street festival, beautiful. La Mercè (24 September) — free concerts, castellers, fire runs.
-- Safety: Pickpockets very active on Las Ramblas, Metro Line 3, and Barceloneta beach. Use anti-theft bags; don't put phone on restaurant tables. Las Ramblas itself is touristy — navigate to parallel streets (La Rambla del Raval, Carrer Nou de la Rambla) for authentic experience.
-- Food specifics: Lunch (2–4 PM) is the main meal; dinner rarely before 9 PM. Menú del día (set lunch) is best value at €12–18. Catalan cuisine: pa amb tomàquet (bread rubbed with tomato), escalivada, fideuà, crema catalana. Best seafood: Barceloneta and Poblenou waterfront.
-- Hidden gems: Bunkers del Carmel (360° city views, less known than Tibidabo), Mercat de l'Abaceria (Gràcia — local market), Els Encants flea market (Mondays/Wednesdays/Fridays/Saturdays), Carrer Blai pintxos bars in Poble Sec.`);
+BARCELONA CONTEXT:
+- Key neighbourhoods: Gothic Quarter (medieval, Cathedral), El Born (Picasso Museum, trendy bars), Barceloneta (beach, seafood), Eixample (Gaudí, upscale dining), Gràcia (bohemian, local), Poble Sec (Montjuïc base, pintxos), Poblenou (arts, craft beer), Sant Antoni (vintage market Sundays).
+- Transport: TMB Metro with T-Casual 10-trip card. Aerobus from airport to Plaça Catalunya (35 min). Avoid tourist buses.
+- Bookings: Sagrada Família — 2 weeks ahead (sells out same-day). Park Güell paid section — 2 weeks. Tickets restaurant (Albert Adrià) — 2 months ahead.
+- Food: Dinner rarely before 9 PM. Menú del día (set lunch) best value €12–18. Pickpockets active on Las Ramblas and Metro L3.`);
   }
 
   if (dest.includes('bangkok')) {
     blocks.push(`
-BANGKOK AGENT CONTEXT:
-- Neighbourhoods: Rattanakosin (Old Bangkok — Grand Palace, Wat Pho, Wat Arun, best explored morning before heat peaks), Silom/Sathorn (business district, Patpong night market, sky bars, Lumphini Park), Sukhumvit (expat hub — BTS-connected; Thong Lor and Ekkamai for trendy cafés and nightlife; Asok for malls), Banglamphu/Khao San Road (backpacker hub, temples, canals, affordable food), Chinatown (Yaowarat — best street food in Bangkok, night market, gold shops), Ari (local neighbourhood, independent cafés, less touristy), Chatuchak (weekend market — largest in Asia, 15,000 stalls), Thonburi (canal neighbourhoods, local life, Wat Pak Nam — giant Buddha).
-- Transport: BTS Skytrain (Silom + Sukhumvit lines) + MRT Blue/Purple/Yellow lines — use Rabbit card. Grab app for taxis (always meter or Grab — never negotiate with tuk-tuk for long distances). Chao Phraya Express Boats (Orange flag — all piers, cheapest and scenic). Khlong boats on Khlong Saen Saep for east-west travel. AVOID: flag-down taxis that refuse meter, tuk-tuks for tourist traps (gem store scams). Traffic is extreme 7:30–9:30 and 17:00–19:30 — always take rail.
-- Booking lead times: Le Du, Gaggan Anand, Sorn (Michelin starred) — book 2–4 weeks ahead online. River City Cruise dinner — book 3–5 days ahead. Popular rooftop bars (Vertigo at Banyan Tree, Octave, Cielo) — reservations recommended weekends. Muay Thai stadium (Lumpinee, Rajadamnern) — book ringside 3 days ahead. Thai Massage schools (Wat Pho massage school) — walk-in fine.
-- Seasonal warnings: Hot season (March–May) — extreme heat 35–40°C, plan temple visits 7–9 AM and 5–7 PM, midday indoors. Rainy season (June–October) — afternoon downpours (1–3 hours), bring umbrella, not usually all-day rain. Cool season (November–February) — best weather 25–30°C, peak tourist season, book ahead. Songkran (Thai New Year, 13–15 April) — epic water festival but infrastructure disruption.
-- Safety & etiquette: Very safe for tourists. Always cover shoulders and knees at temples; sarongs available at entrance. Remove shoes entering temples and traditional homes. Never touch monks (women especially) or point feet at Buddha images. The Royal Family — any criticism is illegal (lèse-majesté).
-- Food specifics: Street food is excellent and safe at busy stalls. Famous dishes: pad thai (avoid tourist traps — Thipsamai is the benchmark), som tum, massaman curry, boat noodles, mango sticky rice. Chinatown Yaowarat for crab omelette and BBQ pork. Or Tor Kor market for premium Thai produce. Eat at lunch as locals do — 11 AM to 2 PM for best street food variety.
-- Hidden gems: Wat Pak Nam (giant golden Buddha, less crowded), Talat Noi (old Sino-Portuguese quarter), Bang Krachao ("green lung" — rent bicycles on island), Flower Market Pak Khlong Talat (best before dawn 2–5 AM), Artist's House in Thonburi canal.`);
+BANGKOK CONTEXT:
+- Key neighbourhoods: Rattanakosin (Grand Palace, Wat Pho, Wat Arun — visit mornings), Silom/Sathorn (sky bars, Lumphini Park), Sukhumvit (BTS-connected; Thong Lor/Ekkamai for cafés), Chinatown/Yaowarat (best street food), Chatuchak (weekend market), Thonburi (canals, local life).
+- Transport: BTS Skytrain + MRT (Rabbit card). Grab app for taxis. Chao Phraya Express Boats scenic and cheap. Avoid tuk-tuks for long distances. Traffic extreme 7:30–9:30 and 17:00–19:30.
+- Bookings: Le Du/Gaggan Anand/Sorn (Michelin) — 2–4 weeks ahead. Rooftop bars — reserve weekends. Muay Thai ringside — 3 days ahead.
+- Etiquette: Cover shoulders and knees at temples. Remove shoes. Never touch monks. Hot season (Mar–May) 35–40°C — visit temples early morning or evening.`);
   }
 
   return blocks.join('\n');
@@ -288,7 +280,9 @@ serve(async (req) => {
     } = body;
 
     // ── AI provider selection ────────────────────────────────────────────────
-    // Priority: Groq (high limits, fast) → Lovable gateway → direct Gemini.
+    // Priority: Lovable gateway (Gemini 2.5-flash, shared pool, highest limits)
+    //           → direct Gemini (gemini-2.0-flash, 65k output tokens)
+    //           → Groq (fallback only — 12k TPM free-tier limit).
     // Strip ALL non-printable / non-ASCII characters — Deno's fetch API throws
     // "Value is not a valid ByteString" if the Authorization header value
     // contains any byte outside U+0020–U+007E (e.g. trailing \n, \r, or BOM
@@ -304,12 +298,7 @@ serve(async (req) => {
     let AI_MODEL: string;
     let AI_PROVIDER: string;
 
-    if (GROQ_API_KEY) {
-      AI_KEY      = GROQ_API_KEY;
-      AI_URL      = "https://api.groq.com/openai/v1/chat/completions";
-      AI_MODEL    = "llama-3.3-70b-versatile";
-      AI_PROVIDER = "Groq";
-    } else if (LOVABLE_API_KEY) {
+    if (LOVABLE_API_KEY) {
       AI_KEY      = LOVABLE_API_KEY;
       AI_URL      = "https://ai.gateway.lovable.dev/v1/chat/completions";
       AI_MODEL    = "google/gemini-2.5-flash";
@@ -319,8 +308,13 @@ serve(async (req) => {
       AI_URL      = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
       AI_MODEL    = "gemini-2.0-flash";
       AI_PROVIDER = "direct Gemini";
+    } else if (GROQ_API_KEY) {
+      AI_KEY      = GROQ_API_KEY;
+      AI_URL      = "https://api.groq.com/openai/v1/chat/completions";
+      AI_MODEL    = "llama-3.3-70b-versatile";
+      AI_PROVIDER = "Groq";
     } else {
-      console.error("No AI API key configured (GROQ_API_KEY, LOVABLE_API_KEY, or GOOGLE_AI_API_KEY)");
+      console.error("No AI API key configured (LOVABLE_API_KEY, GOOGLE_AI_API_KEY, or GROQ_API_KEY)");
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -446,22 +440,8 @@ CRITICAL SCHEDULING RULE — ENFORCE BEFORE WRITING EACH ACTIVITY:
 - Travel time between activities: 20–30 minutes each (count this against the budget every time)
 - Pace "${pace}" allows MAXIMUM ${sightseeingCount} sightseeing attractions and ${maxActivities} total non-transport activities per day
 
-MANDATORY SELF-CHECK: As you write each activity, keep a running time total:
-  (previous activity end time) + (travel to next stop: 20–30 min) + (next activity duration) = new running total
-  If new running total would push past ${endTime} → STOP. Do NOT add that activity.
-
-PRIORITY ORDER when time runs short:
-  1. Keep: breakfast, lunch, dinner (mandatory meals — never remove)
-  2. Keep: the single flex/wander block (essential breathing room)
-  3. Remove: extra evening attractions first
-  4. Remove: extra afternoon sightseeing next
-  5. Shorten: flex block to 30 min if needed
-
-SELF-VERIFICATION REQUIRED: After writing all activities for a day, verify:
-  "Does the last activity (dinner) finish by ${endTime}?"
-  If NO → remove the last 1–2 non-meal activities and recalculate.
-  It is MUCH BETTER to have 4 activities that fit comfortably than 8 that overflow.
-  NEVER exceed the daily time limit under any circumstances.
+SELF-CHECK: After each activity: (prev end) + (20–30 min travel) + (duration) = new total. If new total pushes dinner past ${endTime} → remove last non-meal activity instead. Priority when short on time: keep meals + flex; drop extra evening/afternoon attractions.
+VERIFY after each day: last activity (dinner) finishes by ${endTime}. If not, remove the last 1–2 non-meal activities. Fewer activities that fit > many that overflow.
 
 PRICE TIERS — MANDATORY:
 - Every activity MUST include a price tier in the pipe fields: € (free/very cheap), €€ (moderate, €5–25 entry or mid-range meal), €€€ (premium, €25–80), €€€€ (luxury/exclusive)
@@ -534,20 +514,9 @@ ACTIVITY TYPES (use EXACTLY these values in the type field):
 - flex — 🗺️ Wander & Explore blocks (unstructured neighbourhood time)
 - prebooked — ticketed events that must be booked in advance
 
-FLEX BLOCKS (🗺️ Wander & Explore):
-- Insert 1–2 flex blocks per day, spread across different time slots
-- Each flex block covers a specific neighbourhood or district with a soft suggestion ("look for the hidden courtyard", "browse the weekend market")
-- Flex blocks provide breathing room and spontaneity — do NOT fill every minute with structured activities
-- Flex blocks should feel earned: place them after a cluster of structured attractions
+FLEX BLOCKS: Insert exactly 1 per day (🗺️ Wander & Explore [Neighbourhood]) after a cluster of structured activities. Give a soft suggestion of what to find there. Include Why: line.
 
-BOOKING WARNINGS:
-- Add a ⚠️ Book [X] weeks ahead line for ANY activity that commonly requires advance booking:
-  - Popular or Michelin-starred restaurants: ⚠️ Book 2–3 weeks ahead · [how to book]
-  - Major ticketed attractions (Louvre, Vatican, Tower of London, etc.): ⚠️ Book online at least 1 week ahead to skip queues
-  - Shows, concerts, theatre, sports: ⚠️ Book [X] weeks ahead · [ticketing platform]
-  - High-demand tours: ⚠️ Book 1 week ahead · [operator website]
-- Place the ⚠️ line immediately after the description, before the Why: line
-- For restaurants with walk-in availability, you may omit the booking warning OR note "walk-ins usually fine before 6 PM"
+BOOKING WARNINGS: Add ⚠️ Book [X] weeks ahead immediately after the description (before Why:) for any activity requiring advance reservation — Michelin restaurants (2–3 weeks), major attractions (1–2 weeks), shows/sports (as needed). Omit for walk-in venues.
 
 STRICT RULES:
 0. NEVER generate a "Free Day", "Rest Day", "Leisure Day", or any day with no planned activities. EVERY day — including the last day of a trip — must have the full structure: breakfast + sightseeing + lunch + flex block + dinner. The flex block already provides unstructured free time; an empty day is never appropriate.
@@ -560,13 +529,7 @@ STRICT RULES:
 7. MUST include "Why:" reasoning for EVERY item including travel blocks and flex blocks
 8. ${cuisineContext}Respect dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}
 9. Group nearby attractions — minimise unnecessary travel
-10. PACE AND TIME BUDGET — absolute maximum, never exceed:
-    - light (~2 sightseeing/day, max 5 total activities): day ends by 6:00 PM — slow mornings, long lunches, early evenings
-    - moderate (~3 sightseeing/day, max 7 total activities): day ends by 8:00 PM — comfortable rhythm with breathing room
-    - full (~4 sightseeing/day, max 9 total activities): day ends by 9:30 PM — energetic but not frantic
-    Travel between activities costs 20–30 min EVERY time — factor this into each slot.
-    Track cumulative time as you write. The moment dinner would end after the hard cap → remove the last non-meal activity.
-    NEVER add an activity you cannot fit within the daily time budget.
+10. PACE AND TIME BUDGET — absolute maximum: light ends 6 PM (max 5 acts), moderate ends 8 PM (max 7 acts), full ends 9:30 PM (max 9 acts). Travel = 20–30 min each time. Track cumulative time — remove last non-meal activity if dinner overshoots the cap.
 11. Use REAL places that exist — no invented names
 12. Insert booking warnings (⚠️) for ALL activities that typically require advance reservation
 13. Insert exactly 1 flex block per day (🗺️ Wander & Explore format)
