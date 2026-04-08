@@ -246,10 +246,11 @@ serve(async (req) => {
     console.log("Authenticated user:", userId);
 
     const { messages, cityContext } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
+    const GROQ_API_KEY      = Deno.env.get("GROQ_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!GOOGLE_AI_API_KEY && !GROQ_API_KEY) {
+      throw new Error("No AI API key configured (GOOGLE_AI_API_KEY or GROQ_API_KEY)");
     }
 
     // Build system prompt: check for a pilot city agent first
@@ -296,21 +297,38 @@ Keep responses concise but helpful. If you don't know something specific, be hon
       }
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-        stream: true,
-      }),
+    // Provider cascade: Gemini (primary) → Groq (fallback)
+    const chatProviders: Array<{ key: string; url: string; model: string }> = [];
+    if (GOOGLE_AI_API_KEY) chatProviders.push({
+      key:   GOOGLE_AI_API_KEY,
+      url:   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      model: "gemini-2.0-flash",
     });
+    if (GROQ_API_KEY) chatProviders.push({
+      key:   GROQ_API_KEY,
+      url:   "https://api.groq.com/openai/v1/chat/completions",
+      model: "llama-3.3-70b-versatile",
+    });
+
+    const chatMessages = [{ role: "system", content: systemPrompt }, ...messages];
+
+    let response: Response | null = null;
+    for (const p of chatProviders) {
+      const attempt = await fetch(p.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${p.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: p.model, messages: chatMessages, stream: true }),
+      });
+      if (attempt.ok) { response = attempt; break; }
+      const errText = await attempt.text().catch(() => '');
+      console.warn(`chat: ${p.model} failed (${attempt.status}) — trying next. ${errText.slice(0, 200)}`);
+    }
+    if (!response) {
+      return new Response(
+        JSON.stringify({ error: "The AI service is busy. Please try again in a moment." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!response.ok) {
       if (response.status === 429) {

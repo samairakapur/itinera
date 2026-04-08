@@ -44,12 +44,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── AI keys ───────────────────────────────────────────────────────────
-    const GROQ_API_KEY    = sanitizeKey(Deno.env.get('GROQ_API_KEY'))    || undefined;
-    const GOOGLE_AI_KEY   = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
-    const LOVABLE_API_KEY = sanitizeKey(Deno.env.get('LOVABLE_API_KEY')) || undefined;
+    const GROQ_API_KEY  = sanitizeKey(Deno.env.get('GROQ_API_KEY'))      || undefined;
+    const GOOGLE_AI_KEY = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
 
     console.log('[trip-concierge] AI keys present:', {
-      groq: !!GROQ_API_KEY, google: !!GOOGLE_AI_KEY, lovable: !!LOVABLE_API_KEY,
+      groq: !!GROQ_API_KEY, google: !!GOOGLE_AI_KEY,
     });
 
     // ── Service-role client ───────────────────────────────────────────────
@@ -348,45 +347,6 @@ Be warm, concise, practical. Use bullet points. Reference specific days and citi
       } catch (fetchErr) {
         console.warn('[trip-concierge] google AI fetch error:', fetchErr);
         lastError = 'google AI fetch failed';
-      }
-    }
-
-    // Provider 3: Lovable gateway
-    if (LOVABLE_API_KEY && !reply) {
-      console.log('[trip-concierge] trying lovable (google/gemini-2.5-flash)');
-      try {
-        const lovableRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          signal: AbortSignal.timeout(25000),
-          headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: aiMessages,
-            max_tokens: 800,
-            temperature: 0.7,
-          }),
-        });
-
-        if (lovableRes.ok) {
-          const lovableData = await lovableRes.json();
-          const content = lovableData.choices?.[0]?.message?.content;
-          if (content) {
-            reply = content;
-            console.log('[trip-concierge] lovable success, reply length:', reply.length);
-          } else {
-            lastError = 'lovable returned empty content';
-          }
-        } else {
-          const errText = await lovableRes.text().catch(() => '');
-          console.warn(`[trip-concierge] lovable returned ${lovableRes.status}:`, errText.slice(0, 300));
-          lastError = `lovable error ${lovableRes.status}`;
-        }
-      } catch (fetchErr) {
-        console.warn('[trip-concierge] lovable fetch error:', fetchErr);
-        lastError = 'lovable fetch failed';
       }
     }
 

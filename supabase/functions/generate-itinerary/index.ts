@@ -279,10 +279,7 @@ serve(async (req) => {
       flightDetails = [],
     } = body;
 
-    // ── AI provider selection ────────────────────────────────────────────────
-    // Priority: Lovable gateway (Gemini 2.5-flash, shared pool, highest limits)
-    //           → direct Gemini (gemini-2.0-flash, 65k output tokens)
-    //           → Groq (fallback only — 12k TPM free-tier limit).
+    // ── AI keys ─────────────────────────────────────────────────────────────
     // Strip ALL non-printable / non-ASCII characters — Deno's fetch API throws
     // "Value is not a valid ByteString" if the Authorization header value
     // contains any byte outside U+0020–U+007E (e.g. trailing \n, \r, or BOM
@@ -290,36 +287,7 @@ serve(async (req) => {
     const sanitizeKey = (k: string | undefined) =>
       k?.replace(/[^\x20-\x7E]/g, '').trim() ?? '';
     const GROQ_API_KEY      = sanitizeKey(Deno.env.get("GROQ_API_KEY"))      || undefined;
-    const LOVABLE_API_KEY   = sanitizeKey(Deno.env.get("LOVABLE_API_KEY"))   || undefined;
     const GOOGLE_AI_API_KEY = sanitizeKey(Deno.env.get("GOOGLE_AI_API_KEY")) || undefined;
-
-    let AI_KEY: string;
-    let AI_URL: string;
-    let AI_MODEL: string;
-    let AI_PROVIDER: string;
-
-    if (LOVABLE_API_KEY) {
-      AI_KEY      = LOVABLE_API_KEY;
-      AI_URL      = "https://ai.gateway.lovable.dev/v1/chat/completions";
-      AI_MODEL    = "google/gemini-2.5-flash";
-      AI_PROVIDER = "Lovable gateway";
-    } else if (GOOGLE_AI_API_KEY) {
-      AI_KEY      = GOOGLE_AI_API_KEY;
-      AI_URL      = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-      AI_MODEL    = "gemini-2.0-flash";
-      AI_PROVIDER = "direct Gemini";
-    } else if (GROQ_API_KEY) {
-      AI_KEY      = GROQ_API_KEY;
-      AI_URL      = "https://api.groq.com/openai/v1/chat/completions";
-      AI_MODEL    = "llama-3.3-70b-versatile";
-      AI_PROVIDER = "Groq";
-    } else {
-      console.error("No AI API key configured (LOVABLE_API_KEY, GOOGLE_AI_API_KEY, or GROQ_API_KEY)");
-      return new Response(
-        JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     // ── Build city legs ─────────────────────────────────────────────────────
     const isMultiCity = (cities?.length ?? 0) > 1;
@@ -579,83 +547,101 @@ Every item — including travel and flex blocks — must have a "Why:" line.
 ${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
-    // ── Call AI (Lovable gateway preferred; falls back to direct Gemini) ─────
-    // Lovable gateway uses a shared key pool with higher effective rate limits
-    // than the individual 15 RPM free tier on the direct Google API.
-    console.log(`Calling ${AI_MODEL} via ${AI_PROVIDER} for ${destinationsList} (${numDays} days)`);
+    // ── Build provider cascade ───────────────────────────────────────────────
+    // Priority: Gemini 2.0 Flash (primary) → Groq llama-3.3-70b (fallback).
+    // When a provider returns busy/rate-limited we immediately try the next.
+    type AIProvider = { key: string; url: string; model: string; name: string };
+    const providers: AIProvider[] = [];
+    if (GOOGLE_AI_API_KEY) providers.push({
+      key:   GOOGLE_AI_API_KEY,
+      url:   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      model: "gemini-2.0-flash",
+      name:  "Gemini",
+    });
+    if (GROQ_API_KEY) providers.push({
+      key:   GROQ_API_KEY,
+      url:   "https://api.groq.com/openai/v1/chat/completions",
+      model: "llama-3.3-70b-versatile",
+      name:  "Groq",
+    });
+    if (providers.length === 0) {
+      console.error("No AI API key configured (GOOGLE_AI_API_KEY or GROQ_API_KEY)");
+      return new Response(
+        JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (isMultiCity) {
-      console.log('=== MULTI-CITY GENERATION PROMPT ===');
+      console.log('=== MULTI-CITY GENERATION ===');
       console.log('legContext:', legContext);
       console.log('cityLegs:', JSON.stringify(cityLegs.map(l => ({ city: l.cityName, days: l.daysToSpend }))));
       console.log('=== END PROMPT ===');
     }
 
-    const aiPayload = {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${AI_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        // 16 384 tokens allows ~8 full days in verbose format without truncation.
-        // Groq llama-3.3-70b supports up to 32 768; Gemini 2.5-flash up to 65 536.
-        max_tokens: 16384,
-        stream: true,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    };
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userPrompt },
+    ];
 
-    // Helper — single attempt
-    const callAI = () => fetch(AI_URL, aiPayload);
+    // ── Try each provider until one succeeds ────────────────────────────────
+    let aiResponse: Response | null = null;
 
-    let aiResponse = await callAI();
+    for (const provider of providers) {
+      console.log(`Calling ${provider.model} via ${provider.name} for ${destinationsList} (${numDays} days)`);
+      let attempt = await fetch(provider.url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${provider.key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model:      provider.model,
+          max_tokens: 16384,
+          stream:     true,
+          messages,
+        }),
+      });
 
-    // ── Retry on 429 / 503 — wait 5 s then try once more ───────────────────
-    if (aiResponse.status === 429 || aiResponse.status === 503) {
-      console.warn(`AI returned ${aiResponse.status} — retrying in 5 s…`);
-      await new Promise(r => setTimeout(r, 5000));
-      aiResponse = await callAI();
-    }
+      // One same-provider retry on transient errors before moving to next
+      if (!attempt.ok && (attempt.status === 429 || attempt.status === 503)) {
+        console.warn(`${provider.name} returned ${attempt.status} — retrying once in 3 s…`);
+        await new Promise(r => setTimeout(r, 3000));
+        attempt = await fetch(provider.url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${provider.key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model: provider.model, max_tokens: 16384, stream: true, messages }),
+        });
+      }
 
-    // ── Error handling ──────────────────────────────────────────────────────
-    if (!aiResponse.ok) {
-      const status = aiResponse.status;
-      let errorText = '';
-      try { errorText = await aiResponse.text(); } catch { /* ignore */ }
-      console.error(`Gemini API error ${status}:`, errorText);
+      if (attempt.ok) {
+        console.log(`${provider.name} succeeded`);
+        aiResponse = attempt;
+        break;
+      }
 
-      if (status === 401 || status === 403) {
+      // Auth failure — don't bother trying other providers
+      if (attempt.status === 401 || attempt.status === 403) {
+        let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
+        console.error(`${provider.name} auth error ${attempt.status}:`, errText);
         return new Response(
           JSON.stringify({ error: "The AI service key is invalid or missing. Please contact support." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (status === 429) {
-        return new Response(
-          JSON.stringify({ error: "The AI service is temporarily busy. Please wait 10 seconds and try again." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      if (status === 503 || status === 500) {
-        return new Response(
-          JSON.stringify({ error: "The AI service is overloaded right now. Please try again in a few seconds." }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      // Try to extract a meaningful message from the error body
-      let userMessage = "Failed to generate itinerary. Please try again.";
-      try {
-        const errJson = JSON.parse(errorText);
-        if (errJson?.error?.message) userMessage = errJson.error.message;
-      } catch { /* use default */ }
 
+      let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
+      console.warn(`${provider.name} failed (${attempt.status}) — trying next provider. Error: ${errText.slice(0, 300)}`);
+    }
+
+    // ── All providers exhausted ──────────────────────────────────────────────
+    if (!aiResponse) {
       return new Response(
-        JSON.stringify({ error: userMessage }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "The AI service is busy right now. Please wait 15 seconds and try again." }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

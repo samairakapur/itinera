@@ -31,15 +31,13 @@ serve(async (req) => {
       return json({ error: "message is required" });
     }
 
-    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
+    const GROQ_API_KEY      = Deno.env.get("GROQ_API_KEY");
 
     type Provider = { key: string; url: string; model: string; name: string };
     const providers: Provider[] = [];
-    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: "https://api.groq.com/openai/v1/chat/completions",                          model: "llama-3.3-70b-versatile",       name: "groq" });
-    if (LOVABLE_API_KEY)   providers.push({ key: LOVABLE_API_KEY,   url: "https://ai.gateway.lovable.dev/v1/chat/completions",                       model: "google/gemini-2.5-flash",       name: "lovable" });
-    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.0-flash",              name: "google" });
+    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.0-flash",        name: "gemini" });
+    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: "https://api.groq.com/openai/v1/chat/completions",                          model: "llama-3.3-70b-versatile", name: "groq"   });
 
     if (providers.length === 0) {
       return json({ error: "No AI providers configured. Please check your API keys." });
