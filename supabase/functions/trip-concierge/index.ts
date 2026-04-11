@@ -178,7 +178,6 @@ ${todaySchedule}`;
       byDay[item.day_number].acts.push(`  ${item.time_slot}: ${item.custom_title || item.item_type}${notes}`);
     }
     const itineraryContext = Object.entries(byDay)
-      .slice(0, 10) // cap at 10 days to keep prompt reasonable
       .map(([day, { acts, city }]) => `Day ${day} — ${city}:\n${acts.join('\n')}`)
       .join('\n\n');
 
@@ -228,8 +227,10 @@ FLIGHTS: ${flightContext}
 
 Be warm, concise, practical. Use bullet points. Reference specific days and cities.`;
 
-    // Truncate system prompt to 2800 chars to keep key instructions intact
-    const systemPrompt = systemPromptFull.slice(0, 2800);
+    // Truncate to 5000 chars. The 3-step change rules appear early (~1100 chars in)
+    // so they are always included. The extra room ensures multi-leg itinerary
+    // context (later days/cities) is visible to Aria.
+    const systemPrompt = systemPromptFull.slice(0, 5000);
 
     // ── Save user message (private: user_id = userId) ─────────────────────
     try {
@@ -278,7 +279,7 @@ Be warm, concise, practical. Use bullet points. Reference specific days and citi
             body: JSON.stringify({
               model,
               messages: aiMessages,
-              max_tokens: 700,
+              max_tokens: 1000,
               temperature: 0.7,
             }),
           });

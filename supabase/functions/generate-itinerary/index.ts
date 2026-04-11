@@ -225,6 +225,98 @@ BANGKOK CONTEXT:
 }
 
 // ---------------------------------------------------------------------------
+// Per-leg generation helpers
+// ---------------------------------------------------------------------------
+
+interface AIProvider {
+  key: string;
+  url: string;
+  model: string;
+  name: string;
+}
+
+/**
+ * Detect which day numbers (from startDay to endDay inclusive) are absent
+ * in the AI's output text.  The AI may write the global number ("## Day 4")
+ * or restart at 1 for the new leg ("## Day 1") — we accept both.
+ */
+function findMissingDays(text: string, startDay: number, endDay: number): number[] {
+  const missing: number[] = [];
+  for (let d = startDay; d <= endDay; d++) {
+    const relative = d - startDay + 1;
+    const foundGlobal   = new RegExp(`##\\s*Day\\s*${d}[\\s:—–-]`, 'i').test(text);
+    const foundRelative = relative !== d && new RegExp(`##\\s*Day\\s*${relative}[\\s:—–-]`, 'i').test(text);
+    if (!foundGlobal && !foundRelative) missing.push(d);
+  }
+  return missing;
+}
+
+/**
+ * Call AI without streaming and return the full text response.
+ * Tries each provider in order; skips on rate-limit, aborts on auth failure.
+ */
+async function callAINonStreaming(
+  providers: AIProvider[],
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number,
+): Promise<string> {
+  for (const provider of providers) {
+    console.log(`[callAI] Trying ${provider.name} (${provider.model}), maxTokens=${maxTokens}`);
+    let response: Response;
+    try {
+      response = await fetch(provider.url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${provider.key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: provider.model, max_tokens: maxTokens, stream: false, messages }),
+      });
+    } catch (err) {
+      console.warn(`[callAI] ${provider.name} network error:`, err);
+      continue;
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('AI_AUTH_FAILED');
+    }
+    if (!response.ok) {
+      let errText = ''; try { errText = await response.text(); } catch { /* ignore */ }
+      console.warn(`[callAI] ${provider.name} returned ${response.status}: ${errText.slice(0, 200)}`);
+      continue; // try next provider
+    }
+    const data = await response.json();
+    const text: string = data.choices?.[0]?.message?.content ?? '';
+    if (text.length > 50) {
+      console.log(`[callAI] ${provider.name} success, length=${text.length}`);
+      return text;
+    }
+    console.warn(`[callAI] ${provider.name} returned empty/short content`);
+  }
+  throw new Error('All AI providers failed');
+}
+
+/**
+ * Wrap plain text as a ReadableStream of SSE events in the same format
+ * that the Gemini/OpenAI streaming APIs use.  The frontend reads these events
+ * identically to a live stream, so no frontend change is required.
+ */
+function textToSSEStream(text: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const chunkSize = 40;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < text.length; i += chunkSize) {
+        const chunk = text.slice(i, i + chunkSize);
+        const payload = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+      }
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -547,10 +639,7 @@ Every item — including travel and flex blocks — must have a "Why:" line.
 ${startDate ? `Use the exact dates from the calendar context in every ## Day heading.` : ''}
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
-    // ── Build provider cascade ───────────────────────────────────────────────
-    // Priority: Gemini 2.0 Flash (primary) → Groq llama-3.3-70b (fallback).
-    // When a provider returns busy/rate-limited we immediately try the next.
-    type AIProvider = { key: string; url: string; model: string; name: string };
+    // ── Build provider list ──────────────────────────────────────────────────
     const providers: AIProvider[] = [];
     if (GOOGLE_AI_API_KEY) providers.push({
       key:   GOOGLE_AI_API_KEY,
@@ -565,45 +654,250 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
       name:  "Groq",
     });
     if (providers.length === 0) {
-      console.error("No AI API key configured (GOOGLE_AI_API_KEY or GROQ_API_KEY)");
+      console.error("No AI API key configured");
       return new Response(
         JSON.stringify({ error: "The AI service is not configured. Please contact support." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Response headers used for both streaming paths
+    const responseHeaders = {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Weather-Data": JSON.stringify(weatherByDay),
+      "X-Trip-Legs": JSON.stringify(cityLegs),
+    };
+
+    // ── MULTI-CITY: per-leg generation ───────────────────────────────────────
+    // Each city leg is generated in a separate, focused AI call (non-streaming).
+    // This prevents attention degradation across long outputs and allows per-leg
+    // validation + retry without regenerating the entire trip.
     if (isMultiCity) {
-      console.log('=== MULTI-CITY GENERATION ===');
-      console.log('legContext:', legContext);
-      console.log('cityLegs:', JSON.stringify(cityLegs.map(l => ({ city: l.cityName, days: l.daysToSpend }))));
-      console.log('=== END PROMPT ===');
+      console.log('[generate-itinerary] MULTI-CITY per-leg mode:', cityLegs.map(l => `${l.cityName}(${l.daysToSpend}d)`).join(' → '));
+
+      // Reusable format rules block shared by all leg prompts
+      const sharedFormatRules = `OUTPUT FORMAT — follow this structure EXACTLY for every day:
+
+## Day N — [Weekday, Month Day] (or "Day N" if no date given): [Thematic title]
+
+### Start Time: ${startTime}
+
+### Weather
+Condition: [e.g., Partly cloudy]
+Temperature: [e.g., 14°C – 22°C]
+Rain: [e.g., 15%]
+Note: [One practical sentence]
+
+### Morning
+- **[Breakfast: Name]** | restaurant | €€ | [Duration] | [Time]
+  [Description]
+  Why: [Reasoning]
+- **[Activity]** | attraction | €€ | [Duration] | [Time]
+  [Description]
+  Why: [Reasoning]
+- **🚶 Travel to [Next]** | transport | € | [N min] | [Time]
+  [Route]
+  Why: [Route reasoning]
+
+### Afternoon
+- **[Activity]** | attraction | €€ | [Duration] | [Time] [Description] Why: [Reasoning]
+- **[Lunch: Name]** | restaurant | €€ | [Duration] | [Time] [Description] Why: [Reasoning]
+- **🗺️ Wander & Explore: [Neighbourhood]** | flex | € | [Duration] | [Time] [Description] Why: [Reasoning]
+
+### Evening
+- **[Activity]** | attraction | €€ | [Duration] | [Time] [Description] Why: [Reasoning]
+- **[Dinner: Name]** | restaurant | €€€ | [Duration] | [Time]
+  [Description]
+  ⚠️ Book [X] weeks ahead · [How to book]
+  Why: [Reasoning]
+
+## Packing Tips
+- [Tip]
+
+## Transport Tips
+- [Tip]
+
+ACTIVITY TYPES: attraction | restaurant | transport | flex | prebooked
+FLEX BLOCKS: 1 per day (🗺️ Wander & Explore [Neighbourhood]). Always include Why: line.
+BOOKING WARNINGS: ⚠️ Book [X] weeks ahead after description, before Why:, for anything needing advance reservation.
+
+STRICT RULES:
+0. Every day: breakfast (morning) + lunch (afternoon) + dinner (evening) — real named venues only.
+1. Every sightseeing activity → followed by 🚶 Travel block with time and mode.
+2. Day titles thematic, not just "Day N" or the city name.
+3. Every activity (including transport, flex) must have a price tier (€/€€/€€€/€€€€).
+4. Every activity must have a Why: reasoning line.
+5. Group nearby attractions to minimise travel.
+6. PACE: ${pace} — max ${sightseeingCount} sightseeing/day, ${maxActivities} total, day ends by ${endTime}. Travel = 20–30 min each time. Remove last non-meal activity if dinner overshoots the cap.
+7. Use REAL places that exist — no invented names.
+8. Dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}.`;
+
+      const legTexts: string[] = [];
+      let currentGlobalDay = 1;
+
+      for (let legIdx = 0; legIdx < cityLegs.length; legIdx++) {
+        const leg = cityLegs[legIdx];
+        const legStartDay = currentGlobalDay;
+        const legEndDay = currentGlobalDay + leg.daysToSpend - 1;
+        currentGlobalDay = legEndDay + 1;
+
+        console.log(`[generate-itinerary] Leg ${legIdx + 1}/${cityLegs.length}: ${leg.cityName}, Days ${legStartDay}–${legEndDay}`);
+
+        // Weather for this leg's days only
+        const legWeather = weatherByDay.slice(legStartDay - 1, legEndDay);
+        const legWeatherCtx = legWeather.length > 0
+          ? legWeather.map((w, i) => `Day ${legStartDay + i}: ${w.condition}, ${w.tempMin}°C–${w.tempMax}°C, ${w.precipChance}% rain`).join('\n')
+          : 'Weather data unavailable — assume typical seasonal conditions.';
+
+        // Calendar for this leg's days only
+        const legCalendar = startDate
+          ? (() => {
+              const lines: string[] = [];
+              for (let i = 0; i < leg.daysToSpend; i++) {
+                const d = new Date(startDate + 'T12:00:00Z');
+                d.setUTCDate(d.getUTCDate() + (legStartDay - 1) + i);
+                const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+                const monthDay = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' });
+                lines.push(`Day ${legStartDay + i} = ${weekday}, ${monthDay}`);
+              }
+              return 'CALENDAR DATES:\n' + lines.join('\n');
+            })()
+          : '';
+
+        // Flight constraints scoped to this leg's days
+        const legFlightLines = flightDetails
+          .filter(f => f.dayNumber >= legStartDay && f.dayNumber <= legEndDay)
+          .map(f => {
+            if (f.type === 'arrival') {
+              const intl = f.isInternational ? 'Allow 45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in.' : 'Allow 20 min baggage + transit + 30 min check-in.';
+              return `⚠ ARRIVAL Day ${f.dayNumber}: flight lands at ${f.time}. ${intl}`;
+            } else {
+              const buf = f.isInternational ? '2h 30m' : '1h 30m';
+              return `⚠ DEPARTURE Day ${f.dayNumber}: flight at ${f.time}. Last activity must end ≥ ${buf} before departure.`;
+            }
+          });
+        const legFlightCtx = legFlightLines.length > 0
+          ? `\nFLIGHT CONSTRAINTS (must be respected):\n${legFlightLines.join('\n')}`
+          : '';
+
+        const legCityContext = getDeepCityContext(leg.cityName);
+
+        const legSystemPrompt = `You are an expert travel planner for ${leg.cityName}, ${leg.countryName}.${legCityContext ? `\n${legCityContext}` : ''}
+
+${legCalendar}
+${legFlightCtx}
+
+THIS IS LEG ${legIdx + 1} OF A ${cityLegs.length}-CITY TRIP.
+Generate ONLY Days ${legStartDay}–${legEndDay} (${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''}) for ${leg.cityName}.
+Day numbers are GLOBAL and SEQUENTIAL across the entire trip.
+Use ## Day ${legStartDay} through ## Day ${legEndDay} as headers.
+NEVER write ## Day 1 or restart numbering — day numbers must start at ${legStartDay}.
+${legIdx === 0 ? '' : `This leg immediately follows the previous city. ${leg.cityName} is the NEXT city in the trip.`}
+
+SELF-CHECK: After each day, verify last activity (dinner) finishes by ${endTime}. If not, remove last non-meal activity.
+
+${sharedFormatRules}`;
+
+        const dayList = Array.from({ length: leg.daysToSpend }, (_, i) => `Day ${legStartDay + i}`).join(', ');
+        const legUserPrompt = `Generate ${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''} for ${leg.cityName}, ${leg.countryName}.
+
+Days to generate: ${dayList}
+Travel style: ${travelStyle} | Budget: ${budgetLevel} | Pace: ${pace} | Start time: ${startTime}
+Dietary: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}${userProfileContext}
+${leg.cityDescription ? `\nAbout ${leg.cityName}: ${leg.cityDescription}` : ''}
+
+Weather:
+${legWeatherCtx}
+
+Generate EXACTLY these days with headers ## Day ${legStartDay}${leg.daysToSpend > 1 ? ` through ## Day ${legEndDay}` : ''}.
+Each day: Breakfast + attractions + 🚶 travel blocks + Lunch + 1 flex block + Dinner.
+Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly honour all flight constraints.' : ''}`;
+
+        // Call AI (non-streaming) for this leg
+        let legText: string;
+        try {
+          legText = await callAINonStreaming(providers, [
+            { role: 'system', content: legSystemPrompt },
+            { role: 'user',   content: legUserPrompt },
+          ], 8192);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg === 'AI_AUTH_FAILED') {
+            return new Response(
+              JSON.stringify({ error: 'AI service authentication failed. Please contact support.' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          console.error(`[generate-itinerary] Leg ${legIdx + 1} (${leg.cityName}) failed:`, errMsg);
+          return new Response(
+            JSON.stringify({ error: `Failed to generate ${leg.cityName} leg. Please try again.` }),
+            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Validate completeness — check all expected day headers are present
+        const missingDays = findMissingDays(legText, legStartDay, legEndDay);
+        if (missingDays.length > 0) {
+          console.warn(`[generate-itinerary] Leg ${legIdx + 1} missing days: ${missingDays.join(', ')} — retrying those days`);
+          const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
+          const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${leg.cityName}: ${retryDayList}.
+
+Use the same trip parameters (${travelStyle}, ${budgetLevel}, ${pace}) and the same output format.
+Start time: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}.
+Weather: ${legWeatherCtx}
+Each day: Breakfast + 2–3 attractions with 🚶 travel blocks + Lunch + 1 flex block + Dinner.
+Every item must have price tier and Why: line.
+Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
+
+          try {
+            const retryText = await callAINonStreaming(providers, [
+              { role: 'system', content: legSystemPrompt },
+              { role: 'user',   content: retryPrompt },
+            ], 6144);
+            legText = legText + '\n\n' + retryText;
+            console.log(`[generate-itinerary] Retry for leg ${legIdx + 1} done, appended ${retryText.length} chars`);
+          } catch {
+            console.warn(`[generate-itinerary] Retry for leg ${legIdx + 1} also failed — proceeding with partial output`);
+          }
+        } else {
+          console.log(`[generate-itinerary] Leg ${legIdx + 1} validated — all ${leg.daysToSpend} days present`);
+        }
+
+        legTexts.push(legText);
+      }
+
+      // Concatenate all legs and stream the full text to the client
+      const fullText = legTexts.join('\n\n');
+      console.log(`[generate-itinerary] All ${cityLegs.length} legs complete. Total chars: ${fullText.length}`);
+      return new Response(textToSSEStream(fullText), { headers: responseHeaders });
     }
+
+    // ── SINGLE-CITY: existing streaming approach ─────────────────────────────
+    // Single city / single leg trips use a direct streaming passthrough.
+    // Output is bounded (~3000-8000 tokens) so truncation risk is minimal.
+
+    console.log(`[generate-itinerary] Single-city mode: ${destinationsList} (${numDays} days)`);
 
     const messages = [
       { role: "system", content: systemPrompt },
       { role: "user",   content: userPrompt },
     ];
 
-    // ── Try each provider until one succeeds ────────────────────────────────
     let aiResponse: Response | null = null;
 
     for (const provider of providers) {
-      console.log(`Calling ${provider.model} via ${provider.name} for ${destinationsList} (${numDays} days)`);
+      console.log(`Calling ${provider.model} via ${provider.name}`);
       let attempt = await fetch(provider.url, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${provider.key}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model:      provider.model,
-          max_tokens: 16384,
-          stream:     true,
-          messages,
-        }),
+        body: JSON.stringify({ model: provider.model, max_tokens: 12288, stream: true, messages }),
       });
 
-      // One same-provider retry on transient errors before moving to next
       if (!attempt.ok && (attempt.status === 429 || attempt.status === 503)) {
         console.warn(`${provider.name} returned ${attempt.status} — retrying once in 3 s…`);
         await new Promise(r => setTimeout(r, 3000));
@@ -613,48 +907,30 @@ ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
             "Authorization": `Bearer ${provider.key}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ model: provider.model, max_tokens: 16384, stream: true, messages }),
+          body: JSON.stringify({ model: provider.model, max_tokens: 12288, stream: true, messages }),
         });
       }
 
       if (attempt.ok) {
-        console.log(`${provider.name} succeeded`);
         aiResponse = attempt;
         break;
       }
-
-      // Auth failure — don't bother trying other providers
       if (attempt.status === 401 || attempt.status === 403) {
-        let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
-        console.error(`${provider.name} auth error ${attempt.status}:`, errText);
         return new Response(
           JSON.stringify({ error: "The AI service key is invalid or missing. Please contact support." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
       let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
-      console.warn(`${provider.name} failed (${attempt.status}) — trying next provider. Error: ${errText.slice(0, 300)}`);
+      console.warn(`${provider.name} failed (${attempt.status}) — trying next. Error: ${errText.slice(0, 300)}`);
     }
 
-    // ── All providers exhausted ──────────────────────────────────────────────
     if (!aiResponse) {
       return new Response(
         JSON.stringify({ error: "The AI service is busy right now. Please wait 15 seconds and try again." }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // ── Stream back to client ───────────────────────────────────────────────
-    // Attach metadata in response headers so the frontend can read them
-    // without waiting for the stream to finish.
-    const responseHeaders = {
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "X-Weather-Data": JSON.stringify(weatherByDay),
-      "X-Trip-Legs": JSON.stringify(cityLegs),
-    };
 
     return new Response(aiResponse.body, { headers: responseHeaders });
 

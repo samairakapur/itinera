@@ -88,8 +88,30 @@ export const useRegenerateItinerary = () => {
       const accessToken = sessionData?.session?.access_token;
       if (!accessToken) throw new Error('Session expired. Please sign in again.');
 
-      // Build request body similar to NewTrip.tsx
-      const cityName = itinerary.cities?.name || 'Unknown';
+      // Fetch trip legs to support per-leg generation for multi-city trips
+      const { data: legsData } = await supabase
+        .from('trip_legs')
+        .select('leg_number, start_day, end_day, cities(id, name, country)')
+        .eq('itinerary_id', itineraryId)
+        .order('leg_number');
+
+      const legs = legsData ?? [];
+      const isMultiLeg = legs.length > 1;
+
+      // Build cities[] for multi-city (each leg = one city entry)
+      const citiesForRequest = isMultiLeg
+        ? legs.map(l => {
+            const legCity = (l as any).cities as { id: string; name: string; country: string } | null;
+            return {
+              cityId:      legCity?.id ?? '',
+              cityName:    legCity?.name ?? itinerary.cities?.name ?? 'Unknown',
+              countryName: legCity?.country ?? itinerary.cities?.country ?? '',
+              daysToSpend: (l.end_day - l.start_day) + 1,
+            };
+          })
+        : undefined;
+
+      const cityName    = itinerary.cities?.name    || 'Unknown';
       const countryName = itinerary.cities?.country || '';
 
       const response = await fetch(ITINERARY_URL, {
@@ -99,9 +121,11 @@ export const useRegenerateItinerary = () => {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
+          ...(citiesForRequest ? { cities: citiesForRequest } : { cityName, countryName }),
+          numDays: itinerary.num_days,
+          // cityName/countryName still needed as fallback fields by the edge function
           cityName,
           countryName,
-          numDays: itinerary.num_days,
           travelStyle: itinerary.travel_style || 'group',
           budgetLevel: itinerary.budget_level || 'moderate',
           pace: itinerary.pace || 'medium',

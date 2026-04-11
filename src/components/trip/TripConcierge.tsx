@@ -325,13 +325,29 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     console.log('[Aria] Applying change:', change);
     try {
       if (change.action === 'remove' || change.action === 'swap') {
-        const { error: delError } = await supabase
-          .from('itinerary_items')
-          .delete()
-          .eq('itinerary_id', tripId)
-          .eq('day_number', change.day)
-          .ilike('custom_title', `%${change.remove}%`);
-        if (delError) console.error('[Aria] Delete error:', delError);
+        if (!change.remove) {
+          console.warn('[Aria] remove action missing title — skipping delete');
+        } else {
+          // First find matching items by exact or fuzzy title — confirm at least one exists
+          const { data: candidates } = await supabase
+            .from('itinerary_items')
+            .select('id, custom_title')
+            .eq('itinerary_id', tripId)
+            .eq('day_number', change.day)
+            .ilike('custom_title', `%${change.remove}%`);
+
+          if (!candidates || candidates.length === 0) {
+            console.warn(`[Aria] No itinerary_items matched "${change.remove}" on Day ${change.day} — skipping delete to prevent data loss`);
+          } else {
+            // Delete only the FIRST match to avoid cascade deletes when multiple items share similar names
+            const { error: delError } = await supabase
+              .from('itinerary_items')
+              .delete()
+              .eq('id', candidates[0].id);
+            if (delError) console.error('[Aria] Delete error:', delError);
+            else console.log(`[Aria] Deleted item "${candidates[0].custom_title}" (id=${candidates[0].id})`);
+          }
+        }
       }
       if ((change.action === 'add' || change.action === 'swap') && change.add) {
         // Determine time slot from change.add.time

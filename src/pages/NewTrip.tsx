@@ -318,7 +318,23 @@ const NewTrip = () => {
         }
       }
 
-      toast.success('Itinerary generated!');
+      // Post-stream completeness check — detect silently truncated multi-city output
+      // The parser fills missing days with empty fallback DayData, so we have to
+      // explicitly look for days where no activities were parsed at all.
+      const finalParsed = parseItineraryText(rawItinerary + (buffer || ''), numDays, weatherData, preferences.dailyPace);
+      const emptyDays = finalParsed.days.filter(d =>
+        d.morning.length === 0 && d.afternoon.length === 0 && d.evening.length === 0
+      );
+      if (emptyDays.length > 0) {
+        const emptyDayNums = emptyDays.map(d => `Day ${d.dayNumber}`).join(', ');
+        console.warn('[NewTrip] Empty days detected after stream:', emptyDayNums);
+        toast.error(
+          `Some days are missing activities (${emptyDayNums}). Try generating again — this sometimes happens on complex multi-city trips.`,
+          { duration: 8000 }
+        );
+      } else {
+        toast.success('Itinerary generated!');
+      }
     } catch (error) {
       console.error('Error generating itinerary:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate itinerary');
