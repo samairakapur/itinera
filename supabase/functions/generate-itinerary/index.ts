@@ -252,45 +252,104 @@ function findMissingDays(text: string, startDay: number, endDay: number): number
 }
 
 /**
- * Call AI without streaming and return the full text response.
- * Tries each provider in order; skips on rate-limit, aborts on auth failure.
+ * Collect a streaming SSE response body into a plain text string.
+ * Parses OpenAI-compatible "data: {...}" SSE events and concatenates delta content.
  */
-async function callAINonStreaming(
+async function collectSSEStream(body: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let fullText = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === '[DONE]') return fullText;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) fullText += content;
+        } catch { /* ignore malformed SSE line */ }
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+  return fullText;
+}
+
+/**
+ * Call AI using streaming and collect the full response text.
+ *
+ * Why streaming instead of stream:false?
+ * Non-streaming requires the AI to generate ALL tokens before returning a
+ * single byte.  For 6000-token legs this takes 25-45 s with nothing on the
+ * wire — edge-function idle-connection timeouts kill the request.  Streaming
+ * sends the first byte in 1-2 s, keeps the connection alive, and Deno's fetch
+ * reads it incrementally.  Same generation time, zero timeout risk.
+ */
+async function callAIStreaming(
   providers: AIProvider[],
   messages: Array<{ role: string; content: string }>,
   maxTokens: number,
 ): Promise<string> {
   for (const provider of providers) {
     console.log(`[callAI] Trying ${provider.name} (${provider.model}), maxTokens=${maxTokens}`);
+
+    // 50-second abort per provider attempt — enough for a 3-day leg
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      console.warn(`[callAI] ${provider.name} aborted after 50 s`);
+      controller.abort();
+    }, 50000);
+
     let response: Response;
     try {
       response = await fetch(provider.url, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${provider.key}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: provider.model, max_tokens: maxTokens, stream: false, messages }),
+        body: JSON.stringify({ model: provider.model, max_tokens: maxTokens, stream: true, messages }),
       });
     } catch (err) {
-      console.warn(`[callAI] ${provider.name} network error:`, err);
+      clearTimeout(timer);
+      const name = (err as Error)?.name ?? '';
+      console.warn(`[callAI] ${provider.name} ${name === 'AbortError' ? 'timed out' : 'network error'}: ${err}`);
       continue;
     }
+
     if (response.status === 401 || response.status === 403) {
+      clearTimeout(timer);
       throw new Error('AI_AUTH_FAILED');
     }
     if (!response.ok) {
+      clearTimeout(timer);
       let errText = ''; try { errText = await response.text(); } catch { /* ignore */ }
-      console.warn(`[callAI] ${provider.name} returned ${response.status}: ${errText.slice(0, 200)}`);
-      continue; // try next provider
+      console.warn(`[callAI] ${provider.name} returned ${response.status}: ${errText.slice(0, 300)}`);
+      continue;
     }
-    const data = await response.json();
-    const text: string = data.choices?.[0]?.message?.content ?? '';
-    if (text.length > 50) {
-      console.log(`[callAI] ${provider.name} success, length=${text.length}`);
-      return text;
+
+    try {
+      const text = await collectSSEStream(response.body!);
+      clearTimeout(timer);
+      if (text.length > 50) {
+        console.log(`[callAI] ${provider.name} success, collected ${text.length} chars`);
+        return text;
+      }
+      console.warn(`[callAI] ${provider.name} collected empty/short text (${text.length} chars)`);
+    } catch (err) {
+      clearTimeout(timer);
+      console.warn(`[callAI] ${provider.name} stream collection error:`, err);
     }
-    console.warn(`[callAI] ${provider.name} returned empty/short content`);
   }
   throw new Error('All AI providers failed');
 }
@@ -815,13 +874,16 @@ Generate EXACTLY these days with headers ## Day ${legStartDay}${leg.daysToSpend 
 Each day: Breakfast + attractions + 🚶 travel blocks + Lunch + 1 flex block + Dinner.
 Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly honour all flight constraints.' : ''}`;
 
-        // Call AI (non-streaming) for this leg
+        // Call AI (streaming-collect) for this leg.
+        // 6144 max_tokens: a verbose 3-day leg uses ~2500-4000 tokens; 6144 leaves margin.
+        // Streaming is used (not stream:false) so first bytes arrive in 1-2 s, keeping
+        // the edge-function connection alive and avoiding idle-timeout kills.
         let legText: string;
         try {
-          legText = await callAINonStreaming(providers, [
+          legText = await callAIStreaming(providers, [
             { role: 'system', content: legSystemPrompt },
             { role: 'user',   content: legUserPrompt },
-          ], 8192);
+          ], 6144);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           if (errMsg === 'AI_AUTH_FAILED') {
@@ -852,7 +914,7 @@ Every item must have price tier and Why: line.
 Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
 
           try {
-            const retryText = await callAINonStreaming(providers, [
+            const retryText = await callAIStreaming(providers, [
               { role: 'system', content: legSystemPrompt },
               { role: 'user',   content: retryPrompt },
             ], 6144);

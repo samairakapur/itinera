@@ -248,7 +248,8 @@ const NewTrip = () => {
           throw new Error('The AI is still very busy. Please wait 30 seconds and try again.');
         }
         if (response.status === 503) {
-          throw new Error('The AI service is temporarily unavailable. Please try again in a moment.');
+          // Prefer the actual error body (e.g. "Failed to generate Paris leg") over the generic fallback
+          throw new Error(msg || 'The AI service is temporarily unavailable. Please try again in a moment.');
         }
         if (response.status === 401) {
           throw new Error('Unable to authenticate with the AI service. Please sign out and back in.');
