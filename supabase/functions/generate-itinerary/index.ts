@@ -954,28 +954,42 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
               let legText = await callAIStreaming(providers, [
                 { role: 'system', content: cfg.sysPrompt },
                 { role: 'user',   content: cfg.usrPrompt },
-              ], 5120);
+              ], 6144);
 
               // Validate — retry missing/empty days once
               const missingDays = findMissingDays(legText, cfg.startDay, cfg.endDay);
               if (missingDays.length > 0) {
                 console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} missing days: ${missingDays.join(', ')} — retrying`);
+
+                // Strip any partial day headers (header written, no activities) from the
+                // end of legText BEFORE appending retry content.  Without this, duplicate
+                // "## Day N" sections appear in the output and the parser picks the first
+                // (empty) one, leaving those days with 0 activities even after a good retry.
+                for (const missingDay of missingDays) {
+                  // Match the last occurrence of ## Day N at the very end of the text
+                  // (possibly with a short non-## tail like the thematic title line).
+                  legText = legText.replace(
+                    new RegExp(`\\n*##\\s*Day\\s*${missingDay}[^#]*$`, 'is'),
+                    ''
+                  );
+                }
+
                 const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
                 const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
 
 Use the same trip parameters (${travelStyle}, ${budgetLevel}, ${pace}) and the same output format.
 Start time: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}.
 Weather: ${cfg.weatherCtx}
-Each day: Breakfast + 2–3 attractions with 🚶 travel blocks + Lunch + 1 flex block + Dinner.
-Every item must have price tier and Why: line.
+Each day MUST have: ### Morning + ### Afternoon + ### Evening with Breakfast, Lunch, Dinner at real named venues.
+Every item must have price tier and Why: line. Exactly 1 flex (🗺️ Wander) block per day.
 Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
                 try {
                   const retryText = await callAIStreaming(providers, [
                     { role: 'system', content: cfg.sysPrompt },
                     { role: 'user',   content: retryPrompt },
-                  ], 5120);
-                  legText += '\n\n' + retryText;
-                  console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry done`);
+                  ], 6144);
+                  legText = legText.trimEnd() + '\n\n' + retryText;
+                  console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry done, appended ${retryText.length} chars`);
                 } catch {
                   console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry also failed — proceeding with partial`);
                 }

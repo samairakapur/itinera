@@ -275,6 +275,12 @@ const NewTrip = () => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      // Accumulate full text locally — DO NOT use the `rawItinerary` state variable
+      // here because React state is a stale closure snapshot (the value at render
+      // time, not the live accumulated value).  We use functional updates for
+      // setRawItinerary so the component renders correctly, but for the post-stream
+      // completeness check we need the real accumulated string.
+      let fullStreamText = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -310,6 +316,7 @@ const NewTrip = () => {
               content = parsed.delta.text;
             }
             if (content) {
+              fullStreamText += content;
               setRawItinerary(prev => prev + content);
             }
           } catch {
@@ -322,7 +329,8 @@ const NewTrip = () => {
       // Post-stream completeness check — detect silently truncated multi-city output
       // The parser fills missing days with empty fallback DayData, so we have to
       // explicitly look for days where no activities were parsed at all.
-      const finalParsed = parseItineraryText(rawItinerary + (buffer || ''), numDays, weatherData, preferences.dailyPace);
+      // Use fullStreamText (local accumulator) NOT rawItinerary (stale closure).
+      const finalParsed = parseItineraryText(fullStreamText + (buffer || ''), numDays, weatherData, preferences.dailyPace);
       const emptyDays = finalParsed.days.filter(d =>
         d.morning.length === 0 && d.afternoon.length === 0 && d.evening.length === 0
       );
