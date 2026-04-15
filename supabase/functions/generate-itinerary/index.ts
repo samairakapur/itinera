@@ -233,6 +233,8 @@ interface AIProvider {
   url: string;
   model: string;
   name: string;
+  /** Hard cap on output tokens for this model (provider-enforced limit). */
+  maxOutputTokens?: number;
 }
 
 /**
@@ -354,7 +356,7 @@ async function callAIStreaming(
           'Authorization': `Bearer ${provider.key}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: provider.model, max_tokens: maxTokens, stream: true, messages }),
+        body: JSON.stringify({ model: provider.model, max_tokens: Math.min(maxTokens, provider.maxOutputTokens ?? maxTokens), stream: true, messages }),
       });
     } catch (err) {
       clearTimeout(timer);
@@ -735,19 +737,24 @@ ${startDate ? `Use the exact dates from the calendar context in every ## Day hea
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
     // ── Build provider list ──────────────────────────────────────────────────
+    // 4-provider cascade: Gemini 2.0 Flash → Gemini 1.5 Flash → Groq 70B → Groq 8B.
+    // Multiple entries per API key mean that if 2.0-flash is rate-limited (429),
+    // 1.5-flash gets tried next before falling back to Groq.  The Groq 8B instant
+    // model has much higher TPM limits than the 70B, so it almost always succeeds
+    // even when the 70B quota is exhausted.
+    const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    const GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions";
     const providers: AIProvider[] = [];
-    if (GOOGLE_AI_API_KEY) providers.push({
-      key:   GOOGLE_AI_API_KEY,
-      url:   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      model: "gemini-2.0-flash",
-      name:  "Gemini",
-    });
-    if (GROQ_API_KEY) providers.push({
-      key:   GROQ_API_KEY,
-      url:   "https://api.groq.com/openai/v1/chat/completions",
-      model: "llama-3.3-70b-versatile",
-      name:  "Groq",
-    });
+    if (GOOGLE_AI_API_KEY) {
+      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-2.0-flash", name: "Gemini-2.0" });
+      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-1.5-flash", name: "Gemini-1.5" });
+    }
+    if (GROQ_API_KEY) {
+      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "llama-3.3-70b-versatile", name: "Groq-70B" });
+      // llama-3.1-8b-instant has very high TPM (131K) but lower per-request output cap (~8K).
+      // Used as last-resort fallback when higher-quality models are rate-limited.
+      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "llama-3.1-8b-instant", name: "Groq-8B", maxOutputTokens: 8000 });
+    }
     if (providers.length === 0) {
       console.error("No AI API key configured");
       return new Response(
@@ -829,24 +836,25 @@ STRICT RULES:
 7. Use REAL places that exist — no invented names.
 8. Dietary restrictions: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}.`;
 
-      const legTexts: string[] = [];
-      let currentGlobalDay = 1;
+      // ── Precompute day ranges for all legs ────────────────────────────────────
+      // Must happen synchronously so parallel closures share no mutable counter.
+      let _dayCounter = 1;
+      const legRanges = cityLegs.map((leg) => {
+        const startDay = _dayCounter;
+        const endDay   = _dayCounter + leg.daysToSpend - 1;
+        _dayCounter    = endDay + 1;
+        return { startDay, endDay };
+      });
 
-      for (let legIdx = 0; legIdx < cityLegs.length; legIdx++) {
-        const leg = cityLegs[legIdx];
-        const legStartDay = currentGlobalDay;
-        const legEndDay = currentGlobalDay + leg.daysToSpend - 1;
-        currentGlobalDay = legEndDay + 1;
+      // ── Build all per-leg prompt configs upfront ──────────────────────────────
+      const legConfigs = cityLegs.map((leg, legIdx) => {
+        const { startDay: legStartDay, endDay: legEndDay } = legRanges[legIdx];
 
-        console.log(`[generate-itinerary] Leg ${legIdx + 1}/${cityLegs.length}: ${leg.cityName}, Days ${legStartDay}–${legEndDay}`);
-
-        // Weather for this leg's days only
         const legWeather = weatherByDay.slice(legStartDay - 1, legEndDay);
         const legWeatherCtx = legWeather.length > 0
           ? legWeather.map((w, i) => `Day ${legStartDay + i}: ${w.condition}, ${w.tempMin}°C–${w.tempMax}°C, ${w.precipChance}% rain`).join('\n')
           : 'Weather data unavailable — assume typical seasonal conditions.';
 
-        // Calendar for this leg's days only
         const legCalendar = startDate
           ? (() => {
               const lines: string[] = [];
@@ -861,7 +869,6 @@ STRICT RULES:
             })()
           : '';
 
-        // Flight constraints scoped to this leg's days
         const legFlightLines = flightDetails
           .filter(f => f.dayNumber >= legStartDay && f.dayNumber <= legEndDay)
           .map(f => {
@@ -879,7 +886,7 @@ STRICT RULES:
 
         const legCityContext = getDeepCityContext(leg.cityName);
 
-        const legSystemPrompt = `You are an expert travel planner for ${leg.cityName}, ${leg.countryName}.${legCityContext ? `\n${legCityContext}` : ''}
+        const sysPrompt = `You are an expert travel planner for ${leg.cityName}, ${leg.countryName}.${legCityContext ? `\n${legCityContext}` : ''}
 
 ${legCalendar}
 ${legFlightCtx}
@@ -896,7 +903,7 @@ SELF-CHECK: After each day, verify last activity (dinner) finishes by ${endTime}
 ${sharedFormatRules}`;
 
         const dayList = Array.from({ length: leg.daysToSpend }, (_, i) => `Day ${legStartDay + i}`).join(', ');
-        const legUserPrompt = `Generate ${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''} for ${leg.cityName}, ${leg.countryName}.
+        const usrPrompt = `Generate ${leg.daysToSpend} day${leg.daysToSpend > 1 ? 's' : ''} for ${leg.cityName}, ${leg.countryName}.
 
 Days to generate: ${dayList}
 Travel style: ${travelStyle} | Budget: ${budgetLevel} | Pace: ${pace} | Start time: ${startTime}
@@ -910,66 +917,97 @@ Generate EXACTLY these days with headers ## Day ${legStartDay}${leg.daysToSpend 
 Each day: Breakfast + attractions + 🚶 travel blocks + Lunch + 1 flex block + Dinner.
 Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly honour all flight constraints.' : ''}`;
 
-        // Call AI (streaming-collect) for this leg.
-        // 6144 max_tokens: a verbose 3-day leg uses ~2500-4000 tokens; 6144 leaves margin.
-        // Streaming is used (not stream:false) so first bytes arrive in 1-2 s, keeping
-        // the edge-function connection alive and avoiding idle-timeout kills.
-        let legText: string;
-        try {
-          legText = await callAIStreaming(providers, [
-            { role: 'system', content: legSystemPrompt },
-            { role: 'user',   content: legUserPrompt },
-          ], 6144);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          if (errMsg === 'AI_AUTH_FAILED') {
-            return new Response(
-              JSON.stringify({ error: 'AI service authentication failed. Please contact support.' }),
-              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-          console.error(`[generate-itinerary] Leg ${legIdx + 1} (${leg.cityName}) failed:`, errMsg);
-          return new Response(
-            JSON.stringify({ error: `Failed to generate ${leg.cityName} leg. Please try again.` }),
-            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+        return { leg, legIdx, startDay: legStartDay, endDay: legEndDay, sysPrompt, usrPrompt, weatherCtx: legWeatherCtx };
+      });
 
-        // Validate completeness — check all expected day headers are present
-        const missingDays = findMissingDays(legText, legStartDay, legEndDay);
-        if (missingDays.length > 0) {
-          console.warn(`[generate-itinerary] Leg ${legIdx + 1} missing days: ${missingDays.join(', ')} — retrying those days`);
-          const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
-          const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${leg.cityName}: ${retryDayList}.
+      // ── Progressive streaming response ────────────────────────────────────────
+      // CRITICAL: Return HTTP 200 immediately via TransformStream — this prevents
+      // the Supabase edge-function wall-clock timeout (60 s free / 150 s Pro) from
+      // killing the request before any bytes reach the client.
+      //
+      // Generation runs in a background async IIFE.  Legs are started in PARALLEL
+      // with a 3-second stagger so they don't all hammer the same provider at the
+      // same millisecond (which would exhaust rate limits immediately).  Each leg
+      // resolves independently; the streaming loop pipes them to the client IN ORDER
+      // as soon as each one completes — so the user sees leg-1 content in ~15-25 s
+      // regardless of how long later legs take.
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const writer  = writable.getWriter();
+      const encoder = new TextEncoder();
+      const SSE_CHUNK = 40;
+
+      const pipeTextAsSSE = async (text: string) => {
+        for (let i = 0; i < text.length; i += SSE_CHUNK) {
+          const chunk   = text.slice(i, i + SSE_CHUNK);
+          const payload = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+          await writer.write(encoder.encode(`data: ${payload}\n\n`));
+        }
+      };
+
+      // Each promise resolves to the leg text (or '' on total failure — never rejects).
+      const legPromises: Promise<string>[] = legConfigs.map((cfg) =>
+        new Promise<string>(resolve => {
+          // Stagger starts so legs don't all hit Gemini simultaneously
+          setTimeout(async () => {
+            console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1}/${cityLegs.length}: ${cfg.leg.cityName} Days ${cfg.startDay}–${cfg.endDay} starting`);
+            try {
+              let legText = await callAIStreaming(providers, [
+                { role: 'system', content: cfg.sysPrompt },
+                { role: 'user',   content: cfg.usrPrompt },
+              ], 5120);
+
+              // Validate — retry missing/empty days once
+              const missingDays = findMissingDays(legText, cfg.startDay, cfg.endDay);
+              if (missingDays.length > 0) {
+                console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} missing days: ${missingDays.join(', ')} — retrying`);
+                const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
+                const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
 
 Use the same trip parameters (${travelStyle}, ${budgetLevel}, ${pace}) and the same output format.
 Start time: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}.
-Weather: ${legWeatherCtx}
+Weather: ${cfg.weatherCtx}
 Each day: Breakfast + 2–3 attractions with 🚶 travel blocks + Lunch + 1 flex block + Dinner.
 Every item must have price tier and Why: line.
 Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
+                try {
+                  const retryText = await callAIStreaming(providers, [
+                    { role: 'system', content: cfg.sysPrompt },
+                    { role: 'user',   content: retryPrompt },
+                  ], 5120);
+                  legText += '\n\n' + retryText;
+                  console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry done`);
+                } catch {
+                  console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry also failed — proceeding with partial`);
+                }
+              } else {
+                console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} validated — all ${cfg.leg.daysToSpend} days present`);
+              }
+              resolve(legText);
+            } catch (err) {
+              console.error(`[generate-itinerary] Leg ${cfg.legIdx + 1} (${cfg.leg.cityName}) failed:`, err);
+              resolve(''); // resolve empty rather than reject so other legs can still stream
+            }
+          }, cfg.legIdx * 3000); // 3 s stagger: leg 0 at 0 s, leg 1 at 3 s, leg 2 at 6 s
+        })
+      );
 
-          try {
-            const retryText = await callAIStreaming(providers, [
-              { role: 'system', content: legSystemPrompt },
-              { role: 'user',   content: retryPrompt },
-            ], 6144);
-            legText = legText + '\n\n' + retryText;
-            console.log(`[generate-itinerary] Retry for leg ${legIdx + 1} done, appended ${retryText.length} chars`);
-          } catch {
-            console.warn(`[generate-itinerary] Retry for leg ${legIdx + 1} also failed — proceeding with partial output`);
+      // Background loop: pipe each leg to client IN ORDER as its promise resolves
+      (async () => {
+        try {
+          for (let i = 0; i < legPromises.length; i++) {
+            const text = await legPromises[i];
+            if (text) await pipeTextAsSSE((i > 0 ? '\n\n' : '') + text);
           }
-        } else {
-          console.log(`[generate-itinerary] Leg ${legIdx + 1} validated — all ${leg.daysToSpend} days present`);
+          console.log(`[generate-itinerary] All ${cityLegs.length} legs streamed to client`);
+        } catch (err) {
+          console.error('[generate-itinerary] Streaming loop error:', err);
+        } finally {
+          await writer.write(encoder.encode('data: [DONE]\n\n'));
+          await writer.close().catch(() => {});
         }
+      })();
 
-        legTexts.push(legText);
-      }
-
-      // Concatenate all legs and stream the full text to the client
-      const fullText = legTexts.join('\n\n');
-      console.log(`[generate-itinerary] All ${cityLegs.length} legs complete. Total chars: ${fullText.length}`);
-      return new Response(textToSSEStream(fullText), { headers: responseHeaders });
+      return new Response(readable, { headers: responseHeaders });
     }
 
     // ── SINGLE-CITY: existing streaming approach ─────────────────────────────
@@ -985,28 +1023,46 @@ Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
 
     let aiResponse: Response | null = null;
 
+    // Single-city uses direct streaming passthrough (most efficient — first tokens
+    // reach the client in 1-2 s).  Each provider attempt gets a 45 s AbortSignal
+    // for the initial connection; once HTTP 200 headers arrive, the timer is cleared
+    // so the body stream is never cancelled mid-way.
+    const SINGLE_MAX = 10240; // safe for up to 7-day trips on Gemini/Groq-70B
+
     for (const provider of providers) {
-      console.log(`Calling ${provider.model} via ${provider.name}`);
-      let attempt = await fetch(provider.url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${provider.key}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ model: provider.model, max_tokens: 12288, stream: true, messages }),
-      });
+      const effectiveMax = Math.min(SINGLE_MAX, provider.maxOutputTokens ?? SINGLE_MAX);
+      console.log(`[single-city] Trying ${provider.name} (${provider.model}), max_tokens=${effectiveMax}`);
+
+      const attemptFetch = async (): Promise<Response | null> => {
+        const ctrl  = new AbortController();
+        const timer = setTimeout(() => {
+          console.warn(`[single-city] ${provider.name} connection timed out after 45 s`);
+          ctrl.abort();
+        }, 45000);
+        try {
+          const r = await fetch(provider.url, {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: { "Authorization": `Bearer ${provider.key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: provider.model, max_tokens: effectiveMax, stream: true, messages }),
+          });
+          clearTimeout(timer); // headers received — don't abort the body stream
+          return r;
+        } catch (err) {
+          clearTimeout(timer);
+          const name = (err as Error)?.name ?? '';
+          console.warn(`[single-city] ${provider.name} ${name === 'AbortError' ? 'timed out' : 'fetch error'}: ${err}`);
+          return null;
+        }
+      };
+
+      let attempt = await attemptFetch();
+      if (!attempt) continue; // timed out or network error — try next provider
 
       if (!attempt.ok && (attempt.status === 429 || attempt.status === 503)) {
-        console.warn(`${provider.name} returned ${attempt.status} — retrying once in 3 s…`);
-        await new Promise(r => setTimeout(r, 3000));
-        attempt = await fetch(provider.url, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${provider.key}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ model: provider.model, max_tokens: 12288, stream: true, messages }),
-        });
+        console.warn(`[single-city] ${provider.name} returned ${attempt.status} — retrying once in 5 s…`);
+        await new Promise(r => setTimeout(r, 5000));
+        attempt = await attemptFetch() ?? attempt; // keep original if retry also times out
       }
 
       if (attempt.ok) {
@@ -1020,7 +1076,7 @@ Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
         );
       }
       let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
-      console.warn(`${provider.name} failed (${attempt.status}) — trying next. Error: ${errText.slice(0, 300)}`);
+      console.warn(`[single-city] ${provider.name} failed (${attempt.status}) — trying next. Body: ${errText.slice(0, 300)}`);
     }
 
     if (!aiResponse) {
