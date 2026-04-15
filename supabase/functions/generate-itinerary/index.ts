@@ -236,17 +236,53 @@ interface AIProvider {
 }
 
 /**
- * Detect which day numbers (from startDay to endDay inclusive) are absent
- * in the AI's output text.  The AI may write the global number ("## Day 4")
- * or restart at 1 for the new leg ("## Day 1") — we accept both.
+ * Detect which day numbers (from startDay to endDay inclusive) are missing
+ * or incomplete in the AI output text.
+ *
+ * Two failure modes are caught:
+ *   1. Header absent  — "## Day N" pattern not found at all.
+ *   2. Header present but empty — "## Day N" exists but has no "### Morning"
+ *      sub-section, meaning the AI wrote the heading and then stopped.
+ *      This is just as broken as a missing day and must trigger a retry.
+ *
+ * The AI may write the global day number (e.g. "## Day 4") or restart at 1
+ * for a new leg (e.g. "## Day 1") — both patterns are accepted.
  */
 function findMissingDays(text: string, startDay: number, endDay: number): number[] {
   const missing: number[] = [];
   for (let d = startDay; d <= endDay; d++) {
     const relative = d - startDay + 1;
-    const foundGlobal   = new RegExp(`##\\s*Day\\s*${d}[\\s:—–-]`, 'i').test(text);
-    const foundRelative = relative !== d && new RegExp(`##\\s*Day\\s*${relative}[\\s:—–-]`, 'i').test(text);
-    if (!foundGlobal && !foundRelative) missing.push(d);
+
+    const globalHeader   = new RegExp(`##\\s*Day\\s*${d}[\\s:—–-]`, 'i');
+    const relativeHeader = relative !== d
+      ? new RegExp(`##\\s*Day\\s*${relative}[\\s:—–-]`, 'i')
+      : null;
+
+    const foundGlobal   = globalHeader.test(text);
+    const foundRelative = !!relativeHeader?.test(text);
+
+    if (!foundGlobal && !foundRelative) {
+      // Header completely absent
+      missing.push(d);
+      continue;
+    }
+
+    // Header exists — verify the section has actual activity content.
+    // A day with a heading but no "### Morning" sub-section means the AI
+    // stopped generating after the title (token budget exhaustion), leaving
+    // the day with 0 activities.  Treat it as missing so a retry is triggered.
+    const dayNum = foundGlobal ? d : relative;
+    const hasContent = new RegExp(
+      `##\\s*Day\\s*${dayNum}[\\s\\S]*?###\\s*Morning`, 'i'
+    ).test(text);
+
+    if (!hasContent) {
+      console.log(
+        `[findMissingDays] Day ${d} header exists but no Morning section — ` +
+        `AI stopped mid-generation, treating as missing`
+      );
+      missing.push(d);
+    }
   }
   return missing;
 }
