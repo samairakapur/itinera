@@ -920,17 +920,20 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
         return { leg, legIdx, startDay: legStartDay, endDay: legEndDay, sysPrompt, usrPrompt, weatherCtx: legWeatherCtx };
       });
 
-      // ── Progressive streaming response ────────────────────────────────────────
-      // CRITICAL: Return HTTP 200 immediately via TransformStream — this prevents
-      // the Supabase edge-function wall-clock timeout (60 s free / 150 s Pro) from
-      // killing the request before any bytes reach the client.
+      // ── Progressive streaming response — SEQUENTIAL leg generation ─────────────
+      // CRITICAL: Return HTTP 200 immediately via TransformStream so the edge-function
+      // connection stays alive regardless of total generation time.
       //
-      // Generation runs in a background async IIFE.  Legs are started in PARALLEL
-      // with a 3-second stagger so they don't all hammer the same provider at the
-      // same millisecond (which would exhaust rate limits immediately).  Each leg
-      // resolves independently; the streaming loop pipes them to the client IN ORDER
-      // as soon as each one completes — so the user sees leg-1 content in ~15-25 s
-      // regardless of how long later legs take.
+      // Legs are generated ONE AT A TIME (sequential, not parallel).  Parallel
+      // generation causes both legs to compete for the same AI provider quota
+      // simultaneously — when Gemini rate-limits the second concurrent request and
+      // Groq's 12K TPM is being consumed by the first, the second leg returns empty
+      // content.  Sequential generation means only one AI call is in-flight at any
+      // moment, so the full quota is available for each leg.
+      //
+      // Progressive streaming: each leg's text is piped to the client as soon as it
+      // completes, so the user sees city-1 content (~20-30 s in) while city-2 is
+      // still generating — no long blank wait.
       const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
       const writer  = writable.getWriter();
       const encoder = new TextEncoder();
@@ -944,38 +947,43 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
         }
       };
 
-      // Each promise resolves to the leg text (or '' on total failure — never rejects).
-      const legPromises: Promise<string>[] = legConfigs.map((cfg) =>
-        new Promise<string>(resolve => {
-          // Stagger starts so legs don't all hit Gemini simultaneously
-          setTimeout(async () => {
-            console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1}/${cityLegs.length}: ${cfg.leg.cityName} Days ${cfg.startDay}–${cfg.endDay} starting`);
+      // Background IIFE: generate and stream each leg sequentially.
+      // Each leg only starts after the previous one has completed and been piped.
+      (async () => {
+        try {
+          for (let i = 0; i < legConfigs.length; i++) {
+            const cfg = legConfigs[i];
+            console.log(`[generate-itinerary] Leg ${i + 1}/${legConfigs.length}: ${cfg.leg.cityName} Days ${cfg.startDay}–${cfg.endDay}`);
+
+            let legText = '';
             try {
-              let legText = await callAIStreaming(providers, [
+              legText = await callAIStreaming(providers, [
                 { role: 'system', content: cfg.sysPrompt },
                 { role: 'user',   content: cfg.usrPrompt },
               ], 6144);
+            } catch (err) {
+              console.error(`[generate-itinerary] Leg ${i + 1} (${cfg.leg.cityName}) AI call failed:`, err);
+              // Continue to next leg; this leg's days will be empty in the output.
+              continue;
+            }
 
-              // Validate — retry missing/empty days once
-              const missingDays = findMissingDays(legText, cfg.startDay, cfg.endDay);
-              if (missingDays.length > 0) {
-                console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} missing days: ${missingDays.join(', ')} — retrying`);
+            // Validate — check all expected day headers AND Morning sections are present.
+            const missingDays = findMissingDays(legText, cfg.startDay, cfg.endDay);
+            if (missingDays.length > 0) {
+              console.warn(`[generate-itinerary] Leg ${i + 1} missing days: ${missingDays.join(', ')} — retrying`);
 
-                // Strip any partial day headers (header written, no activities) from the
-                // end of legText BEFORE appending retry content.  Without this, duplicate
-                // "## Day N" sections appear in the output and the parser picks the first
-                // (empty) one, leaving those days with 0 activities even after a good retry.
-                for (const missingDay of missingDays) {
-                  // Match the last occurrence of ## Day N at the very end of the text
-                  // (possibly with a short non-## tail like the thematic title line).
-                  legText = legText.replace(
-                    new RegExp(`\\n*##\\s*Day\\s*${missingDay}[^#]*$`, 'is'),
-                    ''
-                  );
-                }
+              // Strip partial day headers from the end of legText before appending retry.
+              // Without this step, duplicate ## Day N sections appear and the parser
+              // picks the first (empty) one, leaving those days with 0 activities.
+              for (const missingDay of missingDays) {
+                legText = legText.replace(
+                  new RegExp(`\\n*##\\s*Day\\s*${missingDay}[^#]*$`, 'is'),
+                  ''
+                );
+              }
 
-                const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
-                const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
+              const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
+              const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
 
 Use the same trip parameters (${travelStyle}, ${budgetLevel}, ${pace}) and the same output format.
 Start time: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}.
@@ -983,38 +991,27 @@ Weather: ${cfg.weatherCtx}
 Each day MUST have: ### Morning + ### Afternoon + ### Evening with Breakfast, Lunch, Dinner at real named venues.
 Every item must have price tier and Why: line. Exactly 1 flex (🗺️ Wander) block per day.
 Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
-                try {
-                  const retryText = await callAIStreaming(providers, [
-                    { role: 'system', content: cfg.sysPrompt },
-                    { role: 'user',   content: retryPrompt },
-                  ], 6144);
-                  legText = legText.trimEnd() + '\n\n' + retryText;
-                  console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry done, appended ${retryText.length} chars`);
-                } catch {
-                  console.warn(`[generate-itinerary] Leg ${cfg.legIdx + 1} retry also failed — proceeding with partial`);
-                }
-              } else {
-                console.log(`[generate-itinerary] Leg ${cfg.legIdx + 1} validated — all ${cfg.leg.daysToSpend} days present`);
+              try {
+                const retryText = await callAIStreaming(providers, [
+                  { role: 'system', content: cfg.sysPrompt },
+                  { role: 'user',   content: retryPrompt },
+                ], 6144);
+                legText = legText.trimEnd() + '\n\n' + retryText;
+                console.log(`[generate-itinerary] Leg ${i + 1} retry done (+${retryText.length} chars)`);
+              } catch {
+                console.warn(`[generate-itinerary] Leg ${i + 1} retry also failed — proceeding with partial`);
               }
-              resolve(legText);
-            } catch (err) {
-              console.error(`[generate-itinerary] Leg ${cfg.legIdx + 1} (${cfg.leg.cityName}) failed:`, err);
-              resolve(''); // resolve empty rather than reject so other legs can still stream
+            } else {
+              console.log(`[generate-itinerary] Leg ${i + 1} validated — all ${cfg.leg.daysToSpend} days present`);
             }
-          }, cfg.legIdx * 3000); // 3 s stagger: leg 0 at 0 s, leg 1 at 3 s, leg 2 at 6 s
-        })
-      );
 
-      // Background loop: pipe each leg to client IN ORDER as its promise resolves
-      (async () => {
-        try {
-          for (let i = 0; i < legPromises.length; i++) {
-            const text = await legPromises[i];
-            if (text) await pipeTextAsSSE((i > 0 ? '\n\n' : '') + text);
+            // Pipe this leg's content to the client now (before generating the next leg).
+            if (legText) await pipeTextAsSSE((i > 0 ? '\n\n' : '') + legText);
           }
-          console.log(`[generate-itinerary] All ${cityLegs.length} legs streamed to client`);
+
+          console.log(`[generate-itinerary] All ${legConfigs.length} legs complete and streamed`);
         } catch (err) {
-          console.error('[generate-itinerary] Streaming loop error:', err);
+          console.error('[generate-itinerary] Fatal error in sequential leg generation:', err);
         } finally {
           await writer.write(encoder.encode('data: [DONE]\n\n'));
           await writer.close().catch(() => {});
