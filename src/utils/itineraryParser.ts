@@ -326,7 +326,11 @@ export const parseItineraryText = (
   // Parse each day
   for (let i = 0; i < numDays; i++) {
     const dayNumber = i + 1;
-    const daySection = daySections.find(d => d.dayNumber === dayNumber);
+    // Use the LAST occurrence of a given day number so that if the backend
+    // appended a retry (producing duplicate ## Day N headers), the complete
+    // retry section is used rather than the earlier partial/empty one.
+    const allMatchingSections = daySections.filter(d => d.dayNumber === dayNumber);
+    const daySection = allMatchingSections[allMatchingSections.length - 1];
 
     // Get weather for this day from API data
     const dayWeatherData = weatherData?.[i];

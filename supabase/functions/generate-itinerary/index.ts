@@ -975,12 +975,14 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
               // Strip partial day headers from the end of legText before appending retry.
               // Without this step, duplicate ## Day N sections appear and the parser
               // picks the first (empty) one, leaving those days with 0 activities.
-              for (const missingDay of missingDays) {
-                legText = legText.replace(
-                  new RegExp(`\\n*##\\s*Day\\s*${missingDay}[^#]*$`, 'is'),
-                  ''
-                );
-              }
+              // Remove everything from the first missing day's header to the end
+              // of legText.  Use [\s\S]*$ (not [^#]*$) so the strip works even
+              // when the partial day section contains ### sub-headers.
+              const firstMissing = missingDays[0];
+              legText = legText.replace(
+                new RegExp(`\\n*##\\s*Day\\s*${firstMissing}[\\s\\S]*$`, 'i'),
+                ''
+              );
 
               const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
               const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
