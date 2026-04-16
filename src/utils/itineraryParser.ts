@@ -358,8 +358,13 @@ export const parseItineraryText = (
 
     if (daySection) {
       const nextDayIndex = daySections.find(d => d.dayNumber === dayNumber + 1)?.startIndex;
-      const endOfDays = text.search(/##\s*(Packing|Transport|Tips)/i);
-      const endIndex = nextDayIndex ?? (endOfDays > 0 ? endOfDays : text.length);
+      // Find Packing/Transport Tips AFTER this day's start (not the first in the whole text).
+      // Multi-city output has Packing/Transport Tips at the end of EACH leg — using
+      // text.search() always returns the first occurrence (end of leg 1), which is
+      // BEFORE leg 2's days, so text.slice(day4Start, leg1PackingPos) = empty string.
+      const relativePackingIdx = text.slice(daySection.startIndex).search(/##\s*(Packing|Transport|Tips)/i);
+      const nextPackingIndex = relativePackingIdx > 0 ? daySection.startIndex + relativePackingIdx : -1;
+      const endIndex = nextDayIndex ?? (nextPackingIndex > 0 ? nextPackingIndex : text.length);
       const dayContent = text.slice(daySection.startIndex, endIndex);
 
       // Extract start time
