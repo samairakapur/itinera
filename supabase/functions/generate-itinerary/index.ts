@@ -920,20 +920,21 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
         return { leg, legIdx, startDay: legStartDay, endDay: legEndDay, sysPrompt, usrPrompt, weatherCtx: legWeatherCtx };
       });
 
-      // ── Progressive streaming response — SEQUENTIAL leg generation ─────────────
-      // CRITICAL: Return HTTP 200 immediately via TransformStream so the edge-function
-      // connection stays alive regardless of total generation time.
+      // ── Progressive streaming — ONE AI CALL PER DAY ─────────────────────────────
+      // Root cause of empty days in multi-city trips: generating a 3-day leg in one
+      // 6144-token call exhausts Groq's 12K TPM budget before the next leg even
+      // starts.  If the 3-day call also truncates (Day 3 partial), the retry burns
+      // more quota, and the second leg finds all 4 providers rate-limited → empty.
       //
-      // Legs are generated ONE AT A TIME (sequential, not parallel).  Parallel
-      // generation causes both legs to compete for the same AI provider quota
-      // simultaneously — when Gemini rate-limits the second concurrent request and
-      // Groq's 12K TPM is being consumed by the first, the second leg returns empty
-      // content.  Sequential generation means only one AI call is in-flight at any
-      // moment, so the full quota is available for each leg.
+      // Fix: ONE AI CALL PER DAY, max 2500 tokens each.  A 5-day trip = 5 calls ×
+      // 2500 tokens = 12,500 tokens spread across the full generation time (~3 min).
+      // Each call is small enough that Groq's TPM resets between legs, and Gemini
+      // never approaches its 15 RPM limit.  Truncation is impossible — 2500 tokens
+      // is enough for any single day at any pace.
       //
-      // Progressive streaming: each leg's text is piped to the client as soon as it
-      // completes, so the user sees city-1 content (~20-30 s in) while city-2 is
-      // still generating — no long blank wait.
+      // HTTP 200 is returned immediately so the edge-function connection stays alive.
+      // Each day is piped to the client as soon as it completes.
+      const totalDays = cityLegs.reduce((s, l) => s + l.daysToSpend, 0);
       const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
       const writer  = writable.getWriter();
       const encoder = new TextEncoder();
@@ -947,73 +948,112 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
         }
       };
 
-      // Background IIFE: generate and stream each leg sequentially.
-      // Each leg only starts after the previous one has completed and been piped.
       (async () => {
         try {
-          for (let i = 0; i < legConfigs.length; i++) {
-            const cfg = legConfigs[i];
-            console.log(`[generate-itinerary] Leg ${i + 1}/${legConfigs.length}: ${cfg.leg.cityName} Days ${cfg.startDay}–${cfg.endDay}`);
+          let firstDay = true;
 
-            let legText = '';
-            try {
-              legText = await callAIStreaming(providers, [
-                { role: 'system', content: cfg.sysPrompt },
-                { role: 'user',   content: cfg.usrPrompt },
-              ], 6144);
-            } catch (err) {
-              console.error(`[generate-itinerary] Leg ${i + 1} (${cfg.leg.cityName}) AI call failed:`, err);
-              // Continue to next leg; this leg's days will be empty in the output.
-              continue;
-            }
+          for (const cfg of legConfigs) {
+            const legCityCtx = getDeepCityContext(cfg.leg.cityName);
 
-            // Validate — check all expected day headers AND Morning sections are present.
-            const missingDays = findMissingDays(legText, cfg.startDay, cfg.endDay);
-            if (missingDays.length > 0) {
-              console.warn(`[generate-itinerary] Leg ${i + 1} missing days: ${missingDays.join(', ')} — retrying`);
+            for (let dayNum = cfg.startDay; dayNum <= cfg.endDay; dayNum++) {
+              console.log(`[generate-itinerary] Day ${dayNum}/${totalDays}: ${cfg.leg.cityName}`);
 
-              // Strip partial day headers from the end of legText before appending retry.
-              // Without this step, duplicate ## Day N sections appear and the parser
-              // picks the first (empty) one, leaving those days with 0 activities.
-              // Remove everything from the first missing day's header to the end
-              // of legText.  Use [\s\S]*$ (not [^#]*$) so the strip works even
-              // when the partial day section contains ### sub-headers.
-              const firstMissing = missingDays[0];
-              legText = legText.replace(
-                new RegExp(`\\n*##\\s*Day\\s*${firstMissing}[\\s\\S]*$`, 'i'),
-                ''
-              );
+              // Per-day weather
+              const dw = weatherByDay[dayNum - 1];
+              const dayWeatherCtx = dw
+                ? `${dw.condition}, ${dw.tempMin}°C–${dw.tempMax}°C, ${dw.precipChance}% rain`
+                : 'Weather unavailable — assume typical seasonal conditions';
 
-              const retryDayList = missingDays.map(d => `Day ${d}`).join(', ');
-              const retryPrompt = `The previous response was incomplete. Generate ONLY the following missing days for ${cfg.leg.cityName}: ${retryDayList}.
+              // Calendar date for this specific day
+              const dayCalendar = startDate ? (() => {
+                const d = new Date(startDate + 'T12:00:00Z');
+                d.setUTCDate(d.getUTCDate() + dayNum - 1);
+                const weekday  = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+                const monthDay = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' });
+                return `${weekday}, ${monthDay}`;
+              })() : '';
 
-Use the same trip parameters (${travelStyle}, ${budgetLevel}, ${pace}) and the same output format.
-Start time: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}.
-Weather: ${cfg.weatherCtx}
-Each day MUST have: ### Morning + ### Afternoon + ### Evening with Breakfast, Lunch, Dinner at real named venues.
-Every item must have price tier and Why: line. Exactly 1 flex (🗺️ Wander) block per day.
-Use ## Day N headers with EXACTLY these day numbers: ${retryDayList}.`;
+              // Flight constraints scoped to this exact day only
+              const dayFlightLines = flightDetails
+                .filter(f => f.dayNumber === dayNum)
+                .map(f => {
+                  if (f.type === 'arrival') {
+                    const intl = f.isInternational
+                      ? 'Allow 45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in.'
+                      : 'Allow 20 min baggage + transit + 30 min check-in.';
+                    return `⚠ ARRIVAL: flight lands at ${f.time}. ${intl} Do NOT schedule activities before these buffers are accounted for.`;
+                  } else {
+                    const buf = f.isInternational ? '2h 30m' : '1h 30m';
+                    return `⚠ DEPARTURE: flight at ${f.time}. Last activity must end ≥ ${buf} before departure.`;
+                  }
+                });
+              const dayFlightCtx = dayFlightLines.length > 0
+                ? `\nFLIGHT CONSTRAINT FOR TODAY:\n${dayFlightLines.join('\n')}`
+                : '';
+
+              const daySysPrompt = `You are an expert travel planner for ${cfg.leg.cityName}, ${cfg.leg.countryName}.${legCityCtx ? `\n${legCityCtx}` : ''}
+${dayCalendar ? `\nDate: ${dayCalendar}` : ''}${dayFlightCtx}
+
+Generate ONLY Day ${dayNum}. Output ONLY the ## Day ${dayNum} section. Do NOT output Packing Tips, Transport Tips, or any other sections.
+
+${sharedFormatRules}`;
+
+              const dayUsrPrompt = `Generate Day ${dayNum} for ${cfg.leg.cityName}, ${cfg.leg.countryName}.
+
+Use header: ## Day ${dayNum}${dayCalendar ? ` — ${dayCalendar}` : ''}: [Thematic title]
+Travel style: ${travelStyle} | Budget: ${budgetLevel} | Pace: ${pace} | Start: ${startTime} | End by: ${endTime}
+Dietary: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}${userProfileContext}
+Weather: ${dayWeatherCtx}
+
+Output ONLY the ## Day ${dayNum} section with ### Morning, ### Afternoon, ### Evening.
+Every activity needs a price tier (€/€€/€€€/€€€€) and a Why: line.
+Include exactly 1 flex block (🗺️ Wander & Explore).
+Do NOT output Packing Tips or Transport Tips.${dayFlightCtx ? '\nStrictly honour the flight constraint above.' : ''}`;
+
+              // Cap system prompt to keep input tokens low (~1000 tokens input, ~2500 output)
+              const daySysPromptCapped = daySysPrompt.slice(0, 3500);
+              const dayMessages = [
+                { role: 'system', content: daySysPromptCapped },
+                { role: 'user',   content: dayUsrPrompt },
+              ];
+
+              let dayText = '';
+
+              // First attempt — 2500 tokens is ample for any single day at any pace
               try {
-                const retryText = await callAIStreaming(providers, [
-                  { role: 'system', content: cfg.sysPrompt },
-                  { role: 'user',   content: retryPrompt },
-                ], 6144);
-                legText = legText.trimEnd() + '\n\n' + retryText;
-                console.log(`[generate-itinerary] Leg ${i + 1} retry done (+${retryText.length} chars)`);
-              } catch {
-                console.warn(`[generate-itinerary] Leg ${i + 1} retry also failed — proceeding with partial`);
+                dayText = await callAIStreaming(providers, dayMessages, 2500);
+              } catch (err) {
+                console.error(`[generate-itinerary] Day ${dayNum} (${cfg.leg.cityName}) failed:`, err);
               }
-            } else {
-              console.log(`[generate-itinerary] Leg ${i + 1} validated — all ${cfg.leg.daysToSpend} days present`);
-            }
 
-            // Pipe this leg's content to the client now (before generating the next leg).
-            if (legText) await pipeTextAsSSE((i > 0 ? '\n\n' : '') + legText);
+              // Validate: must contain ### Morning (proof activities were generated)
+              if (dayText && !/###\s*Morning/i.test(dayText)) {
+                console.warn(`[generate-itinerary] Day ${dayNum} has no Morning section — retrying`);
+                const retryUsrPrompt = `Generate Day ${dayNum} for ${cfg.leg.cityName}. Use header ## Day ${dayNum}: [Thematic title].
+Pace: ${pace}. Start: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}. Weather: ${dayWeatherCtx}.
+Include ### Morning (Breakfast + 1-2 attractions + travel), ### Afternoon (Lunch + flex block), ### Evening (Dinner).
+Every item: price tier + Why: line. Do NOT include Packing Tips.`;
+                try {
+                  dayText = await callAIStreaming(providers, [
+                    { role: 'system', content: daySysPromptCapped },
+                    { role: 'user',   content: retryUsrPrompt },
+                  ], 2500);
+                } catch {
+                  console.warn(`[generate-itinerary] Day ${dayNum} retry also failed — day will be empty`);
+                  dayText = '';
+                }
+              }
+
+              if (dayText) {
+                await pipeTextAsSSE((firstDay ? '' : '\n\n') + dayText);
+                firstDay = false;
+              }
+            }
           }
 
-          console.log(`[generate-itinerary] All ${legConfigs.length} legs complete and streamed`);
+          console.log(`[generate-itinerary] All ${totalDays} days streamed`);
         } catch (err) {
-          console.error('[generate-itinerary] Fatal error in sequential leg generation:', err);
+          console.error('[generate-itinerary] Fatal error in per-day generation:', err);
         } finally {
           await writer.write(encoder.encode('data: [DONE]\n\n'));
           await writer.close().catch(() => {});
