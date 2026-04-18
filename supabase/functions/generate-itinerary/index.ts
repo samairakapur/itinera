@@ -953,8 +953,6 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
           let firstDay = true;
 
           for (const cfg of legConfigs) {
-            const legCityCtx = getDeepCityContext(cfg.leg.cityName);
-
             for (let dayNum = cfg.startDay; dayNum <= cfg.endDay; dayNum++) {
               console.log(`[generate-itinerary] Day ${dayNum}/${totalDays}: ${cfg.leg.cityName}`);
 
@@ -962,7 +960,7 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
               const dw = weatherByDay[dayNum - 1];
               const dayWeatherCtx = dw
                 ? `${dw.condition}, ${dw.tempMin}°C–${dw.tempMax}°C, ${dw.precipChance}% rain`
-                : 'Weather unavailable — assume typical seasonal conditions';
+                : 'typical seasonal conditions';
 
               // Calendar date for this specific day
               const dayCalendar = startDate ? (() => {
@@ -981,65 +979,84 @@ Every item must have a price tier and Why: line.${legFlightCtx ? '\nStrictly hon
                     const intl = f.isInternational
                       ? 'Allow 45 min immigration + 30 min baggage + 30 min transit + 60 min hotel check-in.'
                       : 'Allow 20 min baggage + transit + 30 min check-in.';
-                    return `⚠ ARRIVAL: flight lands at ${f.time}. ${intl} Do NOT schedule activities before these buffers are accounted for.`;
+                    return `⚠ ARRIVAL: flight lands at ${f.time}. ${intl}`;
                   } else {
                     const buf = f.isInternational ? '2h 30m' : '1h 30m';
                     return `⚠ DEPARTURE: flight at ${f.time}. Last activity must end ≥ ${buf} before departure.`;
                   }
                 });
               const dayFlightCtx = dayFlightLines.length > 0
-                ? `\nFLIGHT CONSTRAINT FOR TODAY:\n${dayFlightLines.join('\n')}`
+                ? `\nFLIGHT CONSTRAINT: ${dayFlightLines.join(' ')}`
                 : '';
 
-              const daySysPrompt = `You are an expert travel planner for ${cfg.leg.cityName}, ${cfg.leg.countryName}.${legCityCtx ? `\n${legCityCtx}` : ''}
-${dayCalendar ? `\nDate: ${dayCalendar}` : ''}${dayFlightCtx}
+              // ── Compact system prompt — stays well under 500 tokens ──────────
+              // Deep city context is intentionally omitted here (it can be 1500+
+              // chars, eating into the output budget and pushing the format rules
+              // past the 3500-char slice).  City knowledge is baked into the
+              // model; the user prompt supplies the location clearly.
+              const daySysPrompt =
+`You are an expert travel planner. Generate EXACTLY ONE DAY of a trip itinerary.
+Output ONLY the ## Day ${dayNum} section. Do NOT output Packing Tips, Transport Tips, or any content beyond Day ${dayNum}.
 
-Generate ONLY Day ${dayNum}. Output ONLY the ## Day ${dayNum} section. Do NOT output Packing Tips, Transport Tips, or any other sections.
+REQUIRED STRUCTURE (use these exact headers):
+## Day ${dayNum}${dayCalendar ? ` — ${dayCalendar}` : ''}: [Thematic title]
+### Start Time: ${startTime}
+### Weather
+Condition: [value]  Temperature: [value]  Rain: [value]
+Note: [one sentence]
+### Morning
+- **[Breakfast: Name]** | restaurant | €€ | [duration] | [time]
+  [description]
+  Why: [reason]
+- **[Attraction]** | attraction | €€ | [duration] | [time]
+  [description]
+  Why: [reason]
+- **🚶 Travel to [next]** | transport | € | [N min] | [time]
+  [route]
+  Why: [reason]
+### Afternoon
+- **[Attraction]** | attraction | €€ | [duration] | [time]
+  [description]  Why: [reason]
+- **[Lunch: Name]** | restaurant | €€ | [duration] | [time]
+  [description]  Why: [reason]
+- **🗺️ Wander & Explore: [Neighbourhood]** | flex | € | [duration] | [time]
+  [description]  Why: [reason]
+### Evening
+- **[Attraction]** | attraction | €€ | [duration] | [time]
+  [description]  Why: [reason]
+- **[Dinner: Name]** | restaurant | €€€ | [duration] | [time]
+  [description]
+  Why: [reason]
 
-${sharedFormatRules}`;
+RULES: Real venues only. Every item needs price tier + Why. Pace=${pace} (max ${sightseeingCount} sightseeing, end by ${endTime}). Dietary: ${dietaryPreferences.join(', ') || 'none'}.${dayFlightCtx}`;
 
-              const dayUsrPrompt = `Generate Day ${dayNum} for ${cfg.leg.cityName}, ${cfg.leg.countryName}.
-
-Use header: ## Day ${dayNum}${dayCalendar ? ` — ${dayCalendar}` : ''}: [Thematic title]
-Travel style: ${travelStyle} | Budget: ${budgetLevel} | Pace: ${pace} | Start: ${startTime} | End by: ${endTime}
-Dietary: ${dietaryPreferences.length > 0 ? dietaryPreferences.join(', ') : 'none'}${userProfileContext}
+              const dayUsrPrompt =
+`Generate Day ${dayNum} in ${cfg.leg.cityName}, ${cfg.leg.countryName}.
+Travel style: ${travelStyle} | Budget: ${budgetLevel} | Pace: ${pace}${userProfileContext ? '\n' + userProfileContext.trim() : ''}
 Weather: ${dayWeatherCtx}
+${cfg.leg.cityDescription ? `About ${cfg.leg.cityName}: ${cfg.leg.cityDescription.slice(0, 300)}` : ''}`;
 
-Output ONLY the ## Day ${dayNum} section with ### Morning, ### Afternoon, ### Evening.
-Every activity needs a price tier (€/€€/€€€/€€€€) and a Why: line.
-Include exactly 1 flex block (🗺️ Wander & Explore).
-Do NOT output Packing Tips or Transport Tips.${dayFlightCtx ? '\nStrictly honour the flight constraint above.' : ''}`;
-
-              // Cap system prompt to keep input tokens low (~1000 tokens input, ~2500 output)
-              const daySysPromptCapped = daySysPrompt.slice(0, 3500);
               const dayMessages = [
-                { role: 'system', content: daySysPromptCapped },
+                { role: 'system', content: daySysPrompt },
                 { role: 'user',   content: dayUsrPrompt },
               ];
 
               let dayText = '';
 
-              // First attempt — 2500 tokens is ample for any single day at any pace
               try {
-                dayText = await callAIStreaming(providers, dayMessages, 2500);
+                // 3000 tokens: comfortably covers a full day at any pace
+                dayText = await callAIStreaming(providers, dayMessages, 3000);
               } catch (err) {
                 console.error(`[generate-itinerary] Day ${dayNum} (${cfg.leg.cityName}) failed:`, err);
               }
 
-              // Validate: must contain ### Morning (proof activities were generated)
-              if (dayText && !/###\s*Morning/i.test(dayText)) {
-                console.warn(`[generate-itinerary] Day ${dayNum} has no Morning section — retrying`);
-                const retryUsrPrompt = `Generate Day ${dayNum} for ${cfg.leg.cityName}. Use header ## Day ${dayNum}: [Thematic title].
-Pace: ${pace}. Start: ${startTime}. End by: ${endTime}. Dietary: ${dietaryPreferences.join(', ') || 'none'}. Weather: ${dayWeatherCtx}.
-Include ### Morning (Breakfast + 1-2 attractions + travel), ### Afternoon (Lunch + flex block), ### Evening (Dinner).
-Every item: price tier + Why: line. Do NOT include Packing Tips.`;
+              // Validate: must contain ### Morning
+              if (!dayText || !/###\s*Morning/i.test(dayText)) {
+                console.warn(`[generate-itinerary] Day ${dayNum} missing Morning section — retrying`);
                 try {
-                  dayText = await callAIStreaming(providers, [
-                    { role: 'system', content: daySysPromptCapped },
-                    { role: 'user',   content: retryUsrPrompt },
-                  ], 2500);
+                  dayText = await callAIStreaming(providers, dayMessages, 3000);
                 } catch {
-                  console.warn(`[generate-itinerary] Day ${dayNum} retry also failed — day will be empty`);
+                  console.warn(`[generate-itinerary] Day ${dayNum} retry also failed`);
                   dayText = '';
                 }
               }
@@ -1047,6 +1064,13 @@ Every item: price tier + Why: line. Do NOT include Packing Tips.`;
               if (dayText) {
                 await pipeTextAsSSE((firstDay ? '' : '\n\n') + dayText);
                 firstDay = false;
+              }
+
+              // Brief pause between calls so provider rate limits can recover.
+              // At 2s × 4 inter-call gaps for a 5-day trip = 8s added total —
+              // negligible vs the ~10-15s per day generation time.
+              if (dayNum < cfg.endDay || cfg !== legConfigs[legConfigs.length - 1]) {
+                await new Promise(r => setTimeout(r, 2000));
               }
             }
           }

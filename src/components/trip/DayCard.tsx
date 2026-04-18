@@ -19,6 +19,7 @@ import {
   Settings2,
   AlertTriangle,
   Vote,
+  Map,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -408,6 +409,32 @@ export const DayCard = ({
                     )}
                   </div>
                 </div>
+                {/* Open in Google Maps — builds a multi-stop directions URL */}
+                {(() => {
+                  const stops = [...day.morning, ...day.afternoon, ...day.evening]
+                    .filter(a => a.type !== 'transport' && a.type !== 'flex')
+                    .map(a => a.title.replace(/^(Breakfast:|Lunch:|Dinner:)\s*/i, '').trim());
+                  const city = day.cityName || cityName || '';
+                  if (stops.length < 2) return null;
+                  const encode = (s: string) => encodeURIComponent(`${s}, ${city}`);
+                  const origin = encode(stops[0]);
+                  const destination = encode(stops[stops.length - 1]);
+                  const waypoints = stops.slice(1, -1).map(encode).join('|');
+                  const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+                  return (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <Button variant="outline" size="sm" className="gap-1.5 h-8 px-3 text-xs">
+                        <Map className="w-3.5 h-3.5" />
+                        Open Route
+                      </Button>
+                    </a>
+                  );
+                })()}
                 {/* Edit Day Button - replaces DayStartTimeSelector */}
                 {itineraryId && onDayEditorSave && (
                   <Button
