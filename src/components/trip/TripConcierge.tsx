@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
+import type { TripState } from '@/lib/types';
 
 interface ParsedChange {
   action: 'add' | 'remove' | 'swap';
@@ -55,6 +56,12 @@ interface TripConciergeProps {
   dayIndex?: number;
   /** Programmatically open the panel (e.g. from toast action) */
   forceOpen?: boolean;
+  /**
+   * Structured trip snapshot built by the parent from already-loaded hook data.
+   * When provided, the Edge Function skips re-fetching trip/items/flights/legs
+   * from the database — Aria gets the exact same data the user is looking at.
+   */
+  tripState?: TripState;
 }
 
 // Aria avatar — gradient circle with sparkle
@@ -99,7 +106,7 @@ Try asking:
   created_at: new Date().toISOString(),
 };
 
-export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex, forceOpen }: TripConciergeProps) => {
+export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMessage, isReflection = false, dayIndex, forceOpen, tripState }: TripConciergeProps) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(initialOpen);
@@ -244,7 +251,14 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
     try {
       const authHeaders = await getAuthHeader();
       const { data, error } = await supabase.functions.invoke('trip-concierge', {
-        body: { tripId, message: userMessage, userId: user.id },
+        body: {
+          tripId,
+          message: userMessage,
+          userId: user.id,
+          // Pass the pre-built snapshot so the Edge Function doesn't need to
+          // re-fetch trip data from the database on every message.
+          tripState: tripState ?? null,
+        },
         headers: authHeaders,
       });
 

@@ -27,6 +27,7 @@ import { InviteCollaboratorDialog } from '@/components/trip/InviteCollaboratorDi
 import { CityDayBadge } from '@/components/trip/CityDayBadge';
 import { TransitionDayCard } from '@/components/trip/TransitionDayCard';
 import { Activity } from '@/components/trip/ActivityCard';
+import { buildTripState } from '@/lib/ariaContext';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
@@ -99,6 +100,14 @@ const TripDetail = () => {
     flights,
     dayPreferences
   );
+
+  // Build structured TripState snapshot for Aria from already-loaded hook data.
+  // Recomputed whenever the user's itinerary, days, flights, legs, or completion
+  // state changes — gives Aria the exact same picture the user is looking at.
+  const tripStateForAria = useMemo(() => {
+    if (!itinerary) return undefined;
+    return buildTripState(itinerary, days, flights, tripLegs, completedActivityIds);
+  }, [itinerary, days, flights, tripLegs, completedActivityIds]);
 
   // Convert itinerary items to DayData format with actual dates
   // Flight constraints override default start times
@@ -1188,6 +1197,7 @@ const TripDetail = () => {
           forceOpen={ariaForceOpen}
           initialMessage={ariaReflectionMessage}
           isReflection={!!ariaReflectionMessage}
+          tripState={tripStateForAria}
         />
       )}
 

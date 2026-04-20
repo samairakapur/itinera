@@ -1,15 +1,79 @@
 // trip-concierge — personalised AI concierge for a specific trip.
 //
 // POST /functions/v1/trip-concierge
-// Body: { tripId: string, message: string, userId: string }
+// Body: { tripId: string, message: string, userId: string, tripState?: TripState | null }
 //
-// Loads trip context and answers the user's question.
-// Saves conversation to trip_messages PRIVATE per user per trip.
+// Context strategy:
+//   • When tripState is provided (frontend snapshot), it is used directly —
+//     no need to re-fetch trip/items/flights/legs from the database.
+//   • When tripState is absent (e.g. TripDayMode, deep-link), falls back to
+//     loading all data from the database as before.
+//   • Message history (trip_messages) is always fetched fresh — it is private
+//     per user and not included in the frontend snapshot.
 //
 // IMPORTANT: All responses return HTTP 200 so supabase.functions.invoke
 // returns { data, error: null } and the frontend reads data.error.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// ── TripState wire-format types (mirrors src/lib/types.ts) ───────────────────
+interface TripActivity {
+  id: string;
+  title: string;
+  itemType: string;
+  timeSlot: 'morning' | 'afternoon' | 'evening';
+  scheduledTime?: string;
+  notes?: string;
+  isCompleted?: boolean;
+  dayNumber: number;
+}
+
+interface TripDay {
+  dayNumber: number;
+  date?: string;
+  startTime?: string;
+  city?: string;
+  activities: TripActivity[];
+}
+
+interface TripLegShape {
+  legNumber: number;
+  startDay: number;
+  endDay: number;
+  city: string;
+  country?: string;
+}
+
+interface FlightShape {
+  legNumber?: number;
+  airline?: string;
+  flightNumber?: string;
+  departureCity: string;
+  arrivalCity: string;
+  departureDate?: string;
+  departureTime?: string;
+  arrivalDate?: string;
+  arrivalTime?: string;
+}
+
+interface TripState {
+  id: string;
+  name?: string;
+  numDays: number;
+  startDate?: string;
+  endDate?: string;
+  city?: string;
+  country?: string;
+  budgetLevel?: string;
+  pace?: string;
+  travelStyle?: string;
+  dietaryPreferences?: string[];
+  groupSize?: number;
+  legs: TripLegShape[];
+  flights: FlightShape[];
+  days: TripDay[];
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,172 +90,78 @@ function json(body: unknown): Response {
 const sanitizeKey = (k: string | undefined) =>
   k?.replace(/[^\x20-\x7E]/g, '').trim() ?? '';
 
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+// ── System-prompt builder — works from TripState ─────────────────────────────
+function buildSystemPrompt(ts: TripState, today: Date): string {
+  const tripName = ts.name || (ts.city ? `Trip to ${ts.city}` : 'Trip');
 
-  try {
-    const body = await req.json() as {
-      tripId?: string;
-      message?: string;
-      userId?: string;
-    };
-
-    const { tripId, message, userId } = body;
-    console.log('[trip-concierge] request:', { tripId, userId, messageLen: message?.length });
-
-    if (!tripId || !message || !userId) {
-      return json({ error: 'tripId, message, and userId are required' });
-    }
-
-    // ── AI keys ───────────────────────────────────────────────────────────
-    const GROQ_API_KEY  = sanitizeKey(Deno.env.get('GROQ_API_KEY'))      || undefined;
-    const GOOGLE_AI_KEY = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
-
-    console.log('[trip-concierge] AI keys present:', {
-      groq: !!GROQ_API_KEY, google: !!GOOGLE_AI_KEY,
-    });
-
-    // ── Service-role client ───────────────────────────────────────────────
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    // ── Load trip data ────────────────────────────────────────────────────
-    const [tripRes, itemsRes, flightsRes, historyRes, legsRes] = await Promise.all([
-      supabase
-        .from('itineraries')
-        .select(`
-          id, name, num_days, start_date, end_date, group_size, trip_mode,
-          budget_level, pace, travel_style, dietary_preferences,
-          cities ( name, country )
-        `)
-        .eq('id', tripId)
-        .single(),
-
-      supabase
-        .from('itinerary_items')
-        .select('day_number, time_slot, item_type, custom_title, notes')
-        .eq('itinerary_id', tripId)
-        .order('day_number')
-        .order('order_index'),
-
-      supabase
-        .from('flight_details')
-        .select('leg_number, airline, flight_number, departure_city, arrival_city, departure_time, arrival_time')
-        .eq('itinerary_id', tripId),
-
-      // PRIVATE per user: only fetch messages where user_id = userId (both user and assistant messages)
-      supabase
-        .from('trip_messages')
-        .select('role, content')
-        .eq('trip_id', tripId)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(20),
-
-      // Multi-leg: load all legs with city info
-      supabase
-        .from('trip_legs')
-        .select('leg_number, start_day, end_day, cities ( name, country )')
-        .eq('itinerary_id', tripId)
-        .order('leg_number'),
-    ]);
-
-    const trip = tripRes.data;
-    if (!trip) {
-      console.error('[trip-concierge] Trip not found:', tripId, tripRes.error);
-      return json({ error: 'Trip not found. Make sure you are viewing an existing trip.' });
-    }
-
-    const items = itemsRes.data ?? [];
-    const flights = flightsRes.data ?? [];
-    const history = historyRes.data ?? [];
-    const legs = legsRes.data ?? [];
-
-    // ── Build system prompt (max 2000 chars) ──────────────────────────────
-    const cities = trip.cities as { name: string; country: string } | null;
-    const tripName = trip.name || (cities ? `Trip to ${cities.name}` : 'Trip');
-    const startDate = trip.start_date
-      ? new Date(trip.start_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-      : 'TBD';
-    const endDate = trip.end_date
-      ? new Date(trip.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const fmtDate = (iso: string | undefined) =>
+    iso
+      ? new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
       : 'TBD';
 
-    // ── Helper: find city name for a day number from legs ─────────────────
-    type LegRow = { leg_number: number; start_day: number; end_day: number; cities: { name: string; country: string } | null };
-    const typedLegs = legs as LegRow[];
+  const startLabel = fmtDate(ts.startDate);
+  const endLabel   = fmtDate(ts.endDate);
 
-    function cityForDay(dayNum: number): string {
-      if (typedLegs.length === 0) return cities?.name ?? 'the destination';
-      const leg = typedLegs.find(l => l.start_day <= dayNum && l.end_day >= dayNum);
-      return (leg?.cities as { name: string } | null)?.name ?? cities?.name ?? 'the destination';
-    }
+  // ── Trip-phase context ──────────────────────────────────────────────────
+  const tripStart = ts.startDate ? new Date(ts.startDate) : null;
+  const tripEnd   = ts.endDate   ? new Date(ts.endDate)   : null;
+  let tripPhaseContext = '';
 
-    // ── Calculate current trip phase context ──────────────────────────────
-    const today = new Date();
-    const tripStartDate = trip.start_date ? new Date(trip.start_date) : null;
-    const tripEndDate = trip.end_date ? new Date(trip.end_date) : null;
-    let tripPhaseContext = '';
+  if (tripStart && today < tripStart) {
+    tripPhaseContext = `The trip has NOT started yet. It begins on ${fmtDate(ts.startDate)}. The user is in the PLANNING phase.`;
+  } else if (tripEnd && today > tripEnd) {
+    tripPhaseContext = `The trip has ENDED (ended ${fmtDate(ts.endDate)}). The user may be reflecting.`;
+  } else if (tripStart) {
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const dayIdx = Math.floor((today.getTime() - tripStart.getTime()) / msPerDay);
+    const dayNum = dayIdx + 1;
 
-    if (tripStartDate && today < tripStartDate) {
-      tripPhaseContext = `The trip has NOT started yet. It begins on ${tripStartDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. The user is in the PLANNING phase.`;
-    } else if (tripEndDate && today > tripEndDate) {
-      tripPhaseContext = `The trip has ENDED (ended ${tripEndDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}). The user may be reflecting.`;
-    } else if (tripStartDate) {
-      const msPerDay = 1000 * 60 * 60 * 24;
-      const dayIndex = Math.floor((today.getTime() - tripStartDate.getTime()) / msPerDay);
-      const dayNum = dayIndex + 1; // 1-based
+    const currentCity = cityForDayFromState(dayNum, ts) ?? ts.city ?? 'your destination';
+    const todayDay = ts.days.find(d => d.dayNumber === dayNum);
+    const todaySchedule = todayDay && todayDay.activities.length > 0
+      ? todayDay.activities.map(a => `  - ${a.timeSlot}: ${a.title}${a.isCompleted ? ' ✓' : ''}`).join('\n')
+      : '  No activities planned for today.';
 
-      // Determine current city — use leg data for multi-city trips
-      const currentCity = cityForDay(dayNum);
-
-      // Find today's items
-      const todayItems = items.filter(item => item.day_number === dayNum);
-      const todaySchedule = todayItems.length > 0
-        ? todayItems.map(i => `  - ${i.time_slot}: ${i.custom_title || i.item_type}`).join('\n')
-        : '  No activities planned for today.';
-
-      tripPhaseContext = `TODAY IS DAY ${dayNum} OF THE TRIP (out of ${trip.num_days} days total).
+    tripPhaseContext = `TODAY IS DAY ${dayNum} OF THE TRIP (out of ${ts.numDays} days total).
 The user is currently in ${currentCity} on Day ${dayNum}.
 Today's planned activities:
 ${todaySchedule}`;
-    }
+  }
 
-    // ── Multi-leg overview ────────────────────────────────────────────────
-    let legOverview = '';
-    if (typedLegs.length > 1) {
-      legOverview = '\nTRIP LEGS:\n' + typedLegs.map(l => {
-        const legCity = (l.cities as { name: string } | null)?.name ?? '?';
-        return `  Leg ${l.leg_number}: ${legCity} (Days ${l.start_day}–${l.end_day})`;
-      }).join('\n');
-    }
+  // ── Multi-leg overview ──────────────────────────────────────────────────
+  let legOverview = '';
+  if (ts.legs.length > 1) {
+    legOverview = '\nTRIP LEGS:\n' + ts.legs.map(l =>
+      `  Leg ${l.legNumber}: ${l.city} (Days ${l.startDay}–${l.endDay})`
+    ).join('\n');
+  }
 
-    // ── Full itinerary with per-day city annotation ───────────────────────
-    const byDay: Record<number, { acts: string[]; city: string }> = {};
-    for (const item of items) {
-      if (!byDay[item.day_number]) {
-        byDay[item.day_number] = { acts: [], city: cityForDay(item.day_number) };
-      }
-      const notes = item.notes ? ` (${item.notes})` : '';
-      byDay[item.day_number].acts.push(`  ${item.time_slot}: ${item.custom_title || item.item_type}${notes}`);
-    }
-    const itineraryContext = Object.entries(byDay)
-      .map(([day, { acts, city }]) => `Day ${day} — ${city}:\n${acts.join('\n')}`)
-      .join('\n\n');
+  // ── Full itinerary grouped by day ───────────────────────────────────────
+  const itineraryLines: string[] = [];
+  for (const day of ts.days) {
+    const city = day.city ?? ts.city ?? 'unknown city';
+    if (day.activities.length === 0) continue;
+    const actLines = day.activities.map(a => {
+      const note = a.notes ? ` (${a.notes})` : '';
+      const done = a.isCompleted ? ' ✓' : '';
+      return `  ${a.timeSlot}: ${a.title}${note}${done}`;
+    });
+    itineraryLines.push(`Day ${day.dayNumber} — ${city}:\n${actLines.join('\n')}`);
+  }
+  const itineraryContext = itineraryLines.join('\n\n') || 'No activities yet.';
 
-    const flightContext = flights.length > 0
-      ? flights.slice(0, 3).map(f =>
-          `Leg ${f.leg_number ?? ''}: ${f.airline ?? ''} ${f.flight_number ?? ''} — ${f.departure_city} → ${f.arrival_city}, departs ${f.departure_time ?? 'TBD'}`
-        ).join('\n')
-      : 'No flights recorded';
+  // ── Flights ─────────────────────────────────────────────────────────────
+  const flightContext = ts.flights.length > 0
+    ? ts.flights.slice(0, 3).map(f =>
+        `Leg ${f.legNumber ?? ''}: ${f.airline ?? ''} ${f.flightNumber ?? ''} — ${f.departureCity} → ${f.arrivalCity}, departs ${f.departureTime ?? 'TBD'}`
+      ).join('\n')
+    : 'No flights recorded';
 
-    const dietaryPrefs = (trip.dietary_preferences as string[] | null)?.join(', ') || 'none';
+  const dietaryPrefs = ts.dietaryPreferences?.join(', ') || 'none';
 
-    const systemPromptFull = `You are Aria, a warm and knowledgeable travel concierge for the trip "${tripName}".
+  const full = `You are Aria, a warm and knowledgeable travel concierge for the trip "${tripName}".
 
-TRIP: ${startDate} – ${endDate}, ${trip.num_days} days. Budget: ${trip.budget_level ?? 'not specified'}. Pace: ${trip.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.${legOverview}
+TRIP: ${startLabel} – ${endLabel}, ${ts.numDays} days. Budget: ${ts.budgetLevel ?? 'not specified'}. Pace: ${ts.pace ?? 'not specified'}. Dietary: ${dietaryPrefs}.${legOverview}
 
 ADDING/CHANGING ACTIVITIES — MANDATORY 3-STEP FLOW:
 When the user asks you to add, swap, or change an activity, you MUST follow these steps in order. NEVER skip to step 3 without completing steps 1 and 2.
@@ -221,20 +191,203 @@ RULES:
 • Only include the CHANGE block when the user has confirmed they want the change${tripPhaseContext ? `\n\nCURRENT STATUS:\n${tripPhaseContext}` : ''}
 
 ITINERARY (showing up to 10 days):
-${itineraryContext || 'No activities yet.'}
+${itineraryContext}
 
 FLIGHTS: ${flightContext}
 
 Be warm, concise, practical. Use bullet points. Reference specific days and cities.`;
 
-    // Truncate to 5000 chars. The 3-step change rules appear early (~1100 chars in)
-    // so they are always included. The extra room ensures multi-leg itinerary
-    // context (later days/cities) is visible to Aria.
-    const systemPrompt = systemPromptFull.slice(0, 5000);
+  // 5000 char cap — 3-step rules appear early (~1100 chars in) so always included
+  return full.slice(0, 5000);
+}
 
-    // ── Save user message (private: user_id = userId) ─────────────────────
+/** Find the city name for a given day number from TripState leg data. */
+function cityForDayFromState(dayNum: number, ts: TripState): string | undefined {
+  if (ts.legs.length === 0) return ts.city ?? undefined;
+  const leg = ts.legs.find(l => l.startDay <= dayNum && l.endDay >= dayNum);
+  return leg?.city ?? ts.city ?? undefined;
+}
+
+// ── DB fallback: builds system prompt from raw Supabase rows ─────────────────
+// Used when no tripState is provided (e.g. TripDayMode, direct API callers).
+async function buildSystemPromptFromDB(
+  tripId: string,
+  supabase: ReturnType<typeof createClient>,
+  today: Date
+): Promise<{ prompt: string; error?: string }> {
+  const [tripRes, itemsRes, flightsRes, legsRes] = await Promise.all([
+    supabase
+      .from('itineraries')
+      .select(`
+        id, name, num_days, start_date, end_date, group_size, trip_mode,
+        budget_level, pace, travel_style, dietary_preferences,
+        cities ( name, country )
+      `)
+      .eq('id', tripId)
+      .single(),
+
+    supabase
+      .from('itinerary_items')
+      .select('day_number, time_slot, item_type, custom_title, notes')
+      .eq('itinerary_id', tripId)
+      .order('day_number')
+      .order('order_index'),
+
+    supabase
+      .from('flight_details')
+      .select('leg_number, airline, flight_number, departure_city, arrival_city, departure_time, arrival_time')
+      .eq('itinerary_id', tripId),
+
+    supabase
+      .from('trip_legs')
+      .select('leg_number, start_day, end_day, cities ( name, country )')
+      .eq('itinerary_id', tripId)
+      .order('leg_number'),
+  ]);
+
+  const trip = tripRes.data;
+  if (!trip) {
+    return { prompt: '', error: 'Trip not found. Make sure you are viewing an existing trip.' };
+  }
+
+  const items   = itemsRes.data   ?? [];
+  const flights = flightsRes.data ?? [];
+  const legs    = legsRes.data    ?? [];
+
+  // Convert DB rows → TripState-like shape so we can reuse buildSystemPrompt
+  type LegRow = { leg_number: number; start_day: number; end_day: number; cities: { name: string; country: string } | null };
+  const typedLegs = legs as LegRow[];
+  const cities = trip.cities as { name: string; country: string } | null;
+
+  function cityForDayDB(dayNum: number): string {
+    if (typedLegs.length === 0) return cities?.name ?? 'the destination';
+    const leg = typedLegs.find(l => l.start_day <= dayNum && l.end_day >= dayNum);
+    return (leg?.cities as { name: string } | null)?.name ?? cities?.name ?? 'the destination';
+  }
+
+  // Build days array from items
+  const dayMap: Record<number, TripDay> = {};
+  for (const item of items) {
+    if (!dayMap[item.day_number]) {
+      dayMap[item.day_number] = {
+        dayNumber: item.day_number,
+        city: cityForDayDB(item.day_number),
+        activities: [],
+      };
+    }
+    dayMap[item.day_number].activities.push({
+      id: '',
+      title: item.custom_title || item.item_type,
+      itemType: item.item_type,
+      timeSlot: item.time_slot as 'morning' | 'afternoon' | 'evening',
+      notes: item.notes ?? undefined,
+      dayNumber: item.day_number,
+    });
+  }
+
+  const ts: TripState = {
+    id: tripId,
+    name: trip.name ?? undefined,
+    numDays: trip.num_days,
+    startDate: trip.start_date ?? undefined,
+    endDate: trip.end_date ?? undefined,
+    city: cities?.name ?? undefined,
+    country: cities?.country ?? undefined,
+    budgetLevel: (trip as Record<string, unknown>).budget_level as string | undefined,
+    pace: (trip as Record<string, unknown>).pace as string | undefined,
+    travelStyle: (trip as Record<string, unknown>).travel_style as string | undefined,
+    dietaryPreferences: (trip.dietary_preferences as string[] | null) ?? undefined,
+    legs: typedLegs.map(l => ({
+      legNumber: l.leg_number,
+      startDay: l.start_day,
+      endDay: l.end_day,
+      city: (l.cities as { name: string } | null)?.name ?? '',
+      country: (l.cities as { country: string } | null)?.country ?? undefined,
+    })),
+    flights: flights.map(f => ({
+      legNumber: (f as Record<string, unknown>).leg_number as number | undefined,
+      airline: (f as Record<string, unknown>).airline as string | undefined,
+      flightNumber: (f as Record<string, unknown>).flight_number as string | undefined,
+      departureCity: f.departure_city,
+      arrivalCity: f.arrival_city,
+      departureTime: (f as Record<string, unknown>).departure_time as string | undefined,
+      arrivalTime: (f as Record<string, unknown>).arrival_time as string | undefined,
+    })),
+    days: Object.values(dayMap),
+  };
+
+  return { prompt: buildSystemPrompt(ts, today) };
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    const body = await req.json() as {
+      tripId?: string;
+      message?: string;
+      userId?: string;
+      tripState?: TripState | null;
+    };
+
+    const { tripId, message, userId, tripState } = body;
+    console.log('[trip-concierge] request:', {
+      tripId,
+      userId,
+      messageLen: message?.length,
+      hasTripState: !!tripState,
+    });
+
+    if (!tripId || !message || !userId) {
+      return json({ error: 'tripId, message, and userId are required' });
+    }
+
+    // ── AI keys ───────────────────────────────────────────────────────────
+    const GROQ_API_KEY  = sanitizeKey(Deno.env.get('GROQ_API_KEY'))      || undefined;
+    const GOOGLE_AI_KEY = sanitizeKey(Deno.env.get('GOOGLE_AI_API_KEY')) || undefined;
+
+    console.log('[trip-concierge] AI keys present:', {
+      groq: !!GROQ_API_KEY, google: !!GOOGLE_AI_KEY,
+    });
+
+    // ── Service-role client ───────────────────────────────────────────────
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    const today = new Date();
+
+    // ── Build system prompt ───────────────────────────────────────────────
+    let systemPrompt = '';
+
+    if (tripState && tripState.id === tripId) {
+      // Fast path: use the frontend snapshot directly
+      console.log('[trip-concierge] using frontend TripState snapshot');
+      systemPrompt = buildSystemPrompt(tripState, today);
+    } else {
+      // Slow path: load from DB (TripDayMode, deep-links, missing snapshot)
+      console.log('[trip-concierge] no valid tripState — loading from DB');
+      const { prompt, error: dbError } = await buildSystemPromptFromDB(tripId, supabaseClient, today);
+      if (dbError) return json({ error: dbError });
+      systemPrompt = prompt;
+    }
+
+    // ── Fetch conversation history (always from DB — private per user) ────
+    const historyRes = await supabaseClient
+      .from('trip_messages')
+      .select('role, content')
+      .eq('trip_id', tripId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(20);
+
+    const history = historyRes.data ?? [];
+
+    // ── Save user message ─────────────────────────────────────────────────
     try {
-      await supabase.from('trip_messages').insert({
+      await supabaseClient.from('trip_messages').insert({
         trip_id: tripId,
         user_id: userId,
         role: 'user',
@@ -251,18 +404,17 @@ Be warm, concise, practical. Use bullet points. Reference specific days and citi
       { role: 'user', content: message },
     ];
 
-    // ── Call AI — simplified request, NO tools ────────────────────────────
+    // ── Call AI — Groq first, Gemini fallback ─────────────────────────────
     let reply = '';
     let lastError = '';
 
-    // Provider 1: Groq — try current models in order (older ones are deprecated)
+    // Provider 1: Groq
     if (GROQ_API_KEY && !reply) {
-      // Models in order of preference: newest first, fallback to smaller ones
       const groqModels = [
-        'llama-3.3-70b-versatile',  // current Llama 3.3 (replacement for 3.1-70b)
-        'llama-3.1-8b-instant',      // fast small model, reliably available
-        'gemma2-9b-it',              // Google Gemma, stable on Groq
-        'llama3-70b-8192',           // older, may still work
+        'llama-3.3-70b-versatile',
+        'llama-3.1-8b-instant',
+        'gemma2-9b-it',
+        'llama3-70b-8192',
       ];
 
       for (const model of groqModels) {
@@ -298,20 +450,17 @@ Be warm, concise, practical. Use bullet points. Reference specific days and citi
             const errText = await groqRes.text().catch(() => '');
             console.warn(`[trip-concierge] groq (${model}) returned ${groqRes.status}:`, errText.slice(0, 200));
             lastError = `groq error ${groqRes.status}`;
-            // 404 = model not found (deprecated), try next model
-            // 400 = bad request, also try next model
-            // 429 = rate limit, stop trying Groq
             if (groqRes.status === 429) break;
           }
         } catch (fetchErr) {
           console.warn(`[trip-concierge] groq (${model}) fetch error:`, fetchErr);
           lastError = 'groq fetch failed';
-          break; // network error, no point trying more models
+          break;
         }
       }
     }
 
-    // Provider 2: Google AI (Gemini) — already key configured in Supabase secrets
+    // Provider 2: Google AI (Gemini)
     if (GOOGLE_AI_KEY && !reply) {
       console.log('[trip-concierge] trying Google AI (gemini-2.0-flash)');
       try {
@@ -355,11 +504,11 @@ Be warm, concise, practical. Use bullet points. Reference specific days and citi
       return json({ error: `Aria couldn't respond (${lastError}). Please try again in a moment.` });
     }
 
-    // ── Save assistant reply PRIVATE per user (user_id = userId) ─────────
+    // ── Save assistant reply (private per user) ───────────────────────────
     try {
-      await supabase.from('trip_messages').insert({
+      await supabaseClient.from('trip_messages').insert({
         trip_id: tripId,
-        user_id: userId,   // private: associate assistant messages with the user who triggered them
+        user_id: userId,
         role: 'assistant',
         content: reply,
       });
