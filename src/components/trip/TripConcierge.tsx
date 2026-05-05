@@ -17,6 +17,7 @@ interface ParsedChange {
     time?: string;
     category?: string;
     description?: string;
+    groupSize?: number; // captured by frontend UI, not by LLM
   };
 }
 
@@ -77,8 +78,8 @@ const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
   </div>
 );
 
-// Split Aria's reply on https:// URLs and render URLs as anchor tags that wrap
-// cleanly inside the chat bubble instead of overflowing.
+// Render Aria's message text, replacing raw URLs with short descriptive anchor labels
+// so the URL is never displayed as text and can never overflow on mobile.
 function renderMessageText(text: string): React.ReactNode {
   const urlPattern = /https?:\/\/[^\s]+/g;
   const nodes: React.ReactNode[] = [];
@@ -88,19 +89,29 @@ function renderMessageText(text: string): React.ReactNode {
     if (match.index > lastIndex) {
       nodes.push(text.slice(lastIndex, match.index));
     }
+    const url = match[0];
+    let label: string;
+    let extraClass = '';
+    if (url.includes('viator.com')) {
+      label = '🔍 Search availability on Viator →';
+    } else if (url.includes('chope.co')) {
+      label = '🍽️ Check availability on Chope →';
+    } else {
+      label = '🔗 Open link →';
+      extraClass = ' break-all';
+    }
     nodes.push(
       <a
         key={match.index}
-        href={match[0]}
+        href={url}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ display: 'block', wordBreak: 'break-all', overflowWrap: 'anywhere', maxWidth: '100%' }}
-        className="text-primary underline"
+        className={`flex items-center gap-1 mt-2 text-primary underline font-medium${extraClass}`}
       >
-        {match[0]}
+        {label}
       </a>
     );
-    lastIndex = match.index + match[0].length;
+    lastIndex = match.index + url.length;
   }
   if (lastIndex < text.length) {
     nodes.push(text.slice(lastIndex));
@@ -154,6 +165,8 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [appliedChangeIds, setAppliedChangeIds] = useState<Set<string>>(new Set());
   const [applyingChange, setApplyingChange] = useState(false);
+  // Holds a change that is waiting for the user to pick group size before inserting
+  const [pendingChange, setPendingChange] = useState<{ msgId: string; change: ParsedChange } | null>(null);
 
   // Reflection-mode state
   const reflectionUserMsgIdRef = useRef<string | null>(null); // id of user's reflection reply
@@ -403,6 +416,10 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           else if (h >= 18) time_slot = 'evening';
           else time_slot = 'afternoon';
         }
+        const noteParts = [
+          change.add.description,
+          change.add.groupSize != null ? `Group size: ${change.add.groupSize}` : null,
+        ].filter(Boolean);
         const insertPayload = {
           itinerary_id: tripId,
           day_number: change.day,
@@ -411,6 +428,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           item_type: change.add.category ?? 'attraction',
           custom_title: change.add.name,
           custom_description: change.add.description ?? '',
+          notes: noteParts.length > 0 ? noteParts.join('. ') : null,
           order_index: 999,
         };
         console.log('[Aria] Inserting activity:', {
@@ -703,25 +721,65 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
 
                       {/* Itinerary change confirmation — shown when Aria proposes a change */}
                       {msg.parsedChange && !appliedChangeIds.has(msg.id) && (
-                        <div className="flex gap-2 mt-2 pl-0.5">
-                          <Button
-                            size="sm"
-                            className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white gap-1"
-                            onClick={() => handleApplyChange(msg.id, msg.parsedChange!)}
-                            disabled={applyingChange}
-                          >
-                            {applyingChange && <Loader2 className="w-3 h-3 animate-spin" />}
-                            Apply to itinerary
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 text-xs"
-                            onClick={() => setAppliedChangeIds(prev => new Set([...prev, msg.id]))}
-                          >
-                            No thanks
-                          </Button>
-                        </div>
+                        pendingChange?.msgId === msg.id ? (
+                          // Group size picker — shown before inserting an add/swap activity
+                          <div className="mt-2 pl-0.5 space-y-2">
+                            <p className="text-xs text-muted-foreground">How many people will be joining?</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                              {([1, 2, 3, 4, 5, '6+'] as const).map((n) => (
+                                <button
+                                  key={n}
+                                  onClick={async () => {
+                                    const size = n === '6+' ? 6 : (n as number);
+                                    const { msgId, change } = pendingChange;
+                                    setPendingChange(null);
+                                    await handleApplyChange(msgId, {
+                                      ...change,
+                                      add: change.add ? { ...change.add, groupSize: size } : change.add,
+                                    });
+                                  }}
+                                  className="w-10 h-10 rounded-full border border-border/60 hover:bg-muted text-sm font-medium transition-colors"
+                                >
+                                  {n}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              className="text-xs text-muted-foreground underline"
+                              onClick={() => setPendingChange(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2 mt-2 pl-0.5">
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 border-0 text-white gap-1"
+                              onClick={() => {
+                                const c = msg.parsedChange!;
+                                if ((c.action === 'add' || c.action === 'swap') && c.add) {
+                                  // Intercept to collect group size first
+                                  setPendingChange({ msgId: msg.id, change: c });
+                                } else {
+                                  handleApplyChange(msg.id, c);
+                                }
+                              }}
+                              disabled={applyingChange}
+                            >
+                              {applyingChange && <Loader2 className="w-3 h-3 animate-spin" />}
+                              Apply to itinerary
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs"
+                              onClick={() => setAppliedChangeIds(prev => new Set([...prev, msg.id]))}
+                            >
+                              No thanks
+                            </Button>
+                          </div>
+                        )
                       )}
                     </div>
                   </div>
