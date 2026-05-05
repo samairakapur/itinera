@@ -7,6 +7,8 @@ import { FlightDetail } from './useFlightDetails';
 import { SavedItinerary, SavedItineraryItem } from './useItineraries';
 import { differenceInDays, format } from 'date-fns';
 import { enrichActivitiesWithViator } from '@/utils/viatorEnrichment';
+import type { Activity } from '@/lib/types';
+import { validateItinerary } from '@/lib/validator';
 
 const ITINERARY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-itinerary`;
 
@@ -255,6 +257,36 @@ export const useRegenerateItinerary = () => {
           throw new Error('Failed to save regenerated itinerary items');
         }
         insertedItems = savedItems ?? [];
+      }
+
+      // Validate day schedules — logging only, UI display is Week 3 work
+      if (insertedItems.length > 0) {
+        const itemsWithIds = items.map((item, i) => ({
+          ...item,
+          id: insertedItems[i]?.id ?? `temp-${i}`,
+        }));
+        const dayNumbers = [...new Set(itemsWithIds.map(it => it.day_number))];
+        for (const dn of dayNumbers) {
+          const dayActivities: Activity[] = itemsWithIds
+            .filter(it => it.day_number === dn)
+            .map(it => ({
+              id: it.id,
+              title: it.custom_title ?? '',
+              itemType: it.item_type,
+              timeSlot: it.time_slot as 'morning' | 'afternoon' | 'evening',
+              dayNumber: it.day_number,
+            }));
+          const result = validateItinerary(
+            dayActivities,
+            itinerary.pace ?? 'balanced',
+            null,
+            null,
+            dn,
+          );
+          if (result.errors.length > 0) {
+            console.warn('[Validator] Day', dn, result.errors);
+          }
+        }
       }
 
       // Fire-and-forget Viator enrichment
