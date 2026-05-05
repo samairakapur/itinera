@@ -661,7 +661,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
                         <p className="text-xs text-muted-foreground font-medium pl-0.5">Aria</p>
                       )}
                       <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-muted/60">
-                        <p className="whitespace-pre-wrap leading-relaxed">{renderMessageText(msg.content)}</p>
+                        <div className="whitespace-pre-wrap leading-relaxed">{renderMessageText(msg.content)}</div>
                       </div>
                       {/* Reflection adaptive action buttons */}
                       {isReflection && msg.id === reflectionAriaMsgId && !paceAdjusted && reflectionSentiment && (
