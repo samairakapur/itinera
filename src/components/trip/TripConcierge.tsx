@@ -77,6 +77,37 @@ const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
   </div>
 );
 
+// Split Aria's reply on https:// URLs and render URLs as anchor tags that wrap
+// cleanly inside the chat bubble instead of overflowing.
+function renderMessageText(text: string): React.ReactNode {
+  const urlPattern = /https?:\/\/[^\s]+/g;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = urlPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    nodes.push(
+      <a
+        key={match.index}
+        href={match[0]}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ display: 'block', wordBreak: 'break-all', overflowWrap: 'anywhere', maxWidth: '100%' }}
+        className="text-primary underline"
+      >
+        {match[0]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+  return nodes.length > 0 ? <>{nodes}</> : text;
+}
+
 function parseChangeBlock(text: string): { cleanText: string; change: ParsedChange | null } {
   // Use [\s\S]*? to match across newlines and handle emoji in activity names
   const match = text.match(/<!--CHANGE:([\s\S]*?)-->/);
@@ -376,6 +407,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           itinerary_id: tripId,
           day_number: change.day,
           time_slot,
+          scheduled_time: change.add.time ?? null,
           item_type: change.add.category ?? 'attraction',
           custom_title: change.add.name,
           custom_description: change.add.description ?? '',
@@ -394,6 +426,34 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           .single();
         console.log('[Aria] Insert result:', inserted, 'error:', insError);
         if (insError) throw insError;
+
+        // Mini-reflow: re-sort all activities for the affected day by slot + time so
+        // the new item lands in the right position, not always last.
+        const { data: dayItems } = await supabase
+          .from('itinerary_items')
+          .select('id, scheduled_time, time_slot, order_index')
+          .eq('itinerary_id', tripId)
+          .eq('day_number', change.day);
+
+        if (dayItems && dayItems.length > 0) {
+          const slotPriority: Record<string, number> = { morning: 0, afternoon: 1, evening: 2 };
+          const parseMinutes = (t: string | null): number => {
+            if (!t) return Infinity;
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + (isNaN(m) ? 0 : m);
+          };
+          const sorted = [...dayItems].sort((a, b) => {
+            const sa = slotPriority[a.time_slot] ?? 1;
+            const sb = slotPriority[b.time_slot] ?? 1;
+            if (sa !== sb) return sa - sb;
+            return parseMinutes(a.scheduled_time) - parseMinutes(b.scheduled_time);
+          });
+          await Promise.all(
+            sorted.map((item, idx) =>
+              supabase.from('itinerary_items').update({ order_index: idx }).eq('id', item.id)
+            )
+          );
+        }
       }
       setAppliedChangeIds(prev => new Set([...prev, msgId]));
       // Invalidate so TripDetail re-fetches itinerary_items
@@ -583,7 +643,7 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
                         <p className="text-xs text-muted-foreground font-medium pl-0.5">Aria</p>
                       )}
                       <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm bg-muted/60">
-                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        <p className="whitespace-pre-wrap leading-relaxed">{renderMessageText(msg.content)}</p>
                       </div>
                       {/* Reflection adaptive action buttons */}
                       {isReflection && msg.id === reflectionAriaMsgId && !paceAdjusted && reflectionSentiment && (
