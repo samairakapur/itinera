@@ -381,6 +381,11 @@ export const TripConcierge = ({ tripId, tripName, initialOpen = false, initialMe
           custom_description: change.add.description ?? '',
           order_index: 999,
         };
+        console.log('[Aria] Inserting activity:', {
+          title: change.add.name,
+          scheduledTime: change.add.time,
+          dayNumber: change.day,
+        });
         console.log('[Aria] Inserting itinerary_item:', insertPayload);
         const { data: inserted, error: insError } = await supabase
           .from('itinerary_items')
