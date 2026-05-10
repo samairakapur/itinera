@@ -557,7 +557,7 @@ const StepContent = ({ step, cities, preferences, updatePreference, toggleArrayP
                 className={cn(
                   "px-3 py-2 text-sm transition-all",
                   isDisabled
-                    ? "cursor-not-allowed opacity-40"
+                    ? "cursor-not-allowed opacity-50 pointer-events-none"
                     : "cursor-pointer",
                   isSelected
                     ? "bg-primary hover:bg-primary/90"

@@ -241,8 +241,8 @@ function SpotlightOverlay({ rect, padding = 10, vw, vh }: SpotlightOverlayProps)
 
   return (
     <svg
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 49, width: vw, height: vh }}
+      className="fixed inset-0 pointer-events-none w-screen h-screen"
+      style={{ zIndex: 49 }}
       viewBox={`0 0 ${vw} ${vh}`}
       preserveAspectRatio="none"
     >

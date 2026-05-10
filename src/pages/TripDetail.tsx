@@ -633,13 +633,30 @@ const TripDetail = () => {
     approvedProposals.forEach(proposal => {
       const d = proposal.proposal_data as Record<string, unknown>;
 
-      if (proposal.proposal_type === 'add_activity' && d.title && d.dayNumber) {
+      if (proposal.proposal_type === 'add_activity' && (d.activityName || d.title) && d.dayNumber) {
+        const actName = String(d.activityName || d.title);
         const dayNum = Number(d.dayNumber);
         const slot = (d.timeSlot as string) || 'morning';
+
+        // Insert directly into DB so the item persists independently of a full save
+        if (tripId) {
+          supabaseClient.from('itinerary_items').insert({
+            itinerary_id: tripId,
+            custom_title: actName,
+            day_number: dayNum,
+            time_slot: slot,
+            item_type: 'attraction',
+            flexibility: 'soft',
+            price_tier: '€€',
+          }).then(({ error }) => {
+            if (error) console.error('[Proposal] add_activity insert failed:', error);
+          });
+        }
+
         const newActivity: Activity = {
           id: `proposed-${proposal.id}`,
           type: 'custom',
-          title: String(d.title),
+          title: actName,
           description: d.reason ? String(d.reason) : undefined,
         };
         setDays(prev => {
@@ -652,13 +669,20 @@ const TripDetail = () => {
               evening: slot === 'evening' ? [...day.evening, newActivity] : day.evening,
             };
           });
-          saveChanges(updated, false);
           return updated;
         });
-        toast.success(`"${d.title}" was approved and added to Day ${dayNum}!`);
+        toast.success(`"${actName}" was approved and added to Day ${dayNum}!`);
 
       } else if (proposal.proposal_type === 'remove_activity' && d.activityId) {
         const actId = String(d.activityId);
+
+        // Delete directly from DB
+        if (tripId) {
+          supabaseClient.from('itinerary_items').delete().eq('id', actId).then(({ error }) => {
+            if (error) console.error('[Proposal] remove_activity delete failed:', error);
+          });
+        }
+
         setDays(prev => {
           const updated = prev.map(day => ({
             ...day,
@@ -666,10 +690,9 @@ const TripDetail = () => {
             afternoon: day.afternoon.filter(a => a.id !== actId),
             evening: day.evening.filter(a => a.id !== actId),
           }));
-          saveChanges(updated, false);
           return updated;
         });
-        toast.success(`Removal of "${d.title || 'activity'}" approved and applied.`);
+        toast.success(`Removal of "${d.activityName || d.title || 'activity'}" approved and applied.`);
 
       } else if (proposal.proposal_type === 'swap_activity' && d.activityId && d.newTitle) {
         const actId = String(d.activityId);
@@ -688,7 +711,7 @@ const TripDetail = () => {
           saveChanges(updated, false);
           return updated;
         });
-        toast.success(`Swapped "${d.title}" → "${d.newTitle}"`);
+        toast.success(`Swapped "${d.activityName || d.title}" → "${d.newTitle}"`);
 
       } else if (
         (proposal.proposal_type === 'change_time' || proposal.proposal_type === 'change_day_start')

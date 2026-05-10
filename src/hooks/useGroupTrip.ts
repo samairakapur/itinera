@@ -164,30 +164,36 @@ export const useGroupTrip = (tripId: string | undefined) => {
 
     // After casting, check whether the proposal should be resolved.
     // Resolution rules:
-    //   - Approved:  yes votes > 50% of total group members
-    //   - Rejected:  yes votes ≤ 50% of total group members AND all members have voted
-    //     (ties count as rejected)
+    //   - Approved:  yes votes > 50% of eligible voters
+    //   - Rejected:  all eligible voters have voted AND yes ≤ 50% (ties → rejected)
     const proposal = proposals.find(p => p.id === proposalId);
     if (!proposal || proposal.status !== 'open') return;
 
-    // Fetch the latest vote tallies from the server
-    const { data: latestVotes } = await supabase
-      .from('trip_votes')
-      .select('vote')
-      .eq('proposal_id', proposalId);
+    // Fetch the latest vote tallies AND eligible voter count in parallel
+    const [votesRes, collaboratorsRes, ownerRes] = await Promise.all([
+      supabase
+        .from('trip_votes')
+        .select('vote')
+        .eq('proposal_id', proposalId),
+      supabase
+        .from('trip_collaborators')
+        .select('id', { count: 'exact', head: true })
+        .eq('itinerary_id', tripId!)
+        .not('accepted_at', 'is', null),
+      supabase
+        .from('itineraries')
+        .select('user_id')
+        .eq('id', tripId!)
+        .single(),
+    ]);
 
-    const { data: tripData } = await supabase
-      .from('itineraries')
-      .select('group_size')
-      .eq('id', tripId!)
-      .single();
-
-    const allVotes = latestVotes ?? [];
+    const allVotes = votesRes.data ?? [];
     const yesCount = allVotes.filter(v => v.vote === 'yes').length;
     const totalVoted = allVotes.length;
 
-    // Default group size to number of collaborators + 1 (owner) if not set
-    const groupSize = (tripData?.group_size as number | null) ?? totalVoted;
+    // Eligible voters = accepted collaborators + 1 (owner)
+    const collaboratorCount = collaboratorsRes.count ?? 0;
+    const groupSize = collaboratorCount + 1;
     const threshold = groupSize / 2; // strictly more than 50%
 
     if (yesCount > threshold) {

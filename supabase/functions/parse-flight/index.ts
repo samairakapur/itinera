@@ -6,6 +6,37 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface ParsedFlightPartial {
+  flightNumber?: string;
+  departureAirport?: string;
+  arrivalAirport?: string;
+  departureDate?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  // legacy fields kept for downstream compat
+  airline?: string;
+  departure_city?: string;
+  arrival_city?: string;
+  arrival_date?: string;
+  notes?: string;
+}
+
+interface ParseFlightResponse {
+  success: boolean;
+  confidence: 'high' | 'low' | 'none';
+  partial: ParsedFlightPartial;
+  message?: string;
+  // legacy field so the existing complete-flight path still works
+  flights?: ParsedFlightPartial[];
+}
+
+function ok(body: ParseFlightResponse): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -38,18 +69,12 @@ serve(async (req) => {
     const { imageBase64 } = await req.json();
 
     if (!imageBase64) {
-      return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return ok({ success: false, confidence: 'none', partial: {}, message: "No image provided" });
     }
 
     const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
     if (!GOOGLE_AI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "AI service not configured. Please contact support." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return ok({ success: false, confidence: 'none', partial: {}, message: "AI service not configured" });
     }
 
     // Use Gemini via OpenAI-compatible endpoint (supports vision/image input)
@@ -111,12 +136,9 @@ Rules:
       const errText = await response.text();
       console.error("Gemini API error:", response.status, errText);
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit reached. Please try again in a moment." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return ok({ success: false, confidence: 'none', partial: {}, message: "Rate limit reached. Please try again in a moment." });
       }
-      throw new Error(`Gemini API error: ${response.status}`);
+      return ok({ success: false, confidence: 'none', partial: {}, message: `AI error: ${response.status}` });
     }
 
     const aiData = await response.json();
@@ -124,19 +146,61 @@ Rules:
 
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("Could not parse AI response");
+      console.warn("parse-flight: could not extract JSON from AI response");
+      return ok({ success: false, confidence: 'none', partial: {}, message: "Could not read flight details from this image" });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    let parsed: { flights?: ParsedFlightPartial[]; error?: string };
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      return ok({ success: false, confidence: 'none', partial: {}, message: "Could not read flight details from this image" });
+    }
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const flights = parsed.flights ?? [];
+
+    // Check for complete flights (the legacy path used by the existing success handler)
+    const completeFlights = flights.filter(
+      (f) => f.departure_city && f.arrival_city && f.departure_date && f.arrival_date
+    );
+
+    if (completeFlights.length > 0) {
+      // Full success — keep legacy `flights` field for the frontend complete-flight path
+      return ok({
+        success: true,
+        confidence: 'high',
+        partial: completeFlights[0],
+        flights: completeFlights,
+      });
+    }
+
+    // Partial parse — some fields extracted but not enough for auto-save
+    const firstFlight = flights[0] ?? {};
+    const hasAnyField = Object.values(firstFlight).some(v => v != null && v !== '');
+    if (hasAnyField) {
+      return ok({
+        success: false,
+        confidence: 'low',
+        partial: firstFlight,
+        flights,
+        message: "We couldn't read all details from your boarding pass — please check and complete the fields below.",
+      });
+    }
+
+    return ok({
+      success: false,
+      confidence: 'none',
+      partial: {},
+      message: "We couldn't read all details from your boarding pass — please check and complete the fields below.",
     });
+
   } catch (e) {
     console.error("parse-flight error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return ok({
+      success: false,
+      confidence: 'none',
+      partial: {},
+      message: "We couldn't read all details from your boarding pass — please check and complete the fields below.",
+    });
   }
 });

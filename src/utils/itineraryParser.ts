@@ -636,6 +636,30 @@ export const parseItineraryText = (
 
   result.days = enforceScheduleLimits(result.days, paceMapped, flightCapByDay);
 
+  // ── Deduplication safety net ────────────────────────────────────────────
+  // Walk all days in order; remove any activity whose normalised title was
+  // already seen on a prior day. This is a safety net — the prompt rule in
+  // generate-itinerary is the primary prevention.
+  {
+    const seenTitles = new Set<string>();
+    const dedup = (activities: Activity[], dayNumber: number): Activity[] =>
+      activities.filter(a => {
+        const key = a.title.toLowerCase().trim();
+        if (seenTitles.has(key)) {
+          console.warn('[Parser] Removed duplicate activity:', a.title, 'on day', dayNumber);
+          return false;
+        }
+        seenTitles.add(key);
+        return true;
+      });
+    result.days = result.days.map(day => ({
+      ...day,
+      morning: dedup(day.morning, day.dayNumber),
+      afternoon: dedup(day.afternoon, day.dayNumber),
+      evening: dedup(day.evening, day.dayNumber),
+    }));
+  }
+
   // Parse packing tips
   const packingMatch = text.match(/##\s*Packing\s*Tips?\s*\n([\s\S]*?)(?=##|$)/i);
   if (packingMatch) {

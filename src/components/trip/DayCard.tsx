@@ -20,11 +20,18 @@ import {
   AlertTriangle,
   Vote,
   Map,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ActivityCard, Activity } from './ActivityCard';
 import { DayCheckInDialog } from './DayCheckInDialog';
 import { TravelTimeCard } from './TravelTimeCard';
@@ -344,6 +351,20 @@ export const DayCard = ({
 
   const WeatherIcon = day.weather ? getWeatherIcon(day.weather.condition) : Sun;
 
+  // Compute Google Maps route URL (null when fewer than 2 stops)
+  const routeUrl = (() => {
+    const stops = [...day.morning, ...day.afternoon, ...day.evening]
+      .filter(a => a.type !== 'transport' && a.type !== 'flex')
+      .map(a => a.title.replace(/^(Breakfast:|Lunch:|Dinner:)\s*/i, '').trim());
+    const city = day.cityName || cityName || '';
+    if (stops.length < 2) return null;
+    const encode = (s: string) => encodeURIComponent(`${s}, ${city}`);
+    const origin = encode(stops[0]);
+    const destination = encode(stops[stops.length - 1]);
+    const waypoints = stops.slice(1, -1).map(encode).join('|');
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+  })();
+
   // Strip "Day N –" or "Day N — Weekday, Month Day:" prefix from AI-generated titles
   // then also drop any colon-separated date (e.g. "Tuesday, March 31: Exploring...") → "Exploring..."
   const rawTitle = day.title?.replace(/^day\s*\d+\s*[-–—:\s]*/i, '').trim() ?? '';
@@ -409,69 +430,82 @@ export const DayCard = ({
                     )}
                   </div>
                 </div>
-                {/* Open in Google Maps — builds a multi-stop directions URL */}
-                {(() => {
-                  const stops = [...day.morning, ...day.afternoon, ...day.evening]
-                    .filter(a => a.type !== 'transport' && a.type !== 'flex')
-                    .map(a => a.title.replace(/^(Breakfast:|Lunch:|Dinner:)\s*/i, '').trim());
-                  const city = day.cityName || cityName || '';
-                  if (stops.length < 2) return null;
-                  const encode = (s: string) => encodeURIComponent(`${s}, ${city}`);
-                  const origin = encode(stops[0]);
-                  const destination = encode(stops[stops.length - 1]);
-                  const waypoints = stops.slice(1, -1).map(encode).join('|');
-                  const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
-                  return (
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                    >
+                {/* Desktop actions — hidden on mobile */}
+                <div className="hidden md:flex items-center gap-1.5">
+                  {routeUrl && (
+                    <a href={routeUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
                       <Button variant="outline" size="sm" className="gap-1.5 h-8 px-3 text-xs">
                         <Map className="w-3.5 h-3.5" />
                         Open Route
                       </Button>
                     </a>
-                  );
-                })()}
-                {/* Edit Day Button - replaces DayStartTimeSelector */}
-                {itineraryId && onDayEditorSave && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 h-8 px-3 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDayEditorOpen(true);
-                    }}
-                  >
-                    <Settings2 className="w-3.5 h-3.5" />
-                    Edit Day
-                  </Button>
+                  )}
+                  {itineraryId && onDayEditorSave && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 h-8 px-3 text-xs"
+                      onClick={(e) => { e.stopPropagation(); setDayEditorOpen(true); }}
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      Edit Day
+                    </Button>
+                  )}
+                  {isDemocratic && onProposeTimeChange && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 h-8 px-3 text-xs text-primary border-primary/30 hover:bg-primary/5"
+                      onClick={(e) => { e.stopPropagation(); onProposeTimeChange(day.dayNumber); }}
+                    >
+                      <Vote className="w-3.5 h-3.5" />
+                      Propose
+                    </Button>
+                  )}
+                </div>
+
+                {/* Mobile actions — "···" dropdown, hidden on desktop */}
+                {(routeUrl || (itineraryId && onDayEditorSave) || (isDemocratic && onProposeTimeChange)) && (
+                  <div className="flex md:hidden" onClick={e => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {routeUrl && (
+                          <DropdownMenuItem asChild>
+                            <a href={routeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                              <Map className="w-3.5 h-3.5" />
+                              Open Route
+                            </a>
+                          </DropdownMenuItem>
+                        )}
+                        {itineraryId && onDayEditorSave && (
+                          <DropdownMenuItem onClick={() => setDayEditorOpen(true)} className="gap-2">
+                            <Settings2 className="w-3.5 h-3.5" />
+                            Edit Day
+                          </DropdownMenuItem>
+                        )}
+                        {isDemocratic && onProposeTimeChange && (
+                          <DropdownMenuItem onClick={() => onProposeTimeChange(day.dayNumber)} className="gap-2">
+                            <Vote className="w-3.5 h-3.5" />
+                            Propose Change
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
-                {/* Propose time change — visible in democratic mode */}
-                {isDemocratic && onProposeTimeChange && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 h-8 px-3 text-xs text-primary border-primary/30 hover:bg-primary/5"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onProposeTimeChange(day.dayNumber);
-                    }}
-                  >
-                    <Vote className="w-3.5 h-3.5" />
-                    Propose
-                  </Button>
-                )}
+
                 <div className="flex items-center gap-3">
                   {day.weather && (
-                    <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm">
                       <WeatherIcon className="w-4 h-4 text-primary" />
                       <div className="flex flex-col items-end">
                         <span className="font-medium">{day.weather.tempMin}° - {day.weather.tempMax}°C</span>
-                        <span className="text-xs text-muted-foreground">{day.weather.condition}</span>
+                        <span className="text-xs text-muted-foreground hidden sm:block">{day.weather.condition}</span>
                       </div>
                     </div>
                   )}

@@ -131,7 +131,7 @@ export const ProposeChangeDialog = ({
   const buildData = (): Record<string, unknown> => {
     switch (proposalType) {
       case 'add_activity':
-        return { title: title.trim(), timeSlot, dayNumber: selectedDay, reason: reason.trim() };
+        return { activityName: title.trim(), timeSlot, dayNumber: selectedDay, reason: reason.trim() };
       case 'remove_activity':
         return { title: activityTitle, activityId, dayNumber, reason: reason.trim() };
       case 'swap_activity':

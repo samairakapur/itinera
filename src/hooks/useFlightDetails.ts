@@ -265,11 +265,30 @@ export const useCreateFlightDetail = () => {
   });
 };
 
+interface UpdateFlightInput {
+  id: string;
+  itinerary_id: string; // required so onSuccess can always call syncTripLegs
+  airline?: string | null;
+  flight_number?: string | null;
+  departure_city?: string;
+  arrival_city?: string;
+  departure_date?: string;
+  departure_time?: string | null;
+  arrival_date?: string;
+  arrival_time?: string | null;
+  notes?: string | null;
+  departure_airport_iata?: string | null;
+  arrival_airport_iata?: string | null;
+  status?: string | null;
+  departure_terminal?: string | null;
+  arrival_terminal?: string | null;
+}
+
 export const useUpdateFlightDetail = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: Partial<FlightDetail> & { id: string }) => {
+    mutationFn: async ({ id, itinerary_id, ...updates }: UpdateFlightInput) => {
       const { data, error } = await supabase
         .from('flight_details')
         .update(updates)
@@ -278,7 +297,7 @@ export const useUpdateFlightDetail = () => {
         .single();
 
       if (error) throw error;
-      return data;
+      return { ...(data as FlightDetail), itinerary_id: (data as FlightDetail).itinerary_id ?? itinerary_id };
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['flight-details', data.itinerary_id] });

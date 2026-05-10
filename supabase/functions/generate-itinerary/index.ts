@@ -600,6 +600,13 @@ CRITICAL SCHEDULING RULE — ENFORCE BEFORE WRITING EACH ACTIVITY:
 SELF-CHECK: After each activity: (prev end) + (20–30 min travel) + (duration) = new total. If new total pushes dinner past ${endTime} → remove last non-meal activity instead. Priority when short on time: keep meals + flex; drop extra evening/afternoon attractions.
 VERIFY after each day: last activity (dinner) finishes by ${endTime}. If not, remove the last 1–2 non-meal activities. Fewer activities that fit > many that overflow.
 
+CRITICAL — NO REPETITION:
+Every attraction, restaurant, and activity must appear AT MOST ONCE across the entire itinerary. Before suggesting any venue for a new day, review all venues already used in previous days.
+
+You must never suggest the same venue, restaurant, or attraction twice regardless of which day or city it appears in.
+
+If you catch yourself suggesting a repeated place, immediately replace it with a different option in the same category and price tier.
+
 PRICE TIERS — MANDATORY:
 - Every activity MUST include a price tier in the pipe fields: € (free/very cheap), €€ (moderate, €5–25 entry or mid-range meal), €€€ (premium, €25–80), €€€€ (luxury/exclusive)
 - Use local currency symbol appropriate to the destination (€ for Europe, $ for Americas, etc.)

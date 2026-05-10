@@ -72,6 +72,7 @@ export const FlightDetailsDialog = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<FlightFormData>(emptyForm);
   const [isParsing, setIsParsing] = useState(false);
+  const [parseWarning, setParseWarning] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Flight search state
@@ -156,6 +157,7 @@ export const FlightDetailsDialog = ({
     if (editingId) {
       await updateFlight.mutateAsync({
         id: editingId,
+        itinerary_id: itineraryId,
         airline: formData.airline || null,
         flight_number: formData.flight_number || null,
         departure_city: formData.departure_city,
@@ -227,6 +229,7 @@ export const FlightDetailsDialog = ({
     setEditingId(null);
     setSearchFlightNumber('');
     setSearchDate('');
+    setParseWarning(null);
   };
 
   const handleUploadScreenshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,76 +260,68 @@ export const FlightDetailsDialog = ({
         body: { imageBase64: base64 },
       });
 
-      if (error) throw error;
-
-      const flightsList: typeof data.flights = data.flights ?? [];
-
-      // Case 1: Complete flights found → save them all automatically
-      const completeFlights = flightsList.filter(
-        (f: any) => f.departure_city && f.arrival_city && f.departure_date && f.arrival_date
-      );
-
-      if (completeFlights.length > 0) {
-        let addedCount = 0;
-        for (const flight of completeFlights) {
-          await createFlight.mutateAsync({
-            itinerary_id: itineraryId,
-            leg_number: flights.length + addedCount + 1,
-            airline: flight.airline || undefined,
-            flight_number: flight.flight_number || undefined,
-            departure_city: flight.departure_city,
-            arrival_city: flight.arrival_city,
-            departure_date: flight.departure_date,
-            departure_time: flight.departure_time || undefined,
-            arrival_date: flight.arrival_date,
-            arrival_time: flight.arrival_time || undefined,
-            notes: flight.notes || undefined,
-          });
-          addedCount++;
-        }
-        toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
-        return;
-      }
-
-      // Case 2: Partial data found (some fields extracted) → pre-fill form
-      const partialFlight = flightsList[0];
-      const hasPartialData = partialFlight && (
-        partialFlight.airline || partialFlight.flight_number ||
-        partialFlight.departure_city || partialFlight.arrival_city
-      );
-
-      if (hasPartialData) {
-        setFormData({
-          airline: partialFlight.airline || '',
-          flight_number: partialFlight.flight_number || '',
-          departure_city: partialFlight.departure_city || '',
-          arrival_city: partialFlight.arrival_city || '',
-          departure_date: partialFlight.departure_date || '',
-          departure_time: partialFlight.departure_time || '',
-          arrival_date: partialFlight.arrival_date || '',
-          arrival_time: partialFlight.arrival_time || '',
-          notes: partialFlight.notes || '',
-          departure_airport_iata: '',
-          arrival_airport_iata: '',
-          departure_terminal: '',
-          arrival_terminal: '',
-        });
+      // Edge function errors are surfaced through data.success === false now,
+      // but handle hard invoke errors gracefully too
+      if (error) {
+        console.warn('parse-flight invoke error (falling back to manual):', error);
+        setParseWarning("We couldn't read all details from your boarding pass — please check and complete the fields below.");
         setIsAdding(true);
-        toast.info('We found some details from your image — please complete the missing fields below.', { duration: 6000 });
         return;
       }
 
-      // Case 3: Nothing extracted → show error
-      toast.error("Couldn't read your flight details from this image. Please enter them manually below.", {
-        duration: 6000,
-        action: { label: 'Add manually', onClick: () => setIsAdding(true) },
+      // Full success path — all required fields extracted
+      if (data?.success === true && data.flights?.length > 0) {
+        const completeFlights = data.flights.filter(
+          (f: any) => f.departure_city && f.arrival_city && f.departure_date && f.arrival_date
+        );
+        if (completeFlights.length > 0) {
+          let addedCount = 0;
+          for (const flight of completeFlights) {
+            await createFlight.mutateAsync({
+              itinerary_id: itineraryId,
+              leg_number: flights.length + addedCount + 1,
+              airline: flight.airline || undefined,
+              flight_number: flight.flight_number || undefined,
+              departure_city: flight.departure_city,
+              arrival_city: flight.arrival_city,
+              departure_date: flight.departure_date,
+              departure_time: flight.departure_time || undefined,
+              arrival_date: flight.arrival_date,
+              arrival_time: flight.arrival_time || undefined,
+              notes: flight.notes || undefined,
+            });
+            addedCount++;
+          }
+          toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+          return;
+        }
+      }
+
+      // Partial or failed parse — open manual entry with pre-filled fields
+      const partial = data?.partial ?? {};
+      setFormData({
+        airline: partial.airline || '',
+        flight_number: partial.flightNumber || partial.flight_number || '',
+        departure_city: partial.departure_city || '',
+        arrival_city: partial.arrival_city || '',
+        departure_date: partial.departureDate || partial.departure_date || '',
+        departure_time: partial.departureTime || partial.departure_time || '',
+        arrival_date: partial.arrival_date || '',
+        arrival_time: partial.arrivalTime || partial.arrival_time || '',
+        notes: partial.notes || '',
+        departure_airport_iata: partial.departureAirport || '',
+        arrival_airport_iata: partial.arrivalAirport || '',
+        departure_terminal: '',
+        arrival_terminal: '',
       });
+      setParseWarning(
+        data?.message || "We couldn't read all details from your boarding pass — please check and complete the fields below."
+      );
+      setIsAdding(true);
     } catch (err) {
       console.error('Error parsing flight:', err);
-      toast.error("Couldn't read your flight details from this image. Please enter them manually below.", {
-        duration: 6000,
-        action: { label: 'Add manually', onClick: () => setIsAdding(true) },
-      });
+      setParseWarning("We couldn't read all details from your boarding pass — please check and complete the fields below.");
+      setIsAdding(true);
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -473,6 +468,13 @@ export const FlightDetailsDialog = ({
                 <p className="text-sm font-medium">
                   {editingId ? 'Edit Flight' : 'Add New Flight'}
                 </p>
+
+                {/* Inline warning from image parsing failure */}
+                {parseWarning && (
+                  <div className="text-sm text-muted-foreground bg-muted/60 rounded-lg px-3 py-2.5 border border-border">
+                    {parseWarning}
+                  </div>
+                )}
 
                 {/* Flight number search — only visible when adding a new flight */}
                 {!editingId && (
