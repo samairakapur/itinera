@@ -131,7 +131,8 @@ export function useOnboarding() {
   return { shouldShow, markDone };
 }
 
-/** Walkthrough 2 — shown on first trip detail view, fires 2 s after mount */
+/** Walkthrough 2 — shown on first trip detail view, fires 2 s after mount.
+ *  Requires Walkthrough 1 to be complete first to avoid overlap on join flow. */
 export function useOnboarding2() {
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
@@ -139,7 +140,10 @@ export function useOnboarding2() {
 
   useEffect(() => {
     if (isLoading || !profile) return;
-    if (profile.has_completed_onboarding_2 === false) {
+    // Only start W2 after W1 is done — prevents both overlays showing simultaneously
+    // on the join flow where a new user lands directly on TripDetail
+    const w1Done = profile.has_completed_onboarding_1 !== false;
+    if (profile.has_completed_onboarding_2 === false && w1Done) {
       const t = setTimeout(() => setShouldShow(true), 2000);
       return () => clearTimeout(t);
     }

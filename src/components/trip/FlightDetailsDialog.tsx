@@ -21,8 +21,12 @@ import {
 interface FlightDetailsDialogProps {
   itineraryId: string;
   tripName?: string;
+  tripDestinationCity?: string;
+  tripStartDate?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Called after any flight is successfully created or updated */
+  onFlightSaved?: () => void;
 }
 
 interface FlightFormData {
@@ -61,8 +65,11 @@ const emptyForm: FlightFormData = {
 export const FlightDetailsDialog = ({
   itineraryId,
   tripName,
+  tripDestinationCity: _tripDestinationCity,
+  tripStartDate: _tripStartDate,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  onFlightSaved,
 }: FlightDetailsDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -154,49 +161,55 @@ export const FlightDetailsDialog = ({
       return;
     }
 
-    if (editingId) {
-      await updateFlight.mutateAsync({
-        id: editingId,
-        itinerary_id: itineraryId,
-        airline: formData.airline || null,
-        flight_number: formData.flight_number || null,
-        departure_city: formData.departure_city,
-        arrival_city: formData.arrival_city,
-        departure_date: formData.departure_date,
-        departure_time: formData.departure_time || null,
-        arrival_date: formData.arrival_date,
-        arrival_time: formData.arrival_time || null,
-        notes: formData.notes || null,
-        departure_airport_iata: formData.departure_airport_iata || null,
-        arrival_airport_iata: formData.arrival_airport_iata || null,
-        departure_terminal: formData.departure_terminal || null,
-        arrival_terminal: formData.arrival_terminal || null,
-      });
-    } else {
-      await createFlight.mutateAsync({
-        itinerary_id: itineraryId,
-        leg_number: flights.length + 1,
-        airline: formData.airline || undefined,
-        flight_number: formData.flight_number || undefined,
-        departure_city: formData.departure_city,
-        arrival_city: formData.arrival_city,
-        departure_date: formData.departure_date,
-        departure_time: formData.departure_time || undefined,
-        arrival_date: formData.arrival_date,
-        arrival_time: formData.arrival_time || undefined,
-        notes: formData.notes || undefined,
-        departure_airport_iata: formData.departure_airport_iata || undefined,
-        arrival_airport_iata: formData.arrival_airport_iata || undefined,
-        departure_terminal: formData.departure_terminal || undefined,
-        arrival_terminal: formData.arrival_terminal || undefined,
-      });
-    }
+    try {
+      if (editingId) {
+        await updateFlight.mutateAsync({
+          id: editingId,
+          itinerary_id: itineraryId,
+          airline: formData.airline || null,
+          flight_number: formData.flight_number || null,
+          departure_city: formData.departure_city,
+          arrival_city: formData.arrival_city,
+          departure_date: formData.departure_date,
+          departure_time: formData.departure_time || null,
+          arrival_date: formData.arrival_date,
+          arrival_time: formData.arrival_time || null,
+          notes: formData.notes || null,
+          departure_airport_iata: formData.departure_airport_iata || null,
+          arrival_airport_iata: formData.arrival_airport_iata || null,
+          departure_terminal: formData.departure_terminal || null,
+          arrival_terminal: formData.arrival_terminal || null,
+        });
+      } else {
+        await createFlight.mutateAsync({
+          itinerary_id: itineraryId,
+          leg_number: flights.length + 1,
+          airline: formData.airline || undefined,
+          flight_number: formData.flight_number || undefined,
+          departure_city: formData.departure_city,
+          arrival_city: formData.arrival_city,
+          departure_date: formData.departure_date,
+          departure_time: formData.departure_time || undefined,
+          arrival_date: formData.arrival_date,
+          arrival_time: formData.arrival_time || undefined,
+          notes: formData.notes || undefined,
+          departure_airport_iata: formData.departure_airport_iata || undefined,
+          arrival_airport_iata: formData.arrival_airport_iata || undefined,
+          departure_terminal: formData.departure_terminal || undefined,
+          arrival_terminal: formData.arrival_terminal || undefined,
+        });
+      }
 
-    setFormData(emptyForm);
-    setIsAdding(false);
-    setEditingId(null);
-    setSearchFlightNumber('');
-    setSearchDate('');
+      setFormData(emptyForm);
+      setIsAdding(false);
+      setEditingId(null);
+      setSearchFlightNumber('');
+      setSearchDate('');
+      onFlightSaved?.();
+    } catch (err) {
+      // Error toast is handled by mutation onError callback; just log here
+      console.error('[FlightDetailsDialog] save error:', err);
+    }
   };
 
   const handleEdit = (flight: FlightDetail) => {
