@@ -87,7 +87,9 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gemini-1.5-flash",
+          // gemini-1.5-flash was fully retired by Google — gemini-2.5-flash is
+          // multimodal (text+image) same as its predecessors.
+          model: "gemini-2.5-flash",
           messages: [
             {
               role: "user",

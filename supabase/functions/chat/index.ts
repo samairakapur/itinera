@@ -302,12 +302,12 @@ Keep responses concise but helpful. If you don't know something specific, be hon
     if (GOOGLE_AI_API_KEY) chatProviders.push({
       key:   GOOGLE_AI_API_KEY,
       url:   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
     });
     if (GROQ_API_KEY) chatProviders.push({
       key:   GROQ_API_KEY,
       url:   "https://api.groq.com/openai/v1/chat/completions",
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
     });
 
     const chatMessages = [{ role: "system", content: systemPrompt }, ...messages];

@@ -465,11 +465,12 @@ Deno.serve(async (req: Request) => {
 
     // Provider 1: Groq
     if (GROQ_API_KEY && !reply) {
+      // llama-3.3-70b-versatile, llama-3.1-8b-instant, gemma2-9b-it, and
+      // llama3-70b-8192 were all retired by Groq — gpt-oss-120b/20b are
+      // Groq's own documented replacements (console.groq.com/docs/deprecations).
       const groqModels = [
-        'llama-3.3-70b-versatile',
-        'llama-3.1-8b-instant',
-        'gemma2-9b-it',
-        'llama3-70b-8192',
+        'openai/gpt-oss-120b',
+        'openai/gpt-oss-20b',
       ];
 
       for (const model of groqModels) {
@@ -517,10 +518,10 @@ Deno.serve(async (req: Request) => {
 
     // Provider 2: Google AI (Gemini)
     if (GOOGLE_AI_KEY && !reply) {
-      console.log('[trip-concierge] trying Google AI (gemini-2.0-flash)');
+      console.log('[trip-concierge] trying Google AI (gemini-2.5-flash)');
       try {
         const googleRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_AI_KEY}`,
           {
             method: 'POST',
             signal: AbortSignal.timeout(25000),
