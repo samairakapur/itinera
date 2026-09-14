@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import {
   ChevronDown,
   Sun,
@@ -292,8 +292,8 @@ export const DayCard = ({
   }, [day.morning, day.afternoon, day.evening, constraints]);
 
   // Calculate actual date from start date
-  const actualDate = startDate 
-    ? new Date(startDate.getTime() + (day.dayNumber - 1) * 24 * 60 * 60 * 1000)
+  const actualDate = startDate
+    ? addDays(startDate, day.dayNumber - 1)
     : day.actualDate;
   
   const formattedDate = actualDate ? format(actualDate, 'MMM d') : day.date;

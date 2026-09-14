@@ -80,6 +80,35 @@ const AriaAvatar = ({ size = 'md' }: { size?: 'sm' | 'md' }) => (
 
 // Render Aria's message text, replacing raw URLs with short descriptive anchor labels
 // so the URL is never displayed as text and can never overflow on mobile.
+// Strips trailing punctuation a sentence would attach to a URL (e.g. the
+// comma in "...here: https://example.com, and I'll adjust") so the anchor's
+// href doesn't 404 on characters that aren't actually part of the link.
+// A closing ) or ] is only stripped when it isn't balanced by an opening one
+// inside the URL itself (so a URL that legitimately ends in ")" is left alone).
+function stripTrailingPunctuation(url: string): { url: string; trailing: string } {
+  let trailing = '';
+  while (url.length > 0) {
+    const last = url[url.length - 1];
+    if ('.,;:!?"\''.includes(last)) {
+      trailing = last + trailing;
+      url = url.slice(0, -1);
+      continue;
+    }
+    if (last === ')' && (url.match(/\)/g) || []).length > (url.match(/\(/g) || []).length) {
+      trailing = last + trailing;
+      url = url.slice(0, -1);
+      continue;
+    }
+    if (last === ']' && (url.match(/\]/g) || []).length > (url.match(/\[/g) || []).length) {
+      trailing = last + trailing;
+      url = url.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+  return { url, trailing };
+}
+
 function renderMessageText(text: string): React.ReactNode {
   const urlPattern = /https?:\/\/[^\s]+/g;
   const nodes: React.ReactNode[] = [];
@@ -89,7 +118,7 @@ function renderMessageText(text: string): React.ReactNode {
     if (match.index > lastIndex) {
       nodes.push(text.slice(lastIndex, match.index));
     }
-    const url = match[0];
+    const { url, trailing } = stripTrailingPunctuation(match[0]);
     let label: string;
     let extraClass = '';
     if (url.includes('viator.com')) {
@@ -111,7 +140,8 @@ function renderMessageText(text: string): React.ReactNode {
         {label}
       </a>
     );
-    lastIndex = match.index + url.length;
+    if (trailing) nodes.push(trailing);
+    lastIndex = match.index + url.length + trailing.length;
   }
   if (lastIndex < text.length) {
     nodes.push(text.slice(lastIndex));

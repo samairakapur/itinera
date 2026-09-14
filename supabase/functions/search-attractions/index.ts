@@ -23,9 +23,12 @@ const CORS_HEADERS = {
 const VIATOR_AFFILIATE_BASE = 'https://www.viator.com';
 const VIATOR_PARTNER_ID = 'P00294080';
 
-// Sandbox: https://api.sandbox.viator.com/partner
-// Production: https://api.viator.com/partner
-const VIATOR_API_BASE = 'https://api.sandbox.viator.com/partner';
+// Defaults to the production Viator Partner API. Set VIATOR_ENV=sandbox to
+// hit https://api.sandbox.viator.com/partner instead (sandbox returns static
+// test/demo products, not real inventory — never the default).
+const VIATOR_API_BASE = Deno.env.get('VIATOR_ENV') === 'sandbox'
+  ? 'https://api.sandbox.viator.com/partner'
+  : 'https://api.viator.com/partner';
 
 interface ViatorProduct {
   productCode: string;

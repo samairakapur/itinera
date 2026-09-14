@@ -157,7 +157,7 @@ function trimDayToSchedule(day: DayData, pace: string): DayData {
   return trimmed;
 }
 
-export { trimDayToSchedule };
+export { trimDayToSchedule, parseTimeToHours, parseDurationMinutes };
 
 /** Returns true if an activity is a meal that must never be dropped */
 function isMealActivity(act: Activity): boolean {
@@ -637,13 +637,16 @@ export const parseItineraryText = (
   result.days = enforceScheduleLimits(result.days, paceMapped, flightCapByDay);
 
   // ── Deduplication safety net ────────────────────────────────────────────
-  // Walk all days in order; remove any activity whose normalised title was
+  // Walk all days in order; remove any ATTRACTION whose normalised title was
   // already seen on a prior day. This is a safety net — the prompt rule in
-  // generate-itinerary is the primary prevention.
+  // generate-itinerary is the primary prevention. Scoped to 'attraction' only
+  // because transport ("Travel to Hotel"), flex blocks, and meals legitimately
+  // repeat by title across every day of a trip and must never be dropped.
   {
     const seenTitles = new Set<string>();
     const dedup = (activities: Activity[], dayNumber: number): Activity[] =>
       activities.filter(a => {
+        if (a.type !== 'attraction') return true;
         const key = a.title.toLowerCase().trim();
         if (seenTitles.has(key)) {
           console.warn('[Parser] Removed duplicate activity:', a.title, 'on day', dayNumber);
