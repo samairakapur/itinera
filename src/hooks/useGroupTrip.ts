@@ -155,11 +155,19 @@ export const useGroupTrip = (tripId: string | undefined) => {
 
   const castVote = async (proposalId: string, vote: 'yes' | 'no' | 'neutral') => {
     if (!user) return;
-    const existing = votes.find(v => v.proposal_id === proposalId && v.user_id === user.id);
-    if (existing) {
-      await supabase.from('trip_votes').update({ vote }).eq('id', existing.id);
-    } else {
-      await supabase.from('trip_votes').insert({ proposal_id: proposalId, user_id: user.id, vote });
+    // Upsert on the (proposal_id, user_id) unique constraint instead of
+    // deciding insert-vs-update from local state — avoids a race where a
+    // vote inserted elsewhere hasn't reached this client yet via realtime,
+    // which would otherwise cause a duplicate-key insert to fail silently.
+    const { error: voteError } = await supabase
+      .from('trip_votes')
+      .upsert(
+        { proposal_id: proposalId, user_id: user.id, vote },
+        { onConflict: 'proposal_id,user_id' }
+      );
+    if (voteError) {
+      console.error('[castVote] failed to save vote:', voteError);
+      return;
     }
 
     // After casting, check whether the proposal should be resolved.

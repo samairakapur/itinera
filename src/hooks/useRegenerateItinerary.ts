@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { parseItineraryText } from '@/utils/itineraryParser';
+import { parseItineraryText, parseTimeToHours, parseDurationMinutes } from '@/utils/itineraryParser';
 import { FlightDetail } from './useFlightDetails';
 import { SavedItinerary, SavedItineraryItem } from './useItineraries';
 import { differenceInDays, format } from 'date-fns';
@@ -199,8 +199,16 @@ export const useRegenerateItinerary = () => {
         throw new Error('Regeneration produced empty result. Please try again.');
       }
 
-      // Parse the AI output
-      const parsed = parseItineraryText(fullText, itinerary.num_days);
+      // Parse the AI output — pass pace + flightConstraints through so the
+      // schedule enforcer/trim pass actually applies this trip's pace cap and
+      // flight-day buffers instead of silently falling back to defaults.
+      const parsed = parseItineraryText(
+        fullText,
+        itinerary.num_days,
+        undefined,
+        itinerary.pace ?? undefined,
+        flightConstraints,
+      );
 
       if (parsed.days.length === 0) {
         throw new Error('Could not parse regenerated itinerary. Please try again.');
@@ -223,6 +231,10 @@ export const useRegenerateItinerary = () => {
       parsed.days.forEach((day) => {
         const addItems = (activities: typeof day.morning, timeSlot: string) => {
           activities.forEach((activity, index) => {
+            const timeHours = parseTimeToHours(activity.time);
+            const scheduledTime = timeHours !== null
+              ? `${String(Math.floor(timeHours)).padStart(2, '0')}:${String(Math.round((timeHours % 1) * 60)).padStart(2, '0')}`
+              : null;
             items.push({
               itinerary_id: itineraryId,
               day_number: day.dayNumber,
@@ -235,6 +247,8 @@ export const useRegenerateItinerary = () => {
               attraction_id: null,
               restaurant_id: null,
               price_tier: activity.priceTier ?? null,
+              scheduled_time: scheduledTime,
+              estimated_duration_minutes: parseDurationMinutes(activity.duration, activity.type),
             });
           });
         };
@@ -275,12 +289,16 @@ export const useRegenerateItinerary = () => {
               itemType: it.item_type,
               timeSlot: it.time_slot as 'morning' | 'afternoon' | 'evening',
               dayNumber: it.day_number,
+              scheduledTime: it.scheduled_time ?? undefined,
+              estimatedDurationMinutes: it.estimated_duration_minutes ?? undefined,
             }));
+          const dayArrival = flightConstraints.find(fc => fc.dayNumber === dn && fc.type === 'arrival');
+          const dayDeparture = flightConstraints.find(fc => fc.dayNumber === dn && fc.type === 'departure');
           const result = validateItinerary(
             dayActivities,
-            itinerary.pace ?? 'balanced',
-            null,
-            null,
+            itinerary.pace ?? 'medium',
+            dayDeparture?.time ?? null,
+            dayArrival?.time ?? null,
             dn,
           );
           if (result.errors.length > 0) {

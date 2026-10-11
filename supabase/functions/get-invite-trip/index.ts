@@ -31,6 +31,23 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { action, token } = body as { action: string; token: string; userId?: string; email?: string };
 
+    // Resolve the caller's identity from their verified JWT rather than trusting
+    // the request body — otherwise any authenticated user could pass a different
+    // real user's id/email and enroll them as a collaborator without consent.
+    let verifiedUserId: string | null = null;
+    let verifiedEmail: string | null = null;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const anonClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: { user: verifiedUser } } = await anonClient.auth.getUser();
+      verifiedUserId = verifiedUser?.id ?? null;
+      verifiedEmail = verifiedUser?.email ?? null;
+    }
+
     if (!token) {
       return json({ error: 'missing_token' }, 400);
     }
@@ -77,9 +94,9 @@ Deno.serve(async (req: Request) => {
     // JOIN — add authenticated user as a collaborator
     // -----------------------------------------------------------------------
     if (action === 'join') {
-      const { userId, email } = body as { userId: string; email: string };
-
-      if (!userId) return json({ error: 'missing_user_id' }, 400);
+      if (!verifiedUserId) return json({ error: 'unauthorized' }, 401);
+      const userId = verifiedUserId;
+      const email = verifiedEmail ?? '';
 
       // First verify the invite is still active and fetch the trip id
       const { data: trip, error: tripErr } = await supabase

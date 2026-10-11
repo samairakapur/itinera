@@ -14,7 +14,10 @@
  * Returns top 5 cheapest flight offers.
  * Degrades gracefully if AMADEUS_CLIENT_ID / AMADEUS_CLIENT_SECRET not configured.
  *
- * Uses Amadeus TEST environment: test.api.amadeus.com
+ * Defaults to the Amadeus PRODUCTION environment (api.amadeus.com). Set
+ * AMADEUS_ENV=test to use test.api.amadeus.com instead — the test environment
+ * returns synthetic offers, not real fares/availability, so it must never be
+ * the default for a production-facing search.
  * OAuth2 client_credentials flow; token cached for 29 minutes.
  */
 
@@ -26,7 +29,9 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const AMADEUS_BASE = 'https://test.api.amadeus.com';
+const AMADEUS_BASE = Deno.env.get('AMADEUS_ENV') === 'test'
+  ? 'https://test.api.amadeus.com'
+  : 'https://api.amadeus.com';
 
 // In-memory token cache (survives warm Deno isolate restarts for ~29 min)
 let cachedToken: string | null = null;

@@ -52,7 +52,25 @@ Deno.serve(async (req: Request) => {
 
       const yes = (votes ?? []).filter((v: { vote: string }) => v.vote === 'yes').length;
       const no = (votes ?? []).filter((v: { vote: string }) => v.vote === 'no').length;
-      const newStatus = yes > no ? 'approved' : 'rejected';
+
+      // Same rule as the client's immediate resolution in useGroupTrip.ts:
+      // approve only if yes votes are a strict majority of the whole eligible
+      // group (accepted collaborators + owner), not just of votes cast —
+      // otherwise a single "yes" with the rest abstaining would win by default.
+      const [collaboratorsRes, ownerRes] = await Promise.all([
+        supabase
+          .from('trip_collaborators')
+          .select('id', { count: 'exact', head: true })
+          .eq('itinerary_id', proposal.trip_id)
+          .not('accepted_at', 'is', null),
+        supabase
+          .from('itineraries')
+          .select('user_id')
+          .eq('id', proposal.trip_id)
+          .single(),
+      ]);
+      const groupSize = (collaboratorsRes.count ?? 0) + (ownerRes.data ? 1 : 0);
+      const newStatus = yes > groupSize / 2 ? 'approved' : 'rejected';
 
       await supabase
         .from('trip_proposals')

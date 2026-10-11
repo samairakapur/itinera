@@ -261,16 +261,41 @@ const TripDetail = () => {
   }, [days, addDialogDay, addDialogTimeSlot, editActivity, saveChanges, logFeedEvent, user]);
 
   const handleToggleActivityComplete = useCallback((dayNumber: number, activityId: string) => {
+    let nowCompleted = false;
     setCompletedActivityIds(prev => {
       const next = new Set(prev);
       if (next.has(activityId)) {
         next.delete(activityId);
+        nowCompleted = false;
       } else {
         next.add(activityId);
+        nowCompleted = true;
       }
       return next;
     });
-    toast.success('Activity updated');
+
+    supabaseClient
+      .from('itinerary_items')
+      .update({
+        is_completed: nowCompleted,
+        completed_at: nowCompleted ? new Date().toISOString() : null,
+      })
+      .eq('id', activityId)
+      .then(({ error }) => {
+        if (error) {
+          console.error('[TripDetail] failed to persist completion:', error);
+          // Roll back the optimistic update so the checkbox reflects reality
+          setCompletedActivityIds(prev => {
+            const next = new Set(prev);
+            if (nowCompleted) next.delete(activityId);
+            else next.add(activityId);
+            return next;
+          });
+          toast.error('Could not save — please try again');
+          return;
+        }
+        toast.success('Activity updated');
+      });
   }, []);
 
   const handleStartTimeChange = useCallback((dayNumber: number, newTime: string, affectedActivities: Activity[]) => {
@@ -630,7 +655,25 @@ const TripDetail = () => {
   useEffect(() => {
     if (approvedProposals.length === 0) return;
 
-    approvedProposals.forEach(proposal => {
+    approvedProposals.forEach(async (proposal) => {
+      // Atomically claim the proposal before applying its side effects — if
+      // another collaborator's open tab already claimed it, applied_at will
+      // no longer be null and this update matches zero rows, so this client
+      // skips applying it (prevents the same approved change from being
+      // inserted/deleted twice when more than one tab has the trip open).
+      const { data: claimed, error: claimError } = await supabaseClient
+        .from('trip_proposals')
+        .update({ applied_at: new Date().toISOString() })
+        .eq('id', proposal.id)
+        .is('applied_at', null)
+        .select('id')
+        .maybeSingle();
+
+      if (claimError || !claimed) {
+        dismissApprovedProposal(proposal.id);
+        return;
+      }
+
       const d = proposal.proposal_data as Record<string, unknown>;
 
       if (proposal.proposal_type === 'add_activity' && (d.activityName || d.title) && d.dayNumber) {

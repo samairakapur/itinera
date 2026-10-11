@@ -49,6 +49,10 @@ export interface SavedItineraryItem {
   attraction_id: string | null;
   restaurant_id: string | null;
   price_tier: string | null;
+  scheduled_time?: string | null;
+  estimated_duration_minutes?: number | null;
+  is_completed?: boolean | null;
+  completed_at?: string | null;
   // Viator pre-selected tour (populated asynchronously after save)
   viator_product_code?: string | null;
   viator_booking_url?: string | null;

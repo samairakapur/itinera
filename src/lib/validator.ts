@@ -14,12 +14,12 @@ export interface ValidationResult {
   warnings: ValidationError[];
 }
 
+// Keys must match the itinerary.pace values actually stored in the DB
+// (see mapDailyPace in NewTrip.tsx: relaxed→light, balanced→medium, fast→full).
 const PACE_END_TIMES: Record<string, number> = {
-  relaxed: 18 * 60,
-  balanced: 20 * 60,
-  moderate: 20 * 60,
-  packed: 21 * 60,
-  'action-packed': 21 * 60,
+  light: 18 * 60,
+  medium: 20 * 60,
+  full: 21 * 60 + 30,
 };
 
 const DAY_START_MINUTES = 8 * 60;

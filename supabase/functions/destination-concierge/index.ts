@@ -36,8 +36,8 @@ serve(async (req) => {
 
     type Provider = { key: string; url: string; model: string; name: string };
     const providers: Provider[] = [];
-    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.0-flash",        name: "gemini" });
-    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: "https://api.groq.com/openai/v1/chat/completions",                          model: "llama-3.3-70b-versatile", name: "groq"   });
+    if (GOOGLE_AI_API_KEY) providers.push({ key: GOOGLE_AI_API_KEY, url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", model: "gemini-2.5-flash",     name: "gemini" });
+    if (GROQ_API_KEY)      providers.push({ key: GROQ_API_KEY,      url: "https://api.groq.com/openai/v1/chat/completions",                          model: "openai/gpt-oss-120b", name: "groq"   });
 
     if (providers.length === 0) {
       return json({ error: "No AI providers configured. Please check your API keys." });

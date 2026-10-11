@@ -306,6 +306,7 @@ export const FlightDetailsDialog = ({
             addedCount++;
           }
           toast.success(`${addedCount} flight${addedCount > 1 ? 's' : ''} parsed and added! Your itinerary will adjust automatically.`);
+          onFlightSaved?.();
           return;
         }
       }

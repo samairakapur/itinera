@@ -337,6 +337,7 @@ async function callAIStreaming(
   messages: Array<{ role: string; content: string }>,
   maxTokens: number,
 ): Promise<string> {
+  let sawAuthFailure = false;
   for (const provider of providers) {
     console.log(`[callAI] Trying ${provider.name} (${provider.model}), maxTokens=${maxTokens}`);
 
@@ -367,7 +368,9 @@ async function callAIStreaming(
 
     if (response.status === 401 || response.status === 403) {
       clearTimeout(timer);
-      throw new Error('AI_AUTH_FAILED');
+      console.warn(`[callAI] ${provider.name} auth failed (${response.status}) — trying next provider`);
+      sawAuthFailure = true;
+      continue;
     }
     if (!response.ok) {
       clearTimeout(timer);
@@ -389,7 +392,7 @@ async function callAIStreaming(
       console.warn(`[callAI] ${provider.name} stream collection error:`, err);
     }
   }
-  throw new Error('All AI providers failed');
+  throw new Error(sawAuthFailure ? 'AI_AUTH_FAILED' : 'All AI providers failed');
 }
 
 /**
@@ -744,23 +747,25 @@ ${startDate ? `Use the exact dates from the calendar context in every ## Day hea
 ${flightConstraintContext ? 'Strictly honour all flight constraints.' : ''}`;
 
     // ── Build provider list ──────────────────────────────────────────────────
-    // 4-provider cascade: Gemini 2.0 Flash → Gemini 1.5 Flash → Groq 70B → Groq 8B.
-    // Multiple entries per API key mean that if 2.0-flash is rate-limited (429),
-    // 1.5-flash gets tried next before falling back to Groq.  The Groq 8B instant
-    // model has much higher TPM limits than the 70B, so it almost always succeeds
-    // even when the 70B quota is exhausted.
+    // 4-provider cascade: Gemini 2.5 Flash → Gemini 2.5 Flash Lite → Groq gpt-oss-120b → Groq gpt-oss-20b.
+    // gemini-2.0-flash/gemini-1.5-flash and llama-3.3-70b-versatile/llama-3.1-8b-instant
+    // were retired by Google/Groq in 2026 (404 model_not_found) — gpt-oss-120b/20b are
+    // Groq's own documented replacements for the retired Llama models.
+    // NOTE: Google has stated gemini-2.5-flash itself is scheduled to sunset
+    // 2026-10-16 in favor of gemini-3.5-flash — re-check console.groq.com/docs/models
+    // and ai.google.dev/gemini-api/docs/models around that date.
     const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     const GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions";
     const providers: AIProvider[] = [];
     if (GOOGLE_AI_API_KEY) {
-      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-2.0-flash", name: "Gemini-2.0" });
-      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-1.5-flash", name: "Gemini-1.5" });
+      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-2.5-flash", name: "Gemini-2.5" });
+      providers.push({ key: GOOGLE_AI_API_KEY, url: GEMINI_URL, model: "gemini-2.5-flash-lite", name: "Gemini-2.5-Lite" });
     }
     if (GROQ_API_KEY) {
-      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "llama-3.3-70b-versatile", name: "Groq-70B" });
-      // llama-3.1-8b-instant has very high TPM (131K) but lower per-request output cap (~8K).
-      // Used as last-resort fallback when higher-quality models are rate-limited.
-      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "llama-3.1-8b-instant", name: "Groq-8B", maxOutputTokens: 8000 });
+      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "openai/gpt-oss-120b", name: "Groq-120B" });
+      // gpt-oss-20b has much higher TPM limits than the 120b, so it almost always
+      // succeeds as a last-resort fallback when the 120b quota is exhausted.
+      providers.push({ key: GROQ_API_KEY, url: GROQ_URL, model: "openai/gpt-oss-20b", name: "Groq-20B", maxOutputTokens: 8000 });
     }
     if (providers.length === 0) {
       console.error("No AI API key configured");
@@ -1106,6 +1111,7 @@ ${cfg.leg.cityDescription ? `About ${cfg.leg.cityName}: ${cfg.leg.cityDescriptio
     ];
 
     let aiResponse: Response | null = null;
+    let sawAuthFailure = false;
 
     // Single-city uses direct streaming passthrough (most efficient — first tokens
     // reach the client in 1-2 s).  Each provider attempt gets a 45 s AbortSignal
@@ -1154,10 +1160,9 @@ ${cfg.leg.cityDescription ? `About ${cfg.leg.cityName}: ${cfg.leg.cityDescriptio
         break;
       }
       if (attempt.status === 401 || attempt.status === 403) {
-        return new Response(
-          JSON.stringify({ error: "The AI service key is invalid or missing. Please contact support." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        console.warn(`[single-city] ${provider.name} auth failed (${attempt.status}) — trying next provider`);
+        sawAuthFailure = true;
+        continue;
       }
       let errText = ''; try { errText = await attempt.text(); } catch { /* ignore */ }
       console.warn(`[single-city] ${provider.name} failed (${attempt.status}) — trying next. Body: ${errText.slice(0, 300)}`);
@@ -1165,8 +1170,12 @@ ${cfg.leg.cityDescription ? `About ${cfg.leg.cityName}: ${cfg.leg.cityDescriptio
 
     if (!aiResponse) {
       return new Response(
-        JSON.stringify({ error: "The AI service is busy right now. Please wait 15 seconds and try again." }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: sawAuthFailure
+            ? "The AI service key is invalid or missing. Please contact support."
+            : "The AI service is busy right now. Please wait 15 seconds and try again.",
+        }),
+        { status: sawAuthFailure ? 500 : 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

@@ -41,9 +41,12 @@ export const ProfilePhotoUpload = ({
     const file = event.target.files?.[0];
     if (!file || !user?.id) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
+    // Validate file type — raster formats only. SVG is deliberately excluded:
+    // it can embed <script>, and if the storage bucket ever serves files with
+    // their original content-type, an uploaded SVG could execute as stored XSS.
+    const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      toast.error('Please select a PNG, JPEG, WEBP, or GIF image');
       return;
     }
 

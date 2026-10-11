@@ -266,7 +266,7 @@ export const GuidedProfileForm = ({
     preferredCuisines: [],
     dietaryRestrictions: [],
     willingnessToTryNew: '',
-    diningStyle: '',
+    diningStyle: [],
   });
 
   const currentStepData = STEPS[currentStep - 1];

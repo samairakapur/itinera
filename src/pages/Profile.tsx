@@ -69,23 +69,42 @@ const PROFILE_OPTIONS = {
     { value: 'Mid-range', label: 'Mid-range', description: 'Balance of quality & value', icon: '💰' },
     { value: 'Premium', label: 'Premium', description: 'Premium experiences', icon: '💎' },
   ],
+  // Kept in sync with GuidedProfileForm.tsx's onboarding options — these two
+  // screens edit the same stored values, so the option sets (and exact
+  // `value` strings) must match or a selection made in one place silently
+  // fails to display/persist correctly when edited from the other.
   preferredCuisines: [
-    { value: 'American', label: 'American', icon: '🍔' },
+    { value: 'Japanese', label: 'Japanese', icon: '🍣' },
     { value: 'Italian', label: 'Italian', icon: '🍝' },
     { value: 'Mexican', label: 'Mexican', icon: '🌮' },
-    { value: 'Asian', label: 'Asian', icon: '🍜' },
+    { value: 'Indian', label: 'Indian', icon: '🍛' },
+    { value: 'Thai', label: 'Thai', icon: '🍜' },
+    { value: 'Chinese', label: 'Chinese', icon: '🥟' },
+    { value: 'Korean', label: 'Korean', icon: '🫕' },
+    { value: 'Vietnamese', label: 'Vietnamese', icon: '🍲' },
+    { value: 'French', label: 'French', icon: '🥐' },
+    { value: 'American', label: 'American', icon: '🍔' },
+    { value: 'Mediterranean', label: 'Mediterranean', icon: '🫒' },
     { value: 'Middle Eastern', label: 'Middle Eastern', icon: '🥙' },
-    { value: 'Vegetarian', label: 'Vegetarian', icon: '🥗' },
-    { value: 'Vegan', label: 'Vegan', icon: '🌱' },
+    { value: 'Greek', label: 'Greek', icon: '🍋' },
+    { value: 'Spanish / Tapas', label: 'Spanish / Tapas', icon: '🥘' },
+    { value: 'Turkish', label: 'Turkish', icon: '🧆' },
+    { value: 'Latin American', label: 'Latin American', icon: '🫔' },
+    { value: 'African', label: 'African', icon: '🫙' },
+    { value: 'Caribbean', label: 'Caribbean', icon: '🌴' },
+    { value: 'British / Pub Food', label: 'British / Pub Food', icon: '🍺' },
+    { value: 'Seafood', label: 'Seafood', icon: '🦞' },
+    { value: 'BBQ / Grill', label: 'BBQ / Grill', icon: '🥩' },
   ],
   dietaryRestrictions: [
-    { value: 'None', label: 'None', icon: '✅' },
+    { value: 'None', label: 'No restrictions', icon: '✅' },
     { value: 'Vegetarian', label: 'Vegetarian', icon: '🥗' },
     { value: 'Vegan', label: 'Vegan', icon: '🌱' },
-    { value: 'Halal', label: 'Halal', icon: '🍖' },
+    { value: 'Pescatarian', label: 'Pescatarian', icon: '🐟' },
+    { value: 'Halal', label: 'Halal', icon: '🌙' },
     { value: 'Kosher', label: 'Kosher', icon: '✡️' },
-    { value: 'Gluten-free', label: 'Gluten-free', icon: '🌾' },
-    { value: 'Dairy-free', label: 'Dairy-free', icon: '🥛' },
+    { value: 'Gluten-Free', label: 'Gluten-Free', icon: '🌾' },
+    { value: 'Dairy-Free', label: 'Dairy-Free', icon: '🥛' },
   ],
   willingnessToTryNew: [
     { value: 'No', label: 'Stick to Familiar', description: 'I know what I like', icon: '🏠' },
@@ -93,9 +112,12 @@ const PROFILE_OPTIONS = {
     { value: 'Yes', label: 'Adventurous', description: 'Love trying new things!', icon: '🌍' },
   ],
   diningStyle: [
-    { value: 'Casual', label: 'Casual', description: 'Relaxed, laid-back vibes', icon: '🍕' },
-    { value: 'Mixed', label: 'Mixed', description: 'Variety is good', icon: '🍽️' },
-    { value: 'Fine dining', label: 'Fine Dining', description: 'Special occasions & elegance', icon: '🥂' },
+    { value: 'Street Food & Markets', label: 'Street Food & Markets', description: 'Night markets, food stalls', icon: '🥡' },
+    { value: 'Casual / Bistro', label: 'Casual / Bistro', description: 'Relaxed, laid-back vibes', icon: '🍕' },
+    { value: 'Fine Dining', label: 'Fine Dining', description: 'Special occasions & elegance', icon: '🥂' },
+    { value: 'Cafés & Brunch', label: 'Cafés & Brunch', description: 'Coffee culture, lazy mornings', icon: '☕' },
+    { value: 'Local / Hole-in-the-Wall', label: 'Local / Hidden Gems', description: 'Where locals actually eat', icon: '🔍' },
+    { value: 'Food Tours & Experiences', label: 'Food Tours & Experiences', description: 'Tastings, cooking classes', icon: '🎟️' },
   ],
 };
 
@@ -286,7 +308,7 @@ export default function Profile() {
   const [preferredCuisines, setPreferredCuisines] = useState<string[]>([]);
   const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([]);
   const [willingnessToTryNew, setWillingnessToTryNew] = useState("");
-  const [diningStyle, setDiningStyle] = useState("");
+  const [diningStyle, setDiningStyle] = useState<string[]>([]);
 
   // Load existing preferences
   useEffect(() => {
@@ -308,7 +330,7 @@ export default function Profile() {
         setPreferredCuisines(prefs.preferredCuisines || []);
         setDietaryRestrictions(prefs.dietaryRestrictions || []);
         setWillingnessToTryNew(prefs.willingnessToTryNew || "");
-        setDiningStyle(prefs.diningStyle || "");
+        setDiningStyle(prefs.diningStyle || []);
       }
     }
   }, [profile]);
@@ -866,7 +888,9 @@ export default function Profile() {
                       label="Dining Style Preference"
                       options={PROFILE_OPTIONS.diningStyle}
                       value={diningStyle}
-                      onChange={setDiningStyle}
+                      onChange={(val) => toggleMultiSelect(diningStyle, setDiningStyle, val, 3)}
+                      type="multi"
+                      maxSelect={3}
                     />
                   </motion.div>
                 ) : (
@@ -886,7 +910,7 @@ export default function Profile() {
                       <SingleValueDisplay value={willingnessToTryNew} prefKey="willingnessToTryNew" />
                     </PreferenceRow>
                     <PreferenceRow label="Dining Style Preference">
-                      <SingleValueDisplay value={diningStyle} prefKey="diningStyle" />
+                      <MultiValueDisplay values={diningStyle} prefKey="diningStyle" />
                     </PreferenceRow>
                   </motion.div>
                 )}

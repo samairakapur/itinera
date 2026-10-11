@@ -87,10 +87,14 @@ export const useInviteCollaborator = () => {
     }) => {
       if (!user) throw new Error('Must be logged in');
 
-      // Check if invited user already has an Itinera account
+      // Check if invited user already has an Itinera account.
+      // Only select id (not full_name) — this result is used purely to link
+      // the collaborator row to a real user_id; returning the person's name
+      // just to probe whether an email is registered isn't needed and widens
+      // what an inviter can learn about an arbitrary email address.
       const { data: existingUser } = await supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('id')
         .eq('email', email)
         .single();
 
