@@ -199,7 +199,7 @@ const restaurantImages = {
   brunch: [
     "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?w=600",
     "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=600",
-    "https://images.unsplash.com/photo-1482049016gy6e8bc-3dc5d9cad5ba?w=600",
+    "https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=600",
     "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=600",
     "https://images.unsplash.com/photo-1496412705862-e0088f16f791?w=600"
   ],
@@ -504,6 +504,20 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // This endpoint unconditionally deletes and regenerates attractions/restaurants/
+    // transport_info for every city — it must never be reachable by a normal (or
+    // anonymous) request. Require the caller to present the real service-role key,
+    // which only an admin invoking this deliberately (e.g. via curl/dashboard) has.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const presented = authHeader.replace(/^Bearer\s+/i, '');
+    if (presented !== supabaseServiceKey) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get all cities

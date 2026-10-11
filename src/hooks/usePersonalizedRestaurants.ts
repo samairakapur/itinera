@@ -58,17 +58,22 @@ const scoreRestaurant = (restaurant: Restaurant, prefs: TravelPreferences | null
     }
   }
   
-  // Dining style matching
-  if (prefs.diningStyle) {
+  // Dining style matching — diningStyle is a multi-select array (see
+  // GuidedProfileForm/Profile.tsx), not a single string.
+  if (prefs.diningStyle?.length) {
     const cuisineLower = (restaurant.cuisine || '').toLowerCase();
-    if (prefs.diningStyle === 'quick' && (cuisineLower.includes('street') || cuisineLower.includes('fast') || priceLevel <= 1)) {
-      score += 10;
-    } else if (prefs.diningStyle === 'casual' && priceLevel <= 2) {
-      score += 8;
-    } else if (prefs.diningStyle === 'fine-dining' && priceLevel >= 3) {
-      score += 12;
-    } else if (prefs.diningStyle === 'local' && (cuisineLower.includes('local') || cuisineLower.includes('traditional'))) {
-      score += 10;
+    for (const style of prefs.diningStyle) {
+      if (style === 'Street Food & Markets' && (cuisineLower.includes('street') || cuisineLower.includes('market') || priceLevel <= 1)) {
+        score += 10;
+      } else if (style === 'Casual / Bistro' && priceLevel <= 2) {
+        score += 8;
+      } else if (style === 'Fine Dining' && priceLevel >= 3) {
+        score += 12;
+      } else if (style === 'Cafés & Brunch' && (cuisineLower.includes('cafe') || cuisineLower.includes('café') || cuisineLower.includes('brunch') || cuisineLower.includes('coffee'))) {
+        score += 10;
+      } else if (style === 'Local / Hole-in-the-Wall' && (cuisineLower.includes('local') || cuisineLower.includes('traditional'))) {
+        score += 10;
+      }
     }
   }
   

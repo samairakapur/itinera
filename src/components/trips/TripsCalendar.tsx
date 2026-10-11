@@ -21,6 +21,7 @@ import {
   format,
   differenceInDays,
   addDays,
+  parseISO,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,8 +63,8 @@ function tripsOnDay(trips: Trip[], day: Date): Array<{ trip: Trip; index: number
     .map((trip, index) => ({ trip, index }))
     .filter(({ trip }) => {
       if (!trip.start_date || !trip.end_date) return false;
-      const start = new Date(trip.start_date);
-      const end = new Date(trip.end_date);
+      const start = parseISO(trip.start_date);
+      const end = parseISO(trip.end_date);
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
       return day >= start && day <= end;
@@ -119,14 +120,14 @@ export const TripsCalendar = ({ trips, onTripsUpdated }: TripsCalendarProps) => 
       if (!trip || !trip.start_date || !trip.end_date) return;
 
       const tripLength = differenceInDays(
-        new Date(trip.end_date),
-        new Date(trip.start_date)
+        parseISO(trip.end_date),
+        parseISO(trip.start_date)
       );
 
       // Offset: how many days from trip start was the pill that was dragged
       const offset = differenceInDays(dropDay, dragStartDate.current!);
-      const oldStart = new Date(trip.start_date);
-      const oldEnd = new Date(trip.end_date);
+      const oldStart = parseISO(trip.start_date);
+      const oldEnd = parseISO(trip.end_date);
       const newStart = addDays(oldStart, offset);
       const newEnd = addDays(oldEnd, offset);
 
